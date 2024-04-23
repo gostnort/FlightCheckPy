@@ -12,7 +12,7 @@ class MainWindow(QMainWindow):
         
         # Set window icon
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        icon_path = os.path.join(script_dir, "fcp0.5.ico")
+        icon_path = os.path.join(script_dir, "resources/fcp0.5.ico")
         self.setWindowIcon(QIcon(icon_path))
 
         # Create button and QLineEdit for file path
