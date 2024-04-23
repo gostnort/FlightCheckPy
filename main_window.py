@@ -3,9 +3,11 @@ from PySide6.QtWidgets import QLineEdit, QVBoxLayout, QWidget, QTextEdit
 from PySide6.QtWidgets import QHBoxLayout
 from PySide6.QtGui import QIcon
 import os
+import argparse
+import run_button
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, args):
         super().__init__()
         self.setWindowTitle("Fight_Check_Python 0.5")
         self.setFixedSize(600, 400)  # Set fixed window size
@@ -27,8 +29,8 @@ class MainWindow(QMainWindow):
 
         # Create "Run" button
         self.run_button = QPushButton("Run")
-        self.run_button.setFixedWidth(100)  # Set width to 50 pixels
-        self.run_button.clicked.connect(self.run_logic)
+        self.run_button.setFixedWidth(100)  # Set width to 100 pixels
+        self.run_button.clicked.connect(lambda: self.run_logic(args))
         
         # Create a QHBoxLayout for the first row
         first_row_layout = QHBoxLayout()
@@ -51,14 +53,30 @@ class MainWindow(QMainWindow):
         if file_path:
             self.file_path_edit.setText(file_path)
 
-    def run_logic(self):
+    def run_logic(self,args):
+        # Check if debug mode is enabled and append debug message
+        if args.debug:
+            self.result_text_edit.append("Debug mode enabled")
+
         # Implement your main logic here
         file_path = self.file_path_edit.text()
-        # Do something with the file path, for example:
-        self.result_text_edit.append(f"Running logic with file: {file_path}")
+        pr_list=run_button.separate_pr(file_path)
 
-if __name__ == "__main__":
+        if args.debug:
+            for line in pr_list:
+                self.result_text_edit.append(line)
+                self.result_text_edit.append("+++++++++")
+
+def main():
+    parser = argparse.ArgumentParser(description="Fight_Check_Python 0.5")
+    parser.add_argument("--debug", action="store_true", help="Enable debug mode")
+    args = parser.parse_args()
+
+    # Create the application
     app = QApplication([])
-    window = MainWindow()
+    window = MainWindow(args)
     window.show()
     app.exec()
+
+if __name__ == "__main__":
+    main()
