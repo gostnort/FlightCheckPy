@@ -1,4 +1,5 @@
 import re
+from obtain_info import CPax
 
 def separate_pr(txt_file_path):
     txtObj = open(txt_file_path,'rt')
@@ -22,3 +23,13 @@ def separate_pr(txt_file_path):
                 orgnaized_prs[-1] = origin + pr
 
     return orgnaized_prs
+
+def loop_obtain_info(orgnaized_prs):
+    error_msg=[]
+    debug_msg=[]
+    for pax in orgnaized_prs:
+        pax_func=CPax(pax)
+        error_msg.extend(pax_func.error_msg)
+        debug_msg.extend(pax_func.debug_msg)
+    return error_msg, debug_msg
+

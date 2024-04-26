@@ -10,7 +10,8 @@ class MainWindow(QMainWindow):
     def __init__(self, args):
         super().__init__()
         self.setWindowTitle("Fight_Check_Python 0.5")
-        self.setFixedSize(600, 400)  # Set fixed window size
+        self.resize(600, 400)  # Set initial window size to 600x400 pixels
+        self.setMinimumSize(200, 200)  # Set minimum window size to 200x200 pixels
         
         # Set window icon
         script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -61,11 +62,19 @@ class MainWindow(QMainWindow):
         # Implement your main logic here
         file_path = self.file_path_edit.text()
         pr_list=run_button.separate_pr(file_path)
-
+        messages=run_button.loop_obtain_info(pr_list)
+        
         if args.debug:
             for line in pr_list:
                 self.result_text_edit.append(line)
                 self.result_text_edit.append("+++++++++")
+
+        for line in messages[0]:
+            self.result_text_edit.append(line)
+
+        if args.debug:
+            for line in messages[1]:
+                self.result_text_edit.append(line)
 
 def main():
     parser = argparse.ArgumentParser(description="Fight_Check_Python 0.5")
