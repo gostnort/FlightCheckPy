@@ -7,6 +7,8 @@ import argparse
 import run_button
 
 class MainWindow(QMainWindow):
+    __SEPARATED_BAR = "++++++++++++++++++++++++++++++++++"
+
     def __init__(self, args):
         super().__init__()
         self.setWindowTitle("Fight_Check_Python 0.5")
@@ -66,10 +68,16 @@ class MainWindow(QMainWindow):
         pr_list=run_button.separate_pr(file_path)
         messages=run_button.loop_obtain_info(pr_list)
         
-        if args.debug:
+        if args.pr_list:
             for line in pr_list:
                 self.result_text_edit.append(line)
-                self.result_text_edit.append("+++++++++")
+                self.result_text_edit.append(self.__SEPARATED_BAR)
+
+        if messages[2] is not None:
+            missing_pd = "Missing the following number in PR#PD:\n\t"
+            for line in messages[2]:
+                missing_pd = missing_pd + str('{0:0>3}'.format(line)) + ' '
+            self.result_text_edit.append(missing_pd + '\n' + self.__SEPARATED_BAR)
 
         for line in messages[0]:
             self.result_text_edit.append(line)
@@ -81,6 +89,7 @@ class MainWindow(QMainWindow):
 def main():
     parser = argparse.ArgumentParser(description="Fight_Check_Python 0.5")
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
+    parser.add_argument("--pr_list", action="store_true", help="Enable PR separated results.")
     args = parser.parse_args()
 
     # Create the application

@@ -16,7 +16,7 @@ class CArgs(object):
 
     def SubCls2MainCls(self,Subclass):
         result = self.__dictSub2Main.get(Subclass)
-        if result == None:
+        if result is None:
             result = 'Y'
         return result
     #SubCls2MainCls() end.
@@ -29,3 +29,21 @@ class CArgs(object):
         ttlWeight = dictClsWeight.get(MainCls)
         return ttlWeight
     #__ClassBagWeight() end.
+
+# Input a list with the current number list. Return a list.
+# This function will get the maximum PRPD number and look for missing ones.'''
+# Miss is a trouble.
+def find_a_miss(source):
+    # Get the maximum value in the source list
+    max_value = max(source)
+    
+    # Create a set containing all values from 1 to max_value
+    all_numbers = set(range(1, max_value + 1))
+    
+    # Create a set containing unique values from the source list
+    unique_numbers = set(source)
+    
+    # Calculate the missing numbers by finding the difference between all_numbers and unique_numbers
+    missing_numbers = sorted(all_numbers - unique_numbers)
+    
+    return missing_numbers
