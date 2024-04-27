@@ -22,14 +22,10 @@ class CArgs(object):
     #SubCls2MainCls() end.
 
 
-    def ClassBagWeight(self,MainCls,BagPiece,BolInf=False):
+    def ClassBagWeight(self,MainCls):
         dictClsWeight = {'F':32,
                        'C':32,
                        'Y':23}
-        ttlWeight = 0
-        if BolInf:
-            ttlWeight = (BagPiece - 1) * dictClsWeight.get(MainCls) + 23
-        else:
-            ttlWeight = BagPiece * dictClsWeight.get(MainCls)
+        ttlWeight = dictClsWeight.get(MainCls)
         return ttlWeight
     #__ClassBagWeight() end.
