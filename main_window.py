@@ -55,6 +55,8 @@ class MainWindow(QMainWindow):
             self.file_path_edit.setText(file_path)
 
     def run_logic(self,args):
+        self.result_text_edit.clear()
+
         # Check if debug mode is enabled and append debug message
         if args.debug:
             self.result_text_edit.append("Debug mode enabled")

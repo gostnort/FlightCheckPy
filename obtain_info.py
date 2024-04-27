@@ -20,26 +20,33 @@ class CPax():
     __ERROR_NUMBER = 65535
 
     def __init__(self,PrContent):
+        #print('CPAX initialized. ___________________________')
         if not isinstance(PrContent,str):
             print("PrContent is not a string type.")
             return
-        self.debug_msg.clear()
-        self.debug_msg.append("CPax initialized.___________________________________")
-        #Initialize all variables in class level.
-        self.error_msg.clear()
-        self.BoardingNumber = 0
-        self.PrPdNumber = 0
-        self.__ChkBagAverageWeight = 0
-        self.__ChkBagPcs = 0
-        #Call methods.
-        bolRun = True
-        bolRun = self.__GetBnAndCls(PrContent)
-        if bolRun:
-            self.__ExpcStatement(PrContent)
-            self.__GetChkBag(PrContent)
-            #self.__CalculateBag(PrContent)
-            #self.__GetPassportExp(PrContent)
-            #self.__NameMatch(PrContent)
+    
+    def run(self,PrContent):
+        try:
+            #Initialize all variables in class level.
+            self.debug_msg.clear()
+            self.debug_msg.append('---------------------------------')
+            self.error_msg.clear()
+            self.BoardingNumber = 0
+            self.PrPdNumber = 0
+            self.__ChkBagAverageWeight = 0
+            self.__ChkBagPcs = 0
+            #Call methods.
+            bolRun = True
+            bolRun = self.__GetBnAndCls(PrContent)
+            if bolRun:
+                self.__ExpcStatement(PrContent)
+                self.__AsvcBagStatement(PrContent)
+                self.__GetChkBag(PrContent)
+                #self.__CalculateBag(PrContent)
+                #self.__GetPassportExp(PrContent)
+                #self.__NameMatch(PrContent)
+        except:
+            self.error_msg.append("A Fatal Error occured at PR" + str(self.PrPdNumber)+"PD; Boarding Number should be "+str(self.BoardingNumber))
 
     def __del__(self):
         self.debug_msg.append("Boarding number"+ str(self.BoardingNumber) +". \nCPax deconstruction.")
@@ -142,13 +149,11 @@ class CPax():
         re_match=pat.search(PrContent,StartIndex)
         if re_match:
             return result
-        else:
-            StartIndex=re_match.end()
-        pat=re.compile(r'\dPC')
+        pat=re.compile(r'/\dPC')
         re_match=pat.search(PrContent,StartIndex)
         if re_match:
             try:
-                result = int(PrContent[re_match.start()])
+                result = int(PrContent[re_match.start()+1])
             except:
                 self.debug_msg.append("asvc bag p type error")
 
