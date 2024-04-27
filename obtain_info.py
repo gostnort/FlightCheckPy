@@ -47,7 +47,7 @@ class CPax:
                 self.__GetPassportExp()
                 self.__NameMatch()
             if len(self.error_msg) != 0:
-                self.error_msg.append(str(self.BoardingNumber) + self.__SEPARATED_BAR + '\n')
+                self.error_msg.append('BN#' + str(self.BoardingNumber) + self.__SEPARATED_BAR + '\n')
         except:
             self.error_msg.append(
                 "A Fatal Error occured at PR"
@@ -81,10 +81,7 @@ class CPax:
             self.error_msg.append(
                 "PR"
                 + str(self.PrPdNumber)
-                + "PD,BN#"
-                + str(self.BoardingNumber)
-                + "\t"
-                + " None validity classes are found."
+                + "PD,\tNone validity classes are found."
             )
             return False
         fltArgs = CArgs()
@@ -208,10 +205,7 @@ class CPax:
                 self.error_msg.append(
                     "PR"
                     + str(self.PrPdNumber)
-                    + "PD,BN#"
-                    + str(self.BoardingNumber)
-                    + "\t"
-                    + "FBA got an error. Set default as 2 pieces."
+                    + "PD,\tFBA got an error. Set default as 2 pieces."
                 )
         pat = re.compile(r"\sIFBA/\dPC")
         re_match = pat.search(self.__Pr)
@@ -319,10 +313,7 @@ class CPax:
             self.error_msg.append(
                 "PR"
                 + str(self.PrPdNumber)
-                + "PD,BN#"
-                + str(self.BoardingNumber)
-                + "\t"
-                + "has "
+                + "PD,\thas "
                 + str(self.__ChkBagPcs - max_bag["piece"])
                 + "extra bag(s)."
             )
@@ -332,10 +323,7 @@ class CPax:
                 self.error_msg.append(
                     "PR"
                     + str(self.PrPdNumber)
-                    + "PD,BN#"
-                    + str(self.BoardingNumber)
-                    + "\t"
-                    + "baggage is overweight "
+                    + "PD,\tbaggage is overweight "
                     + str(self.__ChkBagTtlWeight - max_bag["weight"])
                     + "KGs."
                 )
@@ -372,27 +360,29 @@ class CPax:
 
     def __NameMatchMode1(self, ShortName, LongName):
         lstSuffix = ["MR", "MS", "MRS", "MSTR", "PHD", "CHD", "INF", "VIP"]
-        lenLong = len(LongName)
-        lenShort = len(ShortName)
-        if lenLong != lenShort:
-            for s in lstSuffix:
-                lenItem = len(s)
-                if s == LongName[lenLong - lenItem : lenLong]:
-                    LongName = LongName[: lenLong - lenItem]
-                    break
-                if s == ShortName[lenShort - lenItem : lenShort]:
-                    ShortName = ShortName[: lenShort - lenItem]
-                    break
+
+        # Remove suffixes from ShortName
+        for suffix in lstSuffix:
+            if ShortName.endswith(suffix):
+                ShortName = ShortName[:-len(suffix)].rstrip()
+                break
+
+        # Remove suffixes from LongName
+        for suffix in lstSuffix:
+            if LongName.endswith(suffix):
+                LongName = LongName[:-len(suffix)].rstrip()
+                break
+
         lstShort = ShortName.split("/")
         lstLong = LongName.split("/")
+
         countMatch = 0
         for s in lstShort:
             for l in lstLong:
                 if s == l:
-                    countMatch = countMatch + 1
-        if countMatch > 1:
-            return True
-        return False
+                    countMatch += 1
+
+        return countMatch > 1
 
     # NameMatchMode1() end.
 
@@ -452,9 +442,7 @@ class CPax:
             self.error_msg.append(
                 "PR"
                 + str(self.PrPdNumber)
-                + "PD,BN#"
-                + str(self.BoardingNumber)
-                + "\t"
+                + "PD,\t"
                 + str_difference_percentage
             )
         return False
@@ -468,10 +456,7 @@ class CPax:
             self.error_msg.append(
                 "PR"
                 + str(self.PrPdNumber)
-                + "PD,BN#"
-                + str(self.BoardingNumber)
-                + "\t"
-                + "PAX name not found."
+                + "PD,\tPAX name not found."
             )
             return
         longName, shortName = "", ""
@@ -507,9 +492,7 @@ class CPax:
             self.error_msg.append(
                 "PR"
                 + str(self.PrPdNumber)
-                + "PD,BN#"
-                + str(self.BoardingNumber)
-                + "\t"
+                + "PD,\t"
                 + errMsg
             )
 
