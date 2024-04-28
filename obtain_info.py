@@ -183,11 +183,11 @@ class CPax:
         re_match = pat.search(self.__Pr, result["index"])
         if re_match:
             return result
-        pat = re.compile(r"/\dPC")
+        pat = re.compile(r"/\dPC\s")
         re_match = pat.search(self.__Pr, result["index"])
         if re_match:
             try:
-                result["piece"](int(self.__Pr[re_match.start() + 1]))
+                result["piece"] = int(self.__Pr[re_match.start() + 1])
                 result["index"] = re_match.end()
                 self.debug_msg.append("asvc bag p = " + str(result["piece"]))
             except:
