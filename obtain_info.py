@@ -21,6 +21,7 @@ class CPax:
     __INF_BAG_WEIGHT = 23
     __FOREIGN_GOLD_FLYER_BAG_WEIGHT = 23
     __SEPARATED_BAR = "__________________________________"
+    __BolError = False
 
     def __init__(self, PrContent):
         if not isinstance(PrContent, str):
@@ -38,6 +39,7 @@ class CPax:
             self.__ChkBagAverageWeight = 0
             self.__ChkBagPcs = 0
             self.__Pr = PrContent
+            self.__BolError=False
             # Call methods.
             bolRun = True
             bolRun = self.__GetBnAndCls()
@@ -46,7 +48,9 @@ class CPax:
                 self.__MatchingBag()
                 self.__GetPassportExp()
                 self.__NameMatch()
-            if len(self.error_msg) != 0:
+            #Even the functions are completed,
+            #those '.clear()' may not finish yet. T~T
+            if self.__BolError:
                 self.error_msg.append('BN#' + str(self.BoardingNumber) + self.__SEPARATED_BAR + '\n')
         except:
             self.error_msg.append(
@@ -83,6 +87,7 @@ class CPax:
                 + str(self.PrPdNumber)
                 + "PD,\tNone validity classes are found."
             )
+            self.__BolError=True
             return False
         fltArgs = CArgs()
         self.__MainCls = fltArgs.SubCls2MainCls(self.__MainCls)
@@ -207,6 +212,7 @@ class CPax:
                     + str(self.PrPdNumber)
                     + "PD,\tFBA got an error. Set default as 2 pieces."
                 )
+                self.__BolError=True
         pat = re.compile(r"\sIFBA/\dPC")
         re_match = pat.search(self.__Pr)
         if re_match:
@@ -226,7 +232,7 @@ class CPax:
         # 默认没有会员，也不是国航常旅客
         result = {"piece": 0, "bol_ca": False}
         if re_match:
-            if self.__Pr[re_match.end() : re_match.end() + 1] == "CA":
+            if self.__Pr[re_match.end()-1 : re_match.end() + 1] == "CA":
                 result["bol_ca"] = True
         else:
             return result
@@ -318,6 +324,7 @@ class CPax:
                 + "extra bag(s)."
             )
             self.error_msg.append(self.__CaptureCkin())
+            self.__BolError=True
         else:
             if self.__ChkBagTtlWeight > max_bag["weight"]:
                 self.error_msg.append(
@@ -328,6 +335,7 @@ class CPax:
                     + "KGs."
                 )
                 self.error_msg.append(self.__CaptureCkin())
+                self.__BolError=True
         return
 
     # Completion of baggage compareison.
@@ -377,9 +385,9 @@ class CPax:
         lstLong = LongName.split("/")
 
         countMatch = 0
-        for s in lstShort:
-            for l in lstLong:
-                if s == l:
+        for sh in lstShort:
+            for lo in lstLong:
+                if lo.find(sh) != -1:
                     countMatch += 1
 
         return countMatch > 1
@@ -445,6 +453,7 @@ class CPax:
                 + "PD,\t"
                 + str_difference_percentage
             )
+            self.__BolError=True
         return False
 
     # NameMatchMode2() end.
@@ -458,6 +467,7 @@ class CPax:
                 + str(self.PrPdNumber)
                 + "PD,\tPAX name not found."
             )
+            self.__BolError=True
             return
         longName, shortName = "", ""
         if len(recordName) >= len(psptName):
@@ -495,5 +505,5 @@ class CPax:
                 + "PD,\t"
                 + errMsg
             )
-
+            self.__BolError=True
     # __GetPassportExpirationDate() end.

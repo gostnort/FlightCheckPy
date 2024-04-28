@@ -24,11 +24,20 @@ class MainWindow(QMainWindow):
         self.button = QPushButton("Open...")
         self.button.clicked.connect(self.open_file_dialog)
         
+        # Set taskbar icon
+        app_icon = QIcon(icon_path)
+        self.setWindowIcon(app_icon)
+
         self.file_path_edit = QLineEdit()
         self.file_path_edit.setReadOnly(True)
         
         # Create QTextEdit for result output
         self.result_text_edit = QTextEdit()
+
+        # Set font size of result_text_edit to 11pt
+        font = self.result_text_edit.font()
+        font.setPointSize(11)# default is 10pt.
+        self.result_text_edit.setFont(font)
 
         # Create "Run" button
         self.run_button = QPushButton("Run")
@@ -73,7 +82,7 @@ class MainWindow(QMainWindow):
                 self.result_text_edit.append(line)
                 self.result_text_edit.append(self.__SEPARATED_BAR)
 
-        if messages[2] is not None:
+        if len(messages[2]) !=0:
             missing_pd = "Missing the following number in PR#PD:\n\t"
             for line in messages[2]:
                 missing_pd = missing_pd + str('{0:0>3}'.format(line)) + ' '

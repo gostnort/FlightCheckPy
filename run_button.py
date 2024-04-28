@@ -42,7 +42,7 @@ def handle_batch(batch):
 #所以虽然可以把batch_size提高到100，甚至200来减小线程创建开销。
 #不过一旦出错，那就要复查那个数量的结果丢失了。有点不现实。
 #同时也难得的及时销毁类。
-def loop_obtain_info(orgnaized_prs, batch_size=5):
+def loop_obtain_info(orgnaized_prs, batch_size=6):
     error_msgs = []
     debug_msgs = []
     prpd_list=[]
