@@ -23,12 +23,10 @@ class CPax:
     __SEPARATED_BAR = "__________________________________"
     __BolError = False
 
-    def __init__(self, PrContent):
-        if not isinstance(PrContent, str):
-            print("PrContent is not a string type.")
-            return
+    def __init__(self):
+        super().__init__()
 
-    def run(self, PrContent):
+    def run(self, PrContent:str):
         try:
             # Initialize all variables in class level.
             self.debug_msg.clear()
@@ -108,16 +106,14 @@ class CPax:
     # __GetBnAndCls() end.
 
     def __GetChkBag(self):
-        indexE = 1
         bagCount = 0
         bagWeight = 0
-        bagPat = re.compile(r"BAG\d{1}/\d{1,3}/")
-        bagMatch = bagPat.search(self.__Pr, indexE)
+        bagPat = re.compile(r"BAG\d{1,2}/\d{1,3}/")
+        bagMatch = bagPat.search(self.__Pr, 1)
         if bagMatch:
-            indexS = bagMatch.start() + 3
-            indexE = bagMatch.end() - 1
-            bagCount = bagCount + int(self.__Pr[indexS : indexS + 1])
-            bagWeight = bagWeight + int(self.__Pr[indexS + 2 : indexE])
+            split_list = bagMatch.group(0).split('/')
+            bagCount = bagCount + int(split_list[0][3:])
+            bagWeight = bagWeight + int(split_list[1])
         if bagCount == 0:
             self.__ChkBagAverageWeight = 0
         else:
@@ -147,12 +143,12 @@ class CPax:
 
         w_total = 0
         end_index = 1
-        pat = re.compile(r"/\d{2}KG-")
+        pat = re.compile(r"/\d{1,2}KG-")
         while True:
             re_match = pat.search(self.__Pr, end_index)
             if re_match is None:
                 break
-            w = self.__Pr[re_match.start() + 1 : re_match.start() + 3]
+            w = self.__Pr[re_match.start() + 1 : re_match.end() - 3]
             try:
                 w_int = int(w)
             except:
@@ -507,3 +503,15 @@ class CPax:
             )
             self.__BolError=True
     # __GetPassportExpirationDate() end.
+
+
+#=================================================================================================
+
+def sample_run():
+    with open('pr_sample.txt','r') as file:
+        pr_content = file.read()
+    info = CPax()
+    info.run(pr_content)
+
+if __name__ == "__main__":
+    sample_run()

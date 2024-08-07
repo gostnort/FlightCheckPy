@@ -29,7 +29,7 @@ def handle_batch(batch):
     error_msg = []
     debug_msg = []
     prpd=[]
-    pax_func = CPax(batch[0])  # Create a new instance of CPax for each batch
+    pax_func = CPax()  # Create a new instance of CPax for each batch
     for pr in batch:
         pax_func.run(pr)
         error_msg.extend(pax_func.error_msg)

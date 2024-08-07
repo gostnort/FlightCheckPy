@@ -11,7 +11,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self, args):
         super().__init__()
-        self.setWindowTitle("Fight_Check_Python 0.5")
+        self.setWindowTitle("Fight_Check_Python 0.51")
         self.resize(600, 400)  # Set initial window size to 600x400 pixels
         self.setMinimumSize(200, 200)  # Set minimum window size to 200x200 pixels
         
