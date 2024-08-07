@@ -96,7 +96,7 @@ class MainWindow(QMainWindow):
                 self.result_text_edit.append(line)
 
 def main():
-    parser = argparse.ArgumentParser(description="Fight_Check_Python 0.5")
+    parser = argparse.ArgumentParser(description="Fight_Check_Python 0.51")
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     parser.add_argument("--pr_list", action="store_true", help="Enable PR separated results.")
     args = parser.parse_args()
