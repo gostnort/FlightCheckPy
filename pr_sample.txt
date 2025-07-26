@@ -1,15 +1,15 @@
->PR: CA984/02AUG24SLAX,21PD         PNR RL  PLD2RE                              
-  1. FENG/NUANXI          BN021  57H    S PEK WEB ASR BAG13/55/0 OSR             
+>PR: CA984/01AUG24SLAX,21PD         PNR RL  PLD2RE                              
+  1. AAAA/BBBBBB          BN021  57H    S PEK WEB ASR BAG3/55/0 OSR             
                                         AQQ/FCL/USA ESTA/Z/USA GOV/FCL/CHN      
                                         ESTA/Z/CHN                              
-                                        FF/CA 313000168468/B FBA/2PC            
+                                        FF/CA 313000168467/B FBA/2PC            
                                         ET TKNE/9992437988344/1 R57H            
 ASVC- C/0IJ/XBAG/3PC USD200.00 A/EMDA-9994563672375/1-C                         
-CTC-1036657538//QQ-COM//CTCE 1036657538//QQ-COM/CTC                             
+CTC-0036657538//QQ-COM//CTCE 0036657538//QQ-COM/CTC                             
     PEK184-04MAY24-1111-10955830660                                             
-PSPT-EJ2370741/CHN/26JAN02/F/                                                   
- PAXLST   :FENG/NUANXI/                                                         
- PAX INFO :CHN/DOB/020126/POB//GENDER/F                                         
+PSPT-EJ2370741/CHN/26JAN01/M/                                                   
+ PAXLST   :AAAA/BBBBBB/                                                         
+ PAX INFO :CHN/DOB/010126/POB//GENDER/M                                         
  PASSPORT :EJ2370741/P/NAT/CHN//300323/CHN/N/A                                  
                                                                                 
 SEC TXT-CHN OK TO BOARD                                                         
