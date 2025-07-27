@@ -2,3 +2,4 @@
 __pycache__/
 sample_*.txt
 *.db
+uploaded*.txt
