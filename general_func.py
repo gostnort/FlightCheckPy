@@ -30,6 +30,19 @@ class CArgs(object):
         return ttlWeight
     #__ClassBagWeight() end.
 
+
+    def InfBagWeight(self):
+        """婴儿行李重量"""
+        return 23
+    #InfBagWeight() end.
+
+
+    def ForeignGoldFlyerBagWeight(self):
+        """外籍金卡常旅客行李重量"""
+        return 23
+    #ForeignGoldFlyerBagWeight() end.
+
+
 # Input a list with the current number list. Return a list.
 # This function will get the maximum PRPD number and look for missing ones.'''
 # Miss is a trouble.
