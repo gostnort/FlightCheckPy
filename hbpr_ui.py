@@ -11,19 +11,13 @@ import glob
 import sqlite3
 import re
 import base64
+import hashlib
 from datetime import datetime
 from hbpr_info_processor import CHbpr, HbprDatabase
 import traceback
 
 
-RAW_CONTENT_FONT = """
-        <style>
-        .stTextArea textarea {
-            font-family: "Courier New", monospace !important;
-            font-size: 14px !important;
-        }
-        </style>
-        """
+
 
 
 def get_icon_base64(path):
@@ -33,6 +27,100 @@ def get_icon_base64(path):
             return base64.b64encode(icon_file.read()).decode()
     except FileNotFoundError:
         return ""
+
+
+def authenticate_user(username):
+    """
+    Authenticate user using username only (SHA256 hashed)
+    """
+    # Obfuscated valid usernames (SHA256 hashes)
+    valid_usernames = [
+        'c7c5b358d4097f8e2798c54f2ab6c3574a0cc82c87a3acf4ac9f038af4f75d2c',  
+        '9fe93417853739c1c18c2e8b051860d1a317824f1aa91304d16f3fe832486f7a'   
+    ]
+    
+    # Hash the provided username
+    username_hash = hashlib.sha256(username.encode()).hexdigest()
+    
+    # Check if the username hash exists in valid usernames
+    return username_hash in valid_usernames
+
+
+def show_login_page():
+    """Display the login page"""
+    st.markdown("""
+    <div style="display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 30px;">
+        <img src="data:image/x-icon;base64,{}" width="64" height="64">
+        <h1 style="margin: 0;">Flight Check 0.6 --- Python</h1>
+    </div>
+    """.format(get_icon_base64("resources/fcp.ico")), unsafe_allow_html=True)
+    
+    st.markdown("---")
+    
+    # Center the login form
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.markdown("### 🔐 User Authentication")
+        st.caption("Please enter your username to access the system")
+        
+        with st.form("login_form"):
+            username = st.text_input("👤 Username", placeholder="Enter username")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                submit_button = st.form_submit_button("🚀 Login", type="primary", use_container_width=True)
+            with col2:
+                if st.form_submit_button("🔄 Clear", use_container_width=True):
+                    st.rerun()
+            
+            if submit_button:
+                if not username:
+                    st.error("❌ Please enter a username")
+                elif authenticate_user(username):
+                    st.session_state.authenticated = True
+                    st.session_state.username = username
+                    st.success(f"✅ Welcome, {username}! Authentication successful.")
+                    st.rerun()
+                else:
+                    st.error("❌ Invalid username. Please try again.")
+        
+        st.markdown("---")
+        st.caption("🔐 **Contact administrator for access credentials**")
+
+
+def apply_global_settings():
+    """Apply global settings from session state"""
+    if 'settings' in st.session_state:
+        settings = st.session_state.settings
+        
+        # Apply font settings globally
+        apply_font_settings()
+
+
+def apply_font_settings():
+    """Apply font settings from session state"""
+    if 'settings' in st.session_state:
+        settings = st.session_state.settings
+        font_family = settings.get('font_family', 'Courier New')
+        font_size_percent = settings.get('font_size_percent', 100)
+        base_font_size = 14  # Base font size for data elements
+        actual_font_size = int(base_font_size * font_size_percent / 100)
+        
+        st.markdown(f"""
+        <style>
+        /* Data-specific font settings - only for Raw Content and Data Tables */
+        .stTextArea textarea {{
+            font-family: "{font_family}", monospace !important;
+            font-size: {actual_font_size}px !important;
+        }}
+        
+        /* Data frames */
+        .stDataFrame {{
+            font-family: "{font_family}", monospace !important;
+            font-size: {actual_font_size}px !important;
+        }}
+        </style>
+        """, unsafe_allow_html=True)
 
 
 def parse_hbnb_input(input_text: str) -> list:
@@ -79,11 +167,39 @@ def main():
         layout="wide",
         initial_sidebar_state="expanded"
     )
-    # 初始化session state
+    
+    # Initialize session state
     if 'current_page' not in st.session_state:
         st.session_state.current_page = "🏠 Home"
+    
+    # Initialize settings
+    if 'settings' not in st.session_state:
+        st.session_state.settings = {
+            'font_family': 'Courier New',
+            'font_size_percent': 100,
+            'auto_refresh': True
+        }
+    
+    # Check authentication
+    if 'authenticated' not in st.session_state:
+        st.session_state.authenticated = False
+    
+    # If not authenticated, show login page
+    if not st.session_state.authenticated:
+        show_login_page()
+        return
+    
+    # Apply global settings
+    apply_global_settings()
+    
     # 侧边栏导航
     st.sidebar.title("📋 Navigation")
+    
+    # Show logged in user info
+    if 'username' in st.session_state:
+        st.sidebar.markdown(f"👤 **Logged in as:** {st.session_state.username}")
+        st.sidebar.markdown("---")
+    
     # 导航链接
     if st.sidebar.button("🏠 Home", use_container_width=True):
         st.session_state.current_page = "🏠 Home"
@@ -95,6 +211,14 @@ def main():
         st.session_state.current_page = "📊 View Results"
     if st.sidebar.button("⚙️ Settings", use_container_width=True):
         st.session_state.current_page = "⚙️ Settings"
+    
+    # Logout button
+    st.sidebar.markdown("---")
+    if st.sidebar.button("🚪 Logout", use_container_width=True, type="secondary"):
+        st.session_state.authenticated = False
+        st.session_state.username = None
+        st.rerun()
+    
     # 根据当前页面显示内容
     current_page = st.session_state.current_page
     if current_page == "🏠 Home":
@@ -119,6 +243,9 @@ def main():
 
 def show_home_page():
     """显示主页"""
+    # Apply settings
+    apply_global_settings()
+    
     # 检查是否需要刷新
     if 'refresh_home' in st.session_state and st.session_state.refresh_home:
         st.session_state.refresh_home = False
@@ -222,6 +349,9 @@ def show_home_page():
 
 def show_database_management():
     """显示数据库管理页面"""
+    # Apply settings
+    apply_global_settings()
+    
     st.header("🗄️ Database Management")
     tab1, tab2, tab3 = st.tabs(["📥 Build Database", "🔍 Database Info", "🧹 Maintenance"])   
     with tab1:
@@ -444,6 +574,9 @@ def show_database_maintenance():
 
 def show_process_records():
     """显示记录处理页面"""
+    # Apply settings
+    apply_global_settings()
+    
     st.header("🔍 Process HBPR Records")
     
     try:
@@ -640,8 +773,8 @@ def view_single_record(db):
                 st.warning("⚠️ 剔除部分没有 #️⃣ BN or 💺 Seat 的记录")
             try:
                 content = db.get_hbpr_record(selected_record)
-                # 添加自定义CSS来设置Raw Content的字体
-                st.markdown(RAW_CONTENT_FONT, unsafe_allow_html=True)
+                # Apply dynamic font settings
+                apply_font_settings()
                 st.text_area("Raw Content:", content, height=300, disabled=True)         
             except Exception as e:
                 st.error(f"❌ Error retrieving record: {str(e)}")
@@ -1048,8 +1181,8 @@ def show_record_popup(db, hbnb_number):
     try:
         # 获取原始内容
         content = db.get_hbpr_record(hbnb_number)
-        # 添加自定义CSS来设置Raw Content的字体
-        st.markdown(RAW_CONTENT_FONT, unsafe_allow_html=True)
+        # Apply dynamic font settings
+        apply_font_settings()
         # 显示原始内容，使用全宽度
         st.text_area(
             "Raw Content:",
@@ -1421,6 +1554,9 @@ def process_manual_input():
 
 def show_view_results():
     """显示结果查看页面"""
+    # Apply settings
+    apply_global_settings()
+    
     st.header("📊 View Processing Results")
     
     try:
@@ -1507,10 +1643,10 @@ def show_records_table(db):
     try:
         conn = sqlite3.connect(db.db_file)
         
-        # 查询已处理的记录
+        # 查询已处理的记录，包括properties字段
         df = pd.read_sql_query("""
             SELECT hbnb_number, boarding_number, name, seat, class, destination,
-                   bag_piece, bag_weight, ff, error_count
+                   bag_piece, bag_weight, ff, properties, error_count
             FROM hbpr_full_records 
             WHERE is_validated = 1
             ORDER BY hbnb_number
@@ -1522,14 +1658,41 @@ def show_records_table(db):
             st.info("ℹ️ No processed records found.")
             return
         
+        # 提取FF Level（从FF字段中提取最后的字母）
+        def extract_ff_level(ff_value):
+            if pd.isna(ff_value) or ff_value == '':
+                return 'N/A'
+            # 提取FF号码最后的字母，如 "CA 050021619897/B" -> "B"
+            parts = ff_value.split('/')
+            if len(parts) > 1:
+                return parts[-1]
+            return 'N/A'
+        
+        # 添加FF Level列
+        df['ff_level'] = df['ff'].apply(extract_ff_level)
+        
         # 过滤选项
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns(3)
         
         with col1:
             filter_class = st.multiselect("Filter by Class:", df['class'].dropna().unique())
         
         with col2:
-            filter_destination = st.multiselect("Filter by Destination:", df['destination'].dropna().unique())
+            # FF Level过滤器
+            ff_levels = sorted(df['ff_level'].dropna().unique())
+            filter_ff_level = st.multiselect("Filter by FF Level:", ff_levels)
+        
+        with col3:
+            # Properties过滤器 - 替换destination过滤器
+            # 从properties字段中提取所有唯一的属性
+            all_properties = set()
+            for properties_str in df['properties'].dropna():
+                if properties_str:
+                    properties_list = [prop.strip() for prop in properties_str.split(',') if prop.strip()]
+                    all_properties.update(properties_list)
+            
+            available_properties = sorted(list(all_properties))
+            filter_properties = st.multiselect("Filter by Properties:", available_properties)
         
         # 应用过滤器
         filtered_df = df.copy()
@@ -1537,12 +1700,26 @@ def show_records_table(db):
         if filter_class:
             filtered_df = filtered_df[filtered_df['class'].isin(filter_class)]
         
-        if filter_destination:
-            filtered_df = filtered_df[filtered_df['destination'].isin(filter_destination)]
+        if filter_ff_level:
+            filtered_df = filtered_df[filtered_df['ff_level'].isin(filter_ff_level)]
         
-        # 显示表格
+        if filter_properties:
+            # 过滤包含选定属性的记录
+            def has_property(properties_str, target_properties):
+                if pd.isna(properties_str) or properties_str == '':
+                    return False
+                properties_list = [prop.strip() for prop in properties_str.split(',') if prop.strip()]
+                return any(prop in properties_list for prop in target_properties)
+            
+            filtered_df = filtered_df[filtered_df['properties'].apply(
+                lambda x: has_property(x, filter_properties)
+            )]
+        
+        # 显示表格（不显示ff_level列，因为它只是用于过滤）
+        display_df = filtered_df.drop(columns=['ff_level'])
+        
         st.dataframe(
-            filtered_df,
+            display_df,
             use_container_width=True,
             hide_index=True,  # 隐藏自动序列号
             column_config={
@@ -1555,6 +1732,7 @@ def show_records_table(db):
                 "bag_piece": st.column_config.NumberColumn("Bag Pieces", format="%d"),
                 "bag_weight": st.column_config.NumberColumn("Bag Weight", format="%d kg"),
                 "ff": "FF Number",
+                "properties": "Properties",
                 "error_count": st.column_config.NumberColumn("Errors", format="%d")
             }
         )
@@ -1625,31 +1803,79 @@ def show_settings():
     """显示设置页面"""
     st.header("⚙️ Settings")
     
+    # Initialize settings in session state
+    if 'settings' not in st.session_state:
+        st.session_state.settings = {
+            'theme': 'Auto',
+            'font_family': 'Courier New',
+            'font_size_percent': 100,
+            'show_debug': False,
+            'auto_refresh': True
+        }
+    
     tab1, tab2 = st.tabs(["🎨 UI Settings", "📋 About"])
     
     with tab1:
-        st.subheader("🎨 User Interface Settings")
+        st.subheader("📝 Raw Content Font Settings")
+        st.caption("💡 Dark Mode: Menu(...) → Settings → Choose app theme 🌔 for the Dark Mode 🌚")
+       
+        # Font family selection
+        font_family = st.selectbox(
+            "Font Family for Data:",
+            ["Courier New", "Arial", "Times New Roman", "Consolas", "Monaco"],
+            index=["Courier New", "Arial", "Times New Roman", "Consolas", "Monaco"].index(
+                st.session_state.settings.get('font_family', 'Courier New')
+            ),
+            key="font_family_select"
+        )
         
-        # 主题设置
-        theme = st.selectbox("Theme:", ["Auto", "Light", "Dark"])
+        # Update font family immediately when changed
+        if font_family != st.session_state.settings.get('font_family'):
+            st.session_state.settings['font_family'] = font_family
         
-        # 显示设置
-        show_debug = st.checkbox("Show debug information", value=False)
-        auto_refresh = st.checkbox("Auto-refresh data", value=True)
+        # Font size percentage
+        font_size_percent = st.slider(
+            "Font Size for Data (% of default):",
+            min_value=50,
+            max_value=200,
+            value=st.session_state.settings.get('font_size_percent', 100),
+            step=10,
+            help="Adjust font size for Raw Content and data tables as a percentage of the default size",
+            key="font_size_slider"
+        )
         
-        # 处理设置
-        st.subheader("🔧 Processing Settings")
-        default_batch_size = st.number_input("Default batch size:", min_value=1, max_value=1000, value=10)
+        # Update font size immediately when changed
+        if font_size_percent != st.session_state.settings.get('font_size_percent'):
+            st.session_state.settings['font_size_percent'] = font_size_percent
         
-        if st.button("💾 Save Settings"):
-            st.success("✅ Settings saved!")
+        # Save settings
+        if st.button("💾 Save Settings", type="primary"):
+            st.session_state.settings.update({
+                'font_family': font_family,
+                'font_size_percent': font_size_percent,
+            })
+            st.success("✅ Settings saved successfully!")
+            # Force a rerun to apply settings immediately
+            st.rerun()
+        
+        # Reset settings
+        if st.button("🔄 Reset to Defaults"):
+            st.session_state.settings = {
+                'font_family': 'Courier New',
+                'font_size_percent': 100,
+            }
+            st.success("✅ Settings reset to defaults!")
+            # Force a rerun to apply settings immediately
+            st.rerun()
     
     with tab2:
-        st.subheader("📋 About HBPR Processing System")
+        st.subheader("📋 About FlightCheck")
         
         st.markdown("""
-        **Version:** 1.0.0  
-        **Developer:** HBPR Team  
+        **Version:** 0.6 
+                    
+        **Developer:** Gostnort 
+                    
         **Description:** A comprehensive system for processing and validating HBPR passenger records.
         
         **Features:**

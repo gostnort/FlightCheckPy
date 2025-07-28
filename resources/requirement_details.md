@@ -2,7 +2,39 @@
 
 ## Project Overview
 
-The Flight Data Processing System is a comprehensive Python application designed to process and analyze passenger records from HBPR (Hotel Booking Passenger Record) format. The system provides data validation, structured parsing, database storage, and a modern web-based UI for data management and analysis.
+The Flight Data Processing System is a comprehensive Python application designed to process and analyze passenger records from HBPR (Hotel Booking Passenger Record) format. The system provides data validation, structured parsing, database storage, and a modern web-based UI for data management and analysis. The application includes a secure authentication system using SHA256 encryption to protect user access.
+
+## 🔐 Security Architecture
+
+### Authentication System
+- **SHA256 Encryption**: All user credentials are validated using SHA256 hashing
+- **Secure Login Interface**: Professional login page with form validation
+- **Session Management**: Secure user session handling with automatic logout capability
+- **Access Control**: Restricted access to all system functions requiring authentication
+
+### Security Features
+- **Obfuscated Credentials**: No plain text usernames or passwords in source code
+- **GitHub Safe**: Code can be safely published to GitHub without exposing sensitive information
+- **Hash-Based Validation**: Username and password combinations stored as SHA256 hashes
+- **Session Protection**: User sessions are properly managed and cleaned up on logout
+
+### Authentication Flow
+```mermaid
+graph TD
+    A[User Access] --> B{Authenticated?}
+    B -->|No| C[Show Login Page]
+    C --> D[User Input Credentials]
+    D --> E[SHA256 Hash Validation]
+    E -->|Valid| F[Set Session State]
+    E -->|Invalid| G[Show Error Message]
+    F --> H[Access Granted]
+    G --> C
+    B -->|Yes| H
+    H --> I[Main Application]
+    I --> J[Logout Option]
+    J --> K[Clear Session]
+    K --> C
+```
 
 ## System Architecture
 
@@ -28,7 +60,9 @@ FlightCheckPy/
 **Purpose**: Modern Streamlit-based web interface for HBPR data processing and management.
 
 **Core Functions**:
-- `main()`: Main UI function with navigation
+- `main()`: Main UI function with authentication and navigation
+- `authenticate_user()`: SHA256-based user authentication
+- `show_login_page()`: Secure login interface
 - `show_home_page()`: System overview and statistics
 - `show_database_management()`: Database operations interface
 - `show_process_records()`: Record processing interface
@@ -38,17 +72,19 @@ FlightCheckPy/
 - `parse_hbnb_input()`: Parse HBNB number ranges and lists
 
 **Key Features**:
-- Multi-page navigation with sidebar
-- Real-time database statistics
-- Interactive record processing
-- Missing HBNB number identification
-- Batch processing capabilities
-- Export and reporting functions
-- Manual HBPR input with database selection
-- Flexible HBNB number range input (e.g., "400-410,412")
-- Database folder organization (`databases/` directory)
-- Smart record replacement logic
-- Automatic missing numbers table updates
+- **Secure Authentication**: SHA256-based login system with session management
+- **User Session Control**: Automatic logout and session cleanup
+- **Multi-page navigation with sidebar**: Protected navigation requiring authentication
+- **Real-time database statistics**: Secure access to system statistics
+- **Interactive record processing**: Authenticated record processing interface
+- **Missing HBNB number identification**: Secure data analysis features
+- **Batch processing capabilities**: Protected batch operations
+- **Export and reporting functions**: Secure data export capabilities
+- **Manual HBPR input with database selection**: Authenticated manual input interface
+- **Flexible HBNB number range input** (e.g., "400-410,412"): Secure input validation
+- **Database folder organization** (`databases/` directory): Protected database access
+- **Smart record replacement logic**: Secure record management
+- **Automatic missing numbers table updates**: Protected data maintenance
 
 ### 2. `hbpr_info_processor.py` - HBPR Record Processing
 **Purpose**: Advanced HBPR record processing with validation and structured data extraction.
@@ -122,23 +158,33 @@ FlightCheckPy/
 
 ## Class Relationships and Data Flow
 
-### Processing Workflow
+### Authentication and Processing Workflow
 
 ```mermaid
 graph TD
-    A[HBPR Input Files] --> B[HBPRProcessor]
-    B --> C[Parse Records]
-    C --> D[Create Database in databases/]
-    D --> E[HbprDatabase]
-    E --> F[Store Records]
-    F --> G[CHbpr Validation]
-    G --> H[Structured Data]
-    H --> I[Database Storage]
-    I --> J[Web UI Display]
-    J --> K[User Interaction]
-    K --> L[Manual Input Processing]
-    L --> M[Smart Record Replacement]
-    M --> N[Update Missing Numbers]
+    A[User Access] --> B{Authenticated?}
+    B -->|No| C[Login Interface]
+    C --> D[SHA256 Validation]
+    D -->|Valid| E[Set Session]
+    D -->|Invalid| C
+    E --> F[HBPR Input Files]
+    B -->|Yes| F
+    F --> G[HBPRProcessor]
+    G --> H[Parse Records]
+    H --> I[Create Database in databases/]
+    I --> J[HbprDatabase]
+    J --> K[Store Records]
+    K --> L[CHbpr Validation]
+    L --> M[Structured Data]
+    M --> N[Database Storage]
+    N --> O[Web UI Display]
+    O --> P[User Interaction]
+    P --> Q[Manual Input Processing]
+    Q --> R[Smart Record Replacement]
+    R --> S[Update Missing Numbers]
+    S --> T[Logout Option]
+    T --> U[Clear Session]
+    U --> C
 ```
 
 ### Class Hierarchy and Dependencies
@@ -277,13 +323,15 @@ IS_CA_FLYER BOOLEAN
 ```bash
 streamlit run hbpr_ui.py
 ```
-- Modern web interface for all operations
-- Real-time database management
-- Interactive record processing
-- Statistical analysis and reporting
-- Manual HBPR input with smart database selection
-- Flexible HBNB number range input
-- Database folder organization
+- **Secure Authentication**: SHA256-based login system
+- **Session Management**: Automatic logout and session cleanup
+- **Modern web interface** for all operations (requires authentication)
+- **Real-time database management** (protected access)
+- **Interactive record processing** (authenticated users only)
+- **Statistical analysis and reporting** (secure data access)
+- **Manual HBPR input** with smart database selection
+- **Flexible HBNB number range input**
+- **Database folder organization**
 
 ### 2. Command Line Processing
 ```bash
@@ -335,22 +383,26 @@ python hbpr_list_processor.py
 ## Web UI Features
 
 ### Navigation Structure
-- **Home**: System overview and statistics
-- **Database**: Database operations and maintenance
-- **Process Records**: Record processing and validation
-- **View Results**: Results analysis and export
-- **Settings**: System configuration
+- **Login**: Secure authentication interface with SHA256 validation
+- **Home**: System overview and statistics (authenticated access)
+- **Database**: Database operations and maintenance (protected)
+- **Process Records**: Record processing and validation (authenticated)
+- **View Results**: Results analysis and export (secure access)
+- **Settings**: System configuration (authenticated users)
+- **Logout**: Secure session termination and cleanup
 
 ### Interactive Features
-- **Real-time Statistics**: Live database metrics
-- **Missing Number Analysis**: Gap identification and display
-- **Batch Processing**: Multi-record processing with progress tracking
-- **Export Capabilities**: Data export in various formats
-- **Record Viewing**: Individual record inspection and validation
-- Manual HBPR Input Interface
-- Database Selection with Status Indicators
-- HBNB Range Input with Validation
-- Processing Status and Summary Display
+- **Secure Authentication**: Professional login interface with form validation
+- **User Session Display**: Shows logged-in user in sidebar
+- **Real-time Statistics**: Live database metrics (authenticated access)
+- **Missing Number Analysis**: Gap identification and display (protected)
+- **Batch Processing**: Multi-record processing with progress tracking (authenticated)
+- **Export Capabilities**: Data export in various formats (secure access)
+- **Record Viewing**: Individual record inspection and validation (authenticated)
+- **Manual HBPR Input Interface**: Secure manual input with validation
+- **Database Selection with Status Indicators**: Protected database operations
+- **HBNB Range Input with Validation**: Secure input processing
+- **Processing Status and Summary Display**: Authenticated progress tracking
 
 ### Manual HBPR Input Interface
 - **Database Selection**: Smart dropdown with flight information display
@@ -368,12 +420,14 @@ python hbpr_list_processor.py
 - Piece count limitations
 
 ### System Configuration
-- Database file naming conventions
-- Error threshold settings
-- Debug output levels
-- Processing batch sizes
-- Database folder organization (`databases/` directory)
-- HBNB number validation range (1-99999)
+- **Authentication Settings**: SHA256 hash validation for user credentials
+- **Session Management**: User session state and authentication status
+- **Database file naming conventions**: Secure database access patterns
+- **Error threshold settings**: Protected error handling
+- **Debug output levels**: Authenticated debugging capabilities
+- **Processing batch sizes**: Secure batch processing limits
+- **Database folder organization** (`databases/` directory): Protected database structure
+- **HBNB number validation range** (1-99999): Secure input validation
 
 ### Database Organization
 - **Default Location**: `databases/` folder in project root

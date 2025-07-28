@@ -38,6 +38,9 @@ class CHbpr:
     FBA_PIECE = 0
     IFBA_PIECE = 0
     FLYER_BENEFIT = 0
+    INBOUND_FLIGHT = ""
+    OUTBOUND_FLIGHT = ""
+    PROPERTIES = []
     IS_CA_FLYER = False
     # 私有变量
     __ChkBagAverageWeight = 0
@@ -79,6 +82,9 @@ class CHbpr:
             self.IFBA_PIECE = 0
             self.FLYER_BENEFIT = 0
             self.IS_CA_FLYER = False
+            self.PROPERTIES = []
+            self.INBOUND_FLIGHT = ""
+            self.OUTBOUND_FLIGHT = ""
             # 调用处理方法
             bolRun = True
             # 首先获取HBNB号码（用于错误消息）
@@ -94,6 +100,8 @@ class CHbpr:
                     self.__GetPassportExp()
                     self.__GetVisaInfo()
                     self.__NameMatch()
+                    self.__GetProperties()
+                    self.__GetConnectingFlights()
                 else:
                     self.debug_msg.append("No BN number found, skipping validation")
         except Exception as e:
@@ -317,13 +325,13 @@ class CHbpr:
 
     def __FlyerBenifit(self):
         """获取常旅客权益"""
-        # 查找FF模式并提取FF号码
-        ff_pat = re.compile(r"FF/([A-Z]{2}\s\d+/[A-Z].*)")
+        # 查找FF模式并提取FF号码 - 修复正则表达式以正确提取FF信息
+        ff_pat = re.compile(r"FF/([A-Z]{2}\s[A-Z0-9]+/[A-Z](?:/\*[GS])?)")
         ff_match = ff_pat.search(self.__Hbpr)
         # 默认没有会员，也不是国航常旅客
         result = {"piece": 0, "bol_ca": False}
         if ff_match:
-            # 提取FF号码：如 "CA 050021619897/B"
+            # 提取FF号码：如 "CA 002151005024/G/*G" 或 "CA 002151005024/B"
             self.FF = ff_match.group(1)
             self.debug_msg.append("FF number = " + self.FF)
             match_content = self.__Hbpr[ff_match.start():ff_match.end()]
@@ -568,9 +576,7 @@ class CHbpr:
             # 检查CKIN VISA模式
             ckin_visa_pat = re.compile(r"CKIN VISA")
             ckin_visa_match = ckin_visa_pat.search(self.__Hbpr)
-            ckin_twov_pat = re.compile(r"CKIN TWOV")
-            ckin_twov_match = ckin_twov_pat.search(self.__Hbpr)
-            if visa_info_match or ckin_visa_match or ckin_twov_match:
+            if visa_info_match or ckin_visa_match:
                 # 找到签证信息，记录调试信息
                 if visa_info_match:
                     self.debug_msg.append("VISA INFO found")
@@ -609,6 +615,9 @@ class CHbpr:
             'IFBA_PIECE': self.IFBA_PIECE,
             'FLYER_BENEFIT': self.FLYER_BENEFIT,
             'IS_CA_FLYER': self.IS_CA_FLYER,
+            'INBOUND_FLIGHT': self.INBOUND_FLIGHT,
+            'OUTBOUND_FLIGHT': self.OUTBOUND_FLIGHT,
+            'PROPERTIES': ','.join(self.PROPERTIES) if self.PROPERTIES else '',
             'has_error': any(self.error_msg.values()),
             'error_baggage': '\n'.join(self.error_msg["Baggage"]) if self.error_msg["Baggage"] else '',
             'error_passport': '\n'.join(self.error_msg["Passport"]) if self.error_msg["Passport"] else '',
@@ -617,6 +626,81 @@ class CHbpr:
             'error_other': '\n'.join(self.error_msg["Other"]) if self.error_msg["Other"] else '',
             'error_count': sum(1 for value in self.error_msg.values() if value)
         }
+
+
+    def __GetConnectingFlights(self):
+        """获取连接航班"""
+        # 获取进港航班
+        inbound_pattern = r"\s*(I/[A-Z]{2}\d+/\d{2}[A-Z]{3})\s*"
+        inbound_match = re.search(inbound_pattern, self.__Hbpr)
+        if inbound_match:
+            self.INBOUND_FLIGHT = inbound_match.group(1).replace("I/", "")
+        else:
+            self.INBOUND_FLIGHT = ""
+        # 获取出港航班
+        outbound_pattern = r"\s*(O/[A-Z]{2}\d+/\d{2}[A-Z]{3})\s*"
+        outbound_match = re.search(outbound_pattern, self.__Hbpr)
+        if outbound_match:
+            self.OUTBOUND_FLIGHT = outbound_match.group(1).replace("O/", "")
+        else:
+            self.OUTBOUND_FLIGHT = ""
+        return 
+    
+
+    def __GetProperties(self):
+        """获取属性"""
+        # 读取姓名行以及后面包含40个空格开头的行
+        properties_lines = []
+        for line in self.__Hbpr.split("\n"):
+            if line.startswith(" " * 40):
+                new_line = line[40:]
+                properties_lines.append(new_line)
+                continue
+            if line.startswith("  1."):
+                new_line = line[40:]
+                properties_lines.append(new_line)
+                continue
+        properties = []
+        for line in properties_lines:
+            current_property = line.split(" ")
+            properties.extend(current_property)
+        
+        #删除没用的属性
+        properties_to_remove = []
+        for property in properties:
+            if any([
+                len(property) == 1,  # 删除舱位
+                property.startswith("R"),  # 删除座位
+                property.startswith("ESTA"),  # 删除ESTA
+                property in ['PEK', 'LAX'],  # 删除目的地
+                property.startswith("TKNE"),  # 删除TKNE
+                property.startswith("FF/"),  # 删除FF属性
+                property.startswith("FBA"),  # 删除FBA的变化
+                property.startswith("IFBA"),  # 删除IFBA的变化
+                property == "ASR",  # 删除ASR
+                property == "RES",  # 删除RES
+                property == "OSR",  # 删除OSR
+                property == "ABP",  # 删除ABP
+                property.startswith("SNR"),  # 删除SNR的座位
+                property in ["M1/0", "F1/0"],  # 删除性别
+                property.startswith("BAG"),  # 删除BAG
+                property.startswith("FOID/"),  # 删除FOID
+                property.startswith("OSR"),  # 删除OSR
+                property.startswith("TMC")  # 删除TMC
+            ]):
+                properties_to_remove.append(property)
+        # 删除不需要的属性
+        for property in properties_to_remove:
+            if property in properties:
+                if property.startswith("FF/"):#FF号码后面一个属性是FF的会员号
+                    index = properties.index(property)
+                    properties.remove(property) 
+                    properties.remove(properties[index]) #紧跟其后的FF会员号会马上替代原来的index
+                    continue
+                else:
+                    properties.remove(property)
+        self.PROPERTIES = properties
+        return 
 
 
     def is_valid(self):
@@ -735,6 +819,9 @@ class HbprDatabase:
                 ('ifba_piece', 'INTEGER'),
                 ('flyer_benefit', 'INTEGER'),
                 ('is_ca_flyer', 'BOOLEAN'),
+                ('inbound_flight', 'TEXT'),
+                ('outbound_flight', 'TEXT'),
+                ('properties', 'TEXT'),
                 ('error_count', 'INTEGER'),
                 ('error_baggage', 'TEXT'),
                 ('error_passport', 'TEXT'),
@@ -832,6 +919,9 @@ class HbprDatabase:
                     ifba_piece = ?,
                     flyer_benefit = ?,
                     is_ca_flyer = ?,
+                    inbound_flight = ?,
+                    outbound_flight = ?,
+                    properties = ?,
                     error_count = ?,
                     error_baggage = ?,
                     error_passport = ?,
@@ -862,6 +952,9 @@ class HbprDatabase:
                 data['IFBA_PIECE'],
                 data['FLYER_BENEFIT'],
                 data['IS_CA_FLYER'],
+                data['INBOUND_FLIGHT'],
+                data['OUTBOUND_FLIGHT'],
+                data['PROPERTIES'],
                 data['error_count'],
                 data['error_baggage'],
                 data['error_passport'],
@@ -1399,56 +1492,14 @@ class HbprDatabase:
 
 
 def main():
-    """测试函数 - 专门测试 __GetPassengerInfo() 方法"""
-    import sys
-    import re
-    # 读取样本HBNB记录
-    try:
-        with open("sample_hbpr.txt", "r", encoding="utf-8") as f:
-            sample_content = f.read()
-        print("✓ 成功读取 sample_hbpr.txt")
-        print(f"文件大小: {len(sample_content)} 字符")
-    except Exception as e:
-        print(f"✗ 读取 sample_hbpr.txt 失败: {e}")
-        return
-    # 创建CHbpr实例
+    """测试__GetProperties方法"""
+    with open("sample_hbpr.txt", "r", encoding="utf-8") as f:
+        sample_content = f.read()
+    
     chbpr = CHbpr()
-    # 手动设置HBNB号码（模拟__GetHbnbNumber的结果）
-    hbnbPat = re.compile(r">HBPR:\s*[^,]+,(\d+)")
-    hbnbMatch = hbnbPat.search(sample_content)
-    if hbnbMatch:
-        chbpr.HbnbNumber = int(hbnbMatch.group(1))
-        print(f"\n✓ 提取到HBNB号码: {chbpr.HbnbNumber}")
-    else:
-        chbpr.HbnbNumber = 65535
-        print(f"\n✗ 未找到HBNB号码，使用默认值: {chbpr.HbnbNumber}")
+    chbpr.run(sample_content)
     
-    # 设置私有变量
-    chbpr._CHbpr__Hbpr = sample_content
-    
-    print("\n" + "=" * 80)
-    print("开始测试 __GetPassengerInfo() 方法")
-    print("=" * 80)
-    
-    # 调用__GetPassengerInfo方法
-    try:
-        result = chbpr._CHbpr__GetPassengerInfo()
-        print(f"方法返回结果: {result}")
-    except Exception as e:
-        print(f"✗ 方法执行出错: {e}")
-        import traceback
-        traceback.print_exc()
-        return
-    
-    print("\n" + "=" * 80)
-    print("__GetPassengerInfo() 提取结果:")
-    print("=" * 80)
-    print(f"乘客姓名 (NAME): '{chbpr.NAME}'")
-    print(f"登机号 (BoardingNumber): {chbpr.BoardingNumber}")
-    print(f"座位号 (SEAT): '{chbpr.SEAT}'")
-    print(f"舱位等级 (CLASS): '{chbpr.CLASS}'")
-    print(f"目的地 (DESTINATION): '{chbpr.DESTINATION}'")
-    
+    print("PROPERTIES:", chbpr.PROPERTIES)
 
 
 if __name__ == "__main__":
