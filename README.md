@@ -1,51 +1,97 @@
-# Flight Check --- Python Edition 0.5
+# Flight Check --- Python 版本 0.6
 
-## Install/Update
+## 项目简介
 
-Download this project, and extract to a new folder.
+主要用于解析和验证 **HBPR** 数据
 
-### Build an virtual environment
+## 主要功能
 
-In the project folder(where the README.md is), run the following commands
+### 🌐 Web 界面 (Streamlit)
+- **响应式设计**: 基于 Streamlit 的现代化 Web 界面
+- **数据库管理**: 完整的数据库构建和管理功能
+- **实时统计**: 实时显示处理统计和缺失数据信息
+- **数据导出**: 支持 CSV 和 Excel 格式的数据导出
 
+## 快速开始
+
+### 环境准备
+
+1. **下载项目**
+   ```bash
+   git clone [项目地址]
+   cd FlightCheckPy
+   ```
+
+2. **创建虚拟环境**
+   ```bash
+   python -m venv .venv
+   .venv/scripts/activate  # Windows
+   # 或
+   source .venv/bin/activate  # Linux/Mac
+   ```
+
+3. **安装依赖**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+### 运行应用
+
+#### Web 界面
+```bash
+streamlit run hbpr_ui.py
 ```
-python -m venv .venv
 
-.venv/scripts/activate
+## 核心模块
 
-pip install -r requirements.txt
-```
+- **main_window.py**: 桌面应用主窗口和控件设置
+- **run_button.py**: 运行按钮的功能实现
+- **hbpr_ui.py**: Web 界面主程序
+- **hbpr_info_processor.py**: HBPR 信息处理核心模块
+- **general_func.py**: 通用函数和参数定义
 
-### Update the Shortcut
+## 技术特性
 
-1. Right click the 'Run.lnk' to open its property.
+- **多界面支持**: 桌面应用 + Web 界面
+- **数据处理**: 高效的 HBPR 记录解析和验证
+- **错误处理**: 完善的错误检测和报告机制
+- **数据导出**: 多种格式的数据导出功能
+- **数据库支持**: SQLite 数据库存储和管理
 
-0. Change the 'target' to ``Current_folder_absolute_path\.venv\Scripts\pythonw.exe "Current_folder_absolute_path\main_window.py"``
+## 版本更新
 
-0. Change the 'start' to ``Current_folder_absolute_path\.venv\Scripts``
+### v0.6 新特性
+- 新增 Streamlit Web 界面
+- 改进的数据库管理系统
+- 优化的用户界面和导航
+- 增强的错误处理和报告
+- 数据源改为HBPR
 
-0. The icon is in the 'resources' folder, if you like.
+### v0.51 特性
+- 基于 PySide6 的桌面应用
+- 行李限额信息解析优化
+- 批量处理功能
+- 数据源为PR
 
-0. the '--debug' shows detail messages; the '--pr_list' shows the separated result.
+## 使用说明
 
-## Major update
+1. **准备数据**: 确保 HBPR 数据文件格式正确
+2. **选择界面**: 根据需要选择桌面应用或 Web 界面
+3. **处理数据**: 使用相应的处理功能解析和验证数据
+4. **查看结果**: 检查处理结果和错误报告
+5. **导出数据**: 将处理结果导出为所需格式
 
-1. Add an user interface based on QT PySide6.
+## 支持格式
 
-0. Fixed "FBA/1PC" of the baggage allowence.
+- **输入**: HBPR 文本记录
+- **输出**: CSV, 数据库记录
+- **数据库**: SQLite
 
-## main_window.py
+## 系统要求
 
-This is for the basic window and controls setup.
+- Windows Python 3.7+
+- 推荐使用虚拟环境
 
-## run_button.py
+## 许可证
 
-Saved functions of the button of 'Run'.
-
-## obtain_info.py
-
-Split a single PR infomation and check mistakes.
-
-## genaral_func.py
-
-Saved some arguments and general functions.
+本项目仅供学习和研究使用。

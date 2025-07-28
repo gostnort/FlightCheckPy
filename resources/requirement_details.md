@@ -1,0 +1,371 @@
+# Flight Data Processing System - Technical Documentation
+
+## Project Overview
+
+The Flight Data Processing System is a comprehensive Python application designed to process and analyze passenger records from HBPR (Hotel Booking Passenger Record) format. The system provides data validation, structured parsing, database storage, and a modern web-based UI for data management and analysis.
+
+## System Architecture
+
+### Core Components
+
+```
+FlightCheckPy/
+├── hbpr_ui.py              # Streamlit web UI for HBPR processing
+├── hbpr_info_processor.py  # HBPR record processing and validation
+├── hbpr_list_processor.py  # HBPR list processing (batch operations)
+├── general_func.py         # Utility functions and configuration
+├── run_button.py          # PR record processing (legacy)
+├── start_hbpr_ui.bat      # Windows batch file to start UI
+├── requirements.txt       # Python dependencies
+└── resources/             # Application resources
+    └── fcp0.5.ico        # Application icon
+```
+
+## File Structure and Responsibilities
+
+### 1. `hbpr_ui.py` - Web User Interface
+**Purpose**: Modern Streamlit-based web interface for HBPR data processing and management.
+
+**Core Functions**:
+- `main()`: Main UI function with navigation
+- `show_home_page()`: System overview and statistics
+- `show_database_management()`: Database operations interface
+- `show_process_records()`: Record processing interface
+- `show_view_results()`: Results viewing and analysis
+- `show_settings()`: System configuration
+
+**Key Features**:
+- Multi-page navigation with sidebar
+- Real-time database statistics
+- Interactive record processing
+- Missing HBNB number identification
+- Batch processing capabilities
+- Export and reporting functions
+
+### 2. `hbpr_info_processor.py` - HBPR Record Processing
+**Purpose**: Advanced HBPR record processing with validation and structured data extraction.
+
+**Key Classes**:
+- `CHbpr`: HBPR record validation and processing
+- `HbprDatabase`: Database operations and management
+
+**Core Functions**:
+- `CHbpr.run()`: Main processing method for HBPR records
+- `CHbpr.__GetHbnbNumber()`: Extract HBNB number
+- `CHbpr.__GetPassengerInfo()`: Extract passenger information
+- `CHbpr.__ExtractStructuredData()`: Extract structured data fields
+- `CHbpr.__MatchingBag()`: Validate baggage allowance
+- `CHbpr.__GetPassportExp()`: Check passport expiration
+- `CHbpr.__NameMatch()`: Validate passenger names
+- `HbprDatabase.build_from_hbpr_list()`: Build database from file
+- `HbprDatabase.get_validation_stats()`: Get processing statistics
+- `HbprDatabase.get_missing_hbnb_numbers()`: Find missing records
+
+### 3. `hbpr_list_processor.py` - Batch Processing
+**Purpose**: Batch processing of HBPR record lists and database creation.
+
+**Key Classes**:
+- `HBPRProcessor`: HBPR list processing and database management
+
+**Core Functions**:
+- `HBPRProcessor.parse_file()`: Parse HBPR text file
+- `HBPRProcessor._parse_full_record()`: Parse complete HBPR records
+- `HBPRProcessor._parse_simple_record()`: Parse simple HBPR records
+- `HBPRProcessor.find_missing_numbers()`: Identify missing HBNB numbers
+- `HBPRProcessor.create_database()`: Create flight-specific databases
+- `HBPRProcessor.store_records()`: Store records in database
+- `HBPRProcessor.generate_report()`: Generate processing reports
+
+### 4. `general_func.py` - Utility Functions
+**Purpose**: Centralized configuration and utility functions.
+
+**Key Classes**:
+- `CArgs`: System configuration and constants
+
+**Core Functions**:
+- `CArgs.SubCls2MainCls()`: Sub-class to main class conversion
+- `CArgs.ClassBagWeight()`: Class-based baggage weight calculation
+- `CArgs.InfBagWeight()`: Infant baggage weight constant
+- `CArgs.ForeignGoldFlyerBagWeight()`: Foreign frequent flyer weight
+- `find_a_miss()`: Find missing numbers in sequence
+
+### 5. `run_button.py` - Legacy PR Processing
+**Purpose**: Legacy PR (Passenger Record) processing functionality.
+
+**Core Functions**:
+- `separate_pr()`: Separate PR records from text file
+- `handle_batch()`: Process batch of PR records
+- `loop_obtain_info()`: Multi-threaded PR processing
+
+**Note**: This module imports from `obtain_info.py` which appears to be missing from the current project structure.
+
+## Class Relationships and Data Flow
+
+### Processing Workflow
+
+```mermaid
+graph TD
+    A[HBPR Input Files] --> B[HBPRProcessor]
+    B --> C[Parse Records]
+    C --> D[Create Database]
+    D --> E[HbprDatabase]
+    E --> F[Store Records]
+    F --> G[CHbpr Validation]
+    G --> H[Structured Data]
+    H --> I[Database Storage]
+    I --> J[Web UI Display]
+    J --> K[User Interaction]
+```
+
+### Class Hierarchy and Dependencies
+
+**1. CHbpr Class (HBPR Validation)**
+```python
+CHbpr:
+├── Dependencies: CArgs (from general_func)
+├── Input: Raw HBPR record string
+├── Processing:
+│   ├── __GetHbnbNumber() → Extract HBNB number
+│   ├── __GetPassengerInfo() → Extract passenger details
+│   ├── __ExtractStructuredData() → Extract 30+ data fields
+│   ├── __MatchingBag() → Validate baggage allowance
+│   ├── __GetPassportExp() → Check passport expiration
+│   └── __NameMatch() → Validate passenger names
+└── Output: Validation results and structured data
+```
+
+**2. HbprDatabase Class (Database Management)**
+```python
+HbprDatabase:
+├── Dependencies: SQLite database
+├── Input: HBPR records and processing results
+├── Processing:
+│   ├── build_from_hbpr_list() → Create database from file
+│   ├── update_with_chbpr_results() → Store validation results
+│   ├── get_validation_stats() → Retrieve statistics
+│   ├── get_missing_hbnb_numbers() → Find gaps
+│   └── erase_splited_records() → Clean up data
+└── Output: Database operations and queries
+```
+
+**3. HBPRProcessor Class (Batch Processing)**
+```python
+HBPRProcessor:
+├── Dependencies: File I/O, SQLite
+├── Input: HBPR text file
+├── Processing:
+│   ├── parse_file() → Parse entire file
+│   ├── _parse_full_record() → Extract complete records
+│   ├── _parse_simple_record() → Extract simple records
+│   ├── find_missing_numbers() → Identify gaps
+│   └── create_database() → Generate database
+└── Output: Flight-specific databases
+```
+
+**4. CArgs Class (Configuration)**
+```python
+CArgs:
+├── SubCls2MainCls() → Sub-class to main class conversion
+├── ClassBagWeight() → Class-based baggage weight calculation
+├── InfBagWeight() → Infant baggage weight constant
+└── ForeignGoldFlyerBagWeight() → Foreign frequent flyer weight
+```
+
+## Database Schema
+
+### Core Tables
+
+**1. hbpr_full_records**
+```sql
+CREATE TABLE hbpr_full_records (
+    hbnb_number INTEGER PRIMARY KEY,
+    record_content TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+**2. hbpr_processing_results**
+```sql
+CREATE TABLE hbpr_processing_results (
+    hbnb_number INTEGER,
+    boarding_number INTEGER,
+    has_error BOOLEAN,
+    error_count INTEGER,
+    debug_count INTEGER,
+    error_messages TEXT,
+    debug_messages TEXT,
+    processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (hbnb_number)
+);
+```
+
+**3. CHbpr Fields (Structured Data)**
+```sql
+-- Additional fields added to hbpr_processing_results
+PNR TEXT,
+NAME TEXT,
+SEAT TEXT,
+CLASS TEXT,
+DESTINATION TEXT,
+BAG_PIECE INTEGER,
+BAG_WEIGHT INTEGER,
+BAG_ALLOWANCE INTEGER,
+FF TEXT,
+PSPT_NAME TEXT,
+PSPT_EXP_DATE TEXT,
+CKIN_MSG TEXT,
+EXPC_PIECE INTEGER,
+EXPC_WEIGHT INTEGER,
+ASVC_PIECE INTEGER,
+FBA_PIECE INTEGER,
+IFBA_PIECE INTEGER,
+FLYER_BENEFIT INTEGER,
+IS_CA_FLYER BOOLEAN
+```
+
+## Processing Modes and Usage
+
+### 1. Web UI Mode
+```bash
+streamlit run hbpr_ui.py
+```
+- Modern web interface for all operations
+- Real-time database management
+- Interactive record processing
+- Statistical analysis and reporting
+
+### 2. Command Line Processing
+```bash
+python hbpr_info_processor.py
+```
+- Processes sample HBPR file
+- Performs validation using CHbpr class
+- Stores validation results in database
+
+### 3. Batch Processing
+```bash
+python hbpr_list_processor.py
+```
+- Processes HBPR list files
+- Creates flight-specific databases
+- Identifies missing records
+- Generates processing reports
+
+## Data Processing Features
+
+### Validation Capabilities
+- **Baggage Verification**: Weight and piece count validation
+- **Passport Checking**: Expiration date validation
+- **Name Matching**: Passenger name consistency verification
+- **Class Validation**: Fare class and upgrade verification
+- **HBNB Number Validation**: Record completeness checking
+
+### Structured Data Extraction
+- **30+ Data Fields**: Comprehensive data field extraction
+- **Regular Expression Parsing**: Advanced pattern matching
+- **Flight Information**: Flight number and date extraction
+- **Quality Reporting**: Parsing success rate analysis
+
+### Error Handling and Reporting
+- **Comprehensive Logging**: Debug and error message tracking
+- **Statistical Reporting**: Processing success rates
+- **Missing Data Identification**: Gap analysis in record sequences
+- **Validation Results**: Pass/fail status for each validation rule
+
+## Web UI Features
+
+### Navigation Structure
+- **Home**: System overview and statistics
+- **Database Management**: Database operations and maintenance
+- **Process Records**: Record processing and validation
+- **View Results**: Results analysis and export
+- **Settings**: System configuration
+
+### Interactive Features
+- **Real-time Statistics**: Live database metrics
+- **Missing Number Analysis**: Gap identification and display
+- **Batch Processing**: Multi-record processing with progress tracking
+- **Export Capabilities**: Data export in various formats
+- **Record Viewing**: Individual record inspection and validation
+
+## Configuration and Constants
+
+### Baggage Weight Constants
+- Infant baggage weight: 23kg
+- Foreign frequent flyer baggage weight: 23kg
+- Class-based weight calculations (F/C: 32kg, Y: 23kg)
+- Piece count limitations
+
+### System Configuration
+- Database file naming conventions
+- Error threshold settings
+- Debug output levels
+- Processing batch sizes
+
+## Development Guidelines
+
+### Code Style Standards
+- **Function Spacing**: 2 empty lines between functions, 3 between classes
+- **Internal Function Organization**: No empty lines within functions except for Chinese comment separators
+- **Type Hints**: Comprehensive type annotation for better code readability
+- **Error Handling**: Try-catch patterns for robust error management
+
+### Memory Considerations
+- Preference for not automatically updating requirement documents
+- Focus on processing efficiency
+- Minimal redundant data storage
+
+## API and Integration Points
+
+### Database Integration
+- SQLite-based storage system
+- Standardized table schemas
+- Configurable database file locations
+- Transaction-based operations
+
+### File Processing Integration
+- Support for HBPR format files
+- Configurable encoding handling
+- Batch processing capabilities
+- Error recovery mechanisms
+
+### Web UI Integration
+- Streamlit-based interface
+- Real-time data updates
+- Interactive user controls
+- Responsive design
+
+## Performance Characteristics
+
+### Processing Efficiency
+- Single-pass file processing
+- Optimized regular expression usage
+- Batch database operations
+- Memory-efficient data structures
+
+### Scalability Features
+- Configurable batch sizes
+- Database partitioning support
+- Multi-threaded processing capabilities
+- Resource usage monitoring
+
+## Quality Assurance
+
+### Testing Capabilities
+- Sample data processing verification
+- Regex pattern validation
+- Database integrity checking
+- Performance benchmarking
+
+### Monitoring and Reporting
+- Processing statistics
+- Error rate tracking
+- Data quality metrics
+- Performance monitoring
+
+## Missing Components
+
+### Legacy PR Processing
+- `obtain_info.py`: Contains CPax class for PR record processing
+- This file appears to be missing from the current project structure
+- Referenced by `run_button.py` for legacy PR processing functionality

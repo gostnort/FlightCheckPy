@@ -9,42 +9,57 @@ import pandas as pd
 import os
 import glob
 import sqlite3
+import re
+import base64
 from datetime import datetime
-from hbpr_info_processor import CHbpr, HbprDatabase, clean_bn_related_errors
+from hbpr_info_processor import CHbpr, HbprDatabase
 import traceback
+
+
+def get_icon_base64(path):
+    """将图标文件转换为base64编码"""
+    try:
+        with open(path, "rb") as icon_file:
+            return base64.b64encode(icon_file.read()).decode()
+    except FileNotFoundError:
+        return ""
 
 
 def main():
     """主UI函数"""
     st.set_page_config(
         page_title="HBPR Processing System",
-        page_icon="✈️",
+        page_icon="resources/fcp.ico",
         layout="wide",
         initial_sidebar_state="expanded"
     )
-    
-    st.title("✈️ HBPR Processing System")
-    st.markdown("---")
-    
     # 初始化session state
     if 'current_page' not in st.session_state:
         st.session_state.current_page = "🏠 Home"
-    
     # 侧边栏导航
     st.sidebar.title("📋 Navigation")
-    page = st.sidebar.selectbox(
-        "Choose a page:",
-        ["🏠 Home", "🗄️ Database Management", "🔍 Process Records", "📊 View Results", "⚙️ Settings"],
-        index=["🏠 Home", "🗄️ Database Management", "🔍 Process Records", "📊 View Results", "⚙️ Settings"].index(st.session_state.current_page)
-    )
-    
-    # 更新当前页面
-    st.session_state.current_page = page
-    
+    # 导航链接
+    if st.sidebar.button("🏠 Home", use_container_width=True):
+        st.session_state.current_page = "🏠 Home"
+    if st.sidebar.button("🗄️ Database Management", use_container_width=True):
+        st.session_state.current_page = "🗄️ Database Management"
+    if st.sidebar.button("🔍 Process Records", use_container_width=True):
+        st.session_state.current_page = "🔍 Process Records"
+    if st.sidebar.button("📊 View Results", use_container_width=True):
+        st.session_state.current_page = "📊 View Results"
+    if st.sidebar.button("⚙️ Settings", use_container_width=True):
+        st.session_state.current_page = "⚙️ Settings"
     # 根据当前页面显示内容
     current_page = st.session_state.current_page
-    
     if current_page == "🏠 Home":
+        # 只在主页显示标题
+        st.markdown("""
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <img src="data:image/x-icon;base64,{}" width="128" height="128">
+            <h3 style="margin: 0;">Flight Check 0.6 --- Python</h3>
+        </div>
+        """.format(get_icon_base64("resources/fcp.ico")), unsafe_allow_html=True)
+        st.markdown("---")
         show_home_page()
     elif current_page == "🗄️ Database Management":
         show_database_management()
@@ -58,27 +73,20 @@ def main():
 
 def show_home_page():
     """显示主页"""
-    st.header("🏠 Welcome to HBPR Processing System")
-    
+    st.header("🏠 Home Page")
     col1, col2 = st.columns(2)
-    
     with col1:
         st.subheader("📈 System Overview")
-        
         # 检查数据库状态
         try:
             db = HbprDatabase()
             db.find_database()
-            
             st.success(f"✅ Database connected: `{db.db_file}`")
-            
             # 获取HBNB范围信息
             range_info = db.get_hbnb_range_info()
             missing_numbers = db.get_missing_hbnb_numbers()
-            
             # 显示HBNB范围信息
             metrics_col1, metrics_col2, metrics_col3, metrics_col4 = st.columns(4)
-            
             with metrics_col1:
                 st.metric("HBNB Range", f"{range_info['min']} - {range_info['max']}")
             with metrics_col2:
@@ -87,14 +95,12 @@ def show_home_page():
                 st.metric("Total Found", range_info['total_found'])
             with metrics_col4:
                 st.metric("Missing Numbers", len(missing_numbers))
-            
             # 显示缺失号码表格
             if missing_numbers:
                 st.subheader("🚫 Missing HBNB Numbers")
                 # 分页显示缺失号码
                 items_per_page = 20
                 total_pages = (len(missing_numbers) + items_per_page - 1) // items_per_page
-                
                 if total_pages > 1:
                     page = st.selectbox("Page:", range(1, total_pages + 1), key="missing_page")
                     start_idx = (page - 1) * items_per_page
@@ -102,41 +108,31 @@ def show_home_page():
                     page_missing = missing_numbers[start_idx:end_idx]
                 else:
                     page_missing = missing_numbers
-                
                 # 创建缺失号码的DataFrame
                 import pandas as pd
                 missing_df = pd.DataFrame({
                     'Missing HBNB Numbers': page_missing
                 })
-                
                 st.dataframe(missing_df, use_container_width=True)
-                
                 if total_pages > 1:
                     st.info(f"Showing page {page} of {total_pages} ({len(page_missing)} of {len(missing_numbers)} missing numbers)")
             else:
                 st.success("✅ No missing HBNB numbers found!")
-                
         except Exception as e:
             st.error(f"❌ No database found: {str(e)}")
             st.info("💡 Please build a database first using the Database Management page.")
-    
     with col2:
         st.subheader("🚀 Quick Actions")
-        
         if st.button("🗄️ Build Database", use_container_width=True):
             st.session_state.current_page = "🗄️ Database Management"
             st.rerun()
-        
         if st.button("🔍 Process HBPR Record", use_container_width=True):
             st.session_state.current_page = "🔍 Process Records"
             st.rerun()
-        
         if st.button("📊 View Results", use_container_width=True):
             st.session_state.current_page = "📊 View Results"
             st.rerun()
-    
     st.markdown("---")
-    
     # 最近活动
     st.subheader("📝 How to Use")
     st.markdown("""
@@ -429,7 +425,7 @@ def process_all_records(db):
                 start_processing_all_records(db, None)  # Always process all records
             
             if st.button("🧹 Erase Result", use_container_width=True):
-                erase_bn_related_errors(db)
+                erase_splited_records(db)
         
         # 显示错误信息
         st.subheader("⚠️ Error Messages")
@@ -441,37 +437,135 @@ def process_all_records(db):
 
 def view_single_record(db):
     """查看单个记录"""
-    st.subheader("👀 View Record")
-    
-    # 获取可用的HBNB号码
     try:
         conn = sqlite3.connect(db.db_file)
         cursor = conn.cursor()
+        # 检查是否有已处理的记录
+        cursor.execute("""
+            SELECT hbnb_number, boarding_number, name, seat 
+            FROM hbpr_full_records 
+            WHERE is_validated = 1 AND (boarding_number IS NOT NULL OR name IS NOT NULL OR seat IS NOT NULL)
+            ORDER BY hbnb_number
+        """)
+        processed_records = cursor.fetchall()
+        # 获取所有记录（包括未处理的）
         cursor.execute("SELECT hbnb_number FROM hbpr_full_records ORDER BY hbnb_number")
-        available_hbnbs = [row[0] for row in cursor.fetchall()]
+        all_records = [row[0] for row in cursor.fetchall()]
         conn.close()
-        
-        if not available_hbnbs:
+        if not all_records:
             st.warning("⚠️ No HBPR records found in database.")
             return
-        
-        # HBNB选择
-        hbnb_number = st.selectbox(
-            "Select HBNB Number:",
-            available_hbnbs,
-            help="Choose an HBNB number to view"
+        # 选择记录的方式
+        selection_method = st.radio(
+            "👀 View Record 🧺🧺🧺🧺 Sorting by:",
+            ["HBNB Number", "Boarding Number (BN)", "Seat", "Name"],
+            horizontal=True
         )
-        
+        selected_record = None
+        if selection_method == "HBNB Number":
+            # HBNB选择（按数字从小到大排序）
+            hbnb_number = st.selectbox(
+                "Select HBNB Number:",
+                sorted(all_records),
+                help="Choose an HBNB number to view"
+            )
+            selected_record = hbnb_number  
+        elif selection_method == "Boarding Number (BN)":
+            # BN选择（按数字从小到大排序）
+            if processed_records:
+                # 提取有效的BN号码并排序
+                bn_records = [(row[0], row[1]) for row in processed_records if row[1] is not None and row[1] > 0]
+                bn_records.sort(key=lambda x: x[1])  
+                # 按BN号码排序
+                if bn_records:
+                    bn_options = [f"BN {record[1]} (HBNB {record[0]})" for record in bn_records]
+                    selected_bn = st.selectbox(
+                        "Select Boarding Number:",
+                        bn_options,
+                        help="Choose a boarding number to view"
+                    )
+                    # 提取HBNB号码
+                    selected_record = int(selected_bn.split("(HBNB ")[1].split(")")[0])
+                else:
+                    st.warning("⚠️ No boarding numbers found in processed records.")
+                    return
+            else:
+                st.warning("⚠️ No processed records found. Please process records first.")
+                return
+         # 座位选择（按行号从小到大，然后按座位号A-Z排序）        
+        elif selection_method == "Seat":
+            if processed_records:
+                # 提取有效的座位并排序
+                seat_records = [(row[0], row[3]) for row in processed_records if row[3] is not None and row[3].strip()]
+                if seat_records:
+                    # 自定义座位排序函数
+                    def seat_sort_key(seat_tuple):
+                        seat = seat_tuple[1]
+                        # 提取行号和座位号
+                        match = re.match(r'(\d+)([A-Z])', seat)
+                        if match:
+                            row_num = int(match.group(1))
+                            seat_letter = match.group(2)
+                            return (row_num, seat_letter)
+                        return (999, 'Z')  # 无效座位排在最后
+                    seat_records.sort(key=seat_sort_key)
+                    seat_options = [f"{record[1]} (HBNB {record[0]})" for record in seat_records]
+                    selected_seat = st.selectbox(
+                        "Select Seat:",
+                        seat_options,
+                        help="Choose a seat to view"
+                    )
+                    # 提取HBNB号码
+                    selected_record = int(selected_seat.split("(HBNB ")[1].split(")")[0])
+                else:
+                    st.warning("⚠️ No seats found in processed records.")
+                    return
+            else:
+                st.warning("⚠️ No processed records found. Please process records first.")
+                return
+        # 姓名选择（按字母A-Z排序）        
+        elif selection_method == "Name":
+            if processed_records:
+                # 提取有效的姓名并排序
+                name_records = [(row[0], row[2]) for row in processed_records if row[2] is not None and row[2].strip()]
+                if name_records:
+                    # 按姓名排序
+                    name_records.sort(key=lambda x: x[1].upper())
+                    name_options = [f"{record[1]} (HBNB {record[0]})" for record in name_records]
+                    selected_name = st.selectbox(
+                        "Select Name:",
+                        name_options,
+                        help="Choose a passenger name to view"
+                    )
+                    # 提取HBNB号码
+                    selected_record = int(selected_name.split("(HBNB ")[1].split(")")[0])
+                else:
+                    st.warning("⚠️ No names found in processed records.")
+                    return
+            else:
+                st.warning("⚠️ No processed records found. Please process records first.")
+                return
         # 显示记录预览
-        if hbnb_number:
+        if selected_record:
             st.subheader("📄 Raw HBPR Content")
+            # 显示警告信息（当选择BN或Seat时）
+            if selection_method in ["Boarding Number (BN)", "Seat"]:
+                # 使用自定义CSS来设置警告消息的样式
+                st.markdown("""
+                <style>
+                .stAlert > div[data-testid="stAlert"] {
+                    font-size: 10px !important;
+                    margin: 5px !important;
+                    padding: 5px !important;
+                }
+                </style>
+                """, unsafe_allow_html=True)
+                st.warning("⚠️ 剔除部分没有 #️⃣ BN or 💺 Seat 的记录")
             try:
-                content = db.get_hbpr_record(hbnb_number)
-                st.text_area("Raw Content:", content, height=300, disabled=True)
-                    
+                content = db.get_hbpr_record(selected_record)
+                st.text_area("Raw Content:", content, height=300, disabled=True)         
             except Exception as e:
                 st.error(f"❌ Error retrieving record: {str(e)}")
-    
     except Exception as e:
         st.error(f"❌ Error accessing database: {str(e)}")
 
@@ -626,6 +720,32 @@ def start_processing_all_records(db, batch_size):
         st.error(f"❌ Processing error: {str(e)}")
 
 
+def erase_splited_records(db):
+    """清除所有处理结果，重置hbpr_full_records表中的处理字段"""
+    try:
+        # 显示确认对话框
+        if st.button("⚠️ Confirm Erase", type="primary"):
+            with st.spinner("🧹 Erasing all processing results..."):
+                # 调用数据库类的erase_splited_records方法
+                success = db.erase_splited_records()
+                
+                if success:
+                    st.success("✅ Successfully erased all processing results!")
+                    st.info("ℹ️ All processing fields have been reset. Only HBNB numbers and raw content remain.")
+                    
+                    # 自动刷新页面以显示更新后的状态
+                    st.rerun()
+                else:
+                    st.error("❌ Failed to erase processing results.")
+        
+        else:
+            st.warning("⚠️ This will permanently remove ALL processing results from the database.")
+            st.info("💡 Only HBNB numbers and raw content will be preserved. Click 'Confirm Erase' to proceed.")
+    
+    except Exception as e:
+        st.error(f"❌ Error during cleanup: {str(e)}")
+
+
 def erase_bn_related_errors(db):
     """清除所有处理结果，重置hbpr_full_records表中的处理字段"""
     try:
@@ -675,7 +795,6 @@ def show_error_messages(db):
     """显示错误信息"""
     try:
         conn = sqlite3.connect(db.db_file)
-        
         # 查询有错误的记录
         df = pd.read_sql_query("""
             SELECT hbnb_number, name, error_count, error_messages, validated_at
@@ -683,21 +802,16 @@ def show_error_messages(db):
             WHERE is_validated = 1 AND is_valid = 0 AND error_messages IS NOT NULL
             ORDER BY validated_at DESC, hbnb_number
         """, conn)
-        
         conn.close()
-        
         if df.empty:
             st.info("ℹ️ No error messages found. All processed records are valid!")
             return
-        
         # 显示错误统计
         total_errors = len(df)
         st.write(f"**Found {total_errors} records with errors:**")
-        
         # 分页显示错误信息
         items_per_page = 10
         total_pages = (total_errors + items_per_page - 1) // items_per_page
-        
         if total_pages > 1:
             page = st.selectbox("Page:", range(1, total_pages + 1), key="error_page")
             start_idx = (page - 1) * items_per_page
@@ -705,39 +819,55 @@ def show_error_messages(db):
             page_df = df.iloc[start_idx:end_idx]
         else:
             page_df = df
-        
         # 初始化session state用于跟踪哪个记录显示弹窗
         if 'show_popup_for' not in st.session_state:
             st.session_state.show_popup_for = None
-        
         # 显示错误记录
         for _, row in page_df.iterrows():
             with st.expander(f"🚫 HBNB {row['hbnb_number']} - {row['name'] or 'Unknown'} ({row['error_count']} errors)"):
                 st.write(f"**Validated at:** {row['validated_at']}")
-                
-                # 如果当前记录需要显示弹窗，则显示弹窗内容
-                if st.session_state.show_popup_for == row['hbnb_number']:
-                    show_record_popup(db, row['hbnb_number'])
-                
                 # 添加查看记录的弹出窗口
                 col1, col2 = st.columns([3, 1])
                 with col1:
                     st.write("**Quick Actions:**")
                 with col2:
-                    if st.button(f"👀 View", key=f"view_{row['hbnb_number']}", use_container_width=True):
-                        st.session_state.show_popup_for = row['hbnb_number']
+                    # 根据当前状态显示不同的按钮样式
+                    is_viewing = st.session_state.show_popup_for == row['hbnb_number']
+                    button_text = "❌ Close" if is_viewing else "👀 View"
+                    # 使用自定义CSS样式来改变按钮背景颜色
+                    button_color = "red" if is_viewing else "yellow"
+                    button_style = f"""
+                    <style>
+                    .stButton > button[data-testid="view_{row['hbnb_number']}"] {{
+                        background-color: {button_color} !important;
+                        color: black !important;
+                        border: 2px solid {button_color} !important;
+                        font-weight: bold !important;
+                    }}
+                    .stButton > button[data-testid="view_{row['hbnb_number']}"]:hover {{
+                        background-color: {button_color} !important;
+                        opacity: 0.8 !important;
+                    }}
+                    </style>
+                    """
+                    st.markdown(button_style, unsafe_allow_html=True)
+                    if st.button(button_text, key=f"view_{row['hbnb_number']}", use_container_width=True):
+                        if is_viewing:
+                            st.session_state.show_popup_for = None
+                        else:
+                            st.session_state.show_popup_for = row['hbnb_number']
                         st.rerun()
-                
+                # 如果当前记录需要显示弹窗，则显示弹窗内容
+                if st.session_state.show_popup_for == row['hbnb_number']:
+                    show_record_popup(db, row['hbnb_number'])
                 # 解析并显示错误信息
                 if row['error_messages']:
                     errors = row['error_messages'].split('|') if '|' in row['error_messages'] else [row['error_messages']]
                     for i, error in enumerate(errors, 1):
                         if error.strip():
                             st.error(f"Error {i}: {error.strip()}")
-        
         if total_pages > 1:
             st.info(f"Showing page {page} of {total_pages} ({len(page_df)} of {total_errors} records)")
-    
     except Exception as e:
         st.error(f"❌ Error loading error messages: {str(e)}")
 
@@ -755,10 +885,6 @@ def show_record_popup(db, hbnb_number):
             disabled=True,
             key=f"popup_content_{hbnb_number}",
         )
-        # 关闭按钮
-        if st.button("❌ Close", key=f"close_{hbnb_number}"):
-            st.session_state.show_popup_for = None
-            st.rerun()
     except Exception as e:
         st.error(f"❌ Error retrieving record: {str(e)}")
 
@@ -778,10 +904,8 @@ def process_manual_input():
             try:
                 chbpr = CHbpr()
                 chbpr.run(hbpr_content)
-                
                 st.success("✅ Manual input processed!")
                 display_processing_results(chbpr)
-                
             except Exception as e:
                 st.error(f"❌ Error processing manual input: {str(e)}")
         else:

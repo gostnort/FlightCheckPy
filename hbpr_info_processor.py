@@ -639,6 +639,8 @@ class HbprDatabase:
                 if cursor.fetchone():
                     conn.close()
                     self.db_file = db_file
+                    # 确保数据库有最新的字段结构
+                    self._add_chbpr_fields()
                     return db_file
                 conn.close()
             except sqlite3.Error:
@@ -685,6 +687,7 @@ class HbprDatabase:
             new_fields = [
                 ('is_validated', 'BOOLEAN DEFAULT 0'),
                 ('is_valid', 'BOOLEAN'),
+                ('boarding_number', 'INTEGER'),
                 ('pnr', 'TEXT'),
                 ('name', 'TEXT'),
                 ('seat', 'TEXT'),
@@ -730,6 +733,9 @@ class HbprDatabase:
         """从数据库获取HBPR记录内容"""
         if not self.db_file:
             self.find_database()
+        else:
+            # 确保数据库有最新的字段结构
+            self._add_chbpr_fields()
         
         try:
             conn = sqlite3.connect(self.db_file)
@@ -752,6 +758,9 @@ class HbprDatabase:
         """使用CHbpr实例的结果更新hbpr_full_records表"""
         if not self.db_file:
             self.find_database()
+        else:
+            # 确保数据库有最新的字段结构
+            self._add_chbpr_fields()
         
         # 获取结构化数据
         data = chbpr_instance.get_structured_data()
@@ -771,6 +780,7 @@ class HbprDatabase:
                 UPDATE hbpr_full_records SET
                     is_validated = 1,
                     is_valid = ?,
+                    boarding_number = ?,
                     pnr = ?,
                     name = ?,
                     seat = ?,
@@ -796,6 +806,7 @@ class HbprDatabase:
                 WHERE hbnb_number = ?
             ''', (
                 chbpr_instance.is_valid(),
+                data['boarding_number'],
                 data['PNR'],
                 data['NAME'],
                 data['SEAT'],
@@ -931,11 +942,10 @@ class HbprDatabase:
             raise Exception(f"Database error: {e}")
     
     
-    def erase_all_records_except_core(self):
+    def erase_splited_records(self):
         """删除hbpr_full_records表中除hbnb_number和record_content外的所有记录"""
         if not self.db_file:
             self.find_database()
-        
         try:
             conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
@@ -944,415 +954,86 @@ class HbprDatabase:
             cursor.execute("SELECT COUNT(*) FROM hbpr_full_records")
             total_records = cursor.fetchone()[0]
             
-            # 删除所有记录
-            cursor.execute("DELETE FROM hbpr_full_records")
+            # 获取表的所有列名
+            cursor.execute("PRAGMA table_info(hbpr_full_records)")
+            columns = cursor.fetchall()
+            column_names = [col[1] for col in columns]
             
-            # 重置自增ID（如果存在）
-            try:
-                cursor.execute("DELETE FROM sqlite_sequence WHERE name='hbpr_full_records'")
-            except sqlite3.Error:
-                # sqlite_sequence表可能不存在，忽略错误
-                pass
+            print(f"发现表字段: {column_names}")
             
-            conn.commit()
+            # 找出需要清除的字段（除了hbnb_number和record_content）
+            fields_to_clear = [col for col in column_names if col not in ['hbnb_number', 'record_content']]
+            print(f"需要清除的字段: {fields_to_clear}")
+            
+            if fields_to_clear:
+                # 构建UPDATE语句，将所有其他字段设置为NULL
+                set_clause = ", ".join([f"{field} = NULL" for field in fields_to_clear])
+                update_sql = f"UPDATE hbpr_full_records SET {set_clause}"
+                
+                print(f"执行SQL: {update_sql}")
+                cursor.execute(update_sql)
+                conn.commit()
+                print(f"已清除 {len(fields_to_clear)} 个字段的数据，保留 {total_records} 条记录")
+            else:
+                print("没有需要清除的字段")
+            
             conn.close()
-            
-            print(f"Erased {total_records} records from hbpr_full_records table")
             return True
-            
         except sqlite3.Error as e:
             raise Exception(f"Database error: {e}")
 
 
-def build_database_from_hbpr_list():
-    """使用hbpr_list_processor从sample_hbpr_list.txt构建数据库"""
-    try:
-        db = HbprDatabase()
-        processor = db.build_from_hbpr_list()
-        return db, processor
-    except Exception as e:
-        print(f"Error building database: {e}")
-        print("Processing stopped.")
-        return None, None
-
-
-def get_hbpr_record_from_db(hbnb_number: int, db_file: str = None):
-    """从数据库获取HBPR记录内容"""
-    try:
-        db = HbprDatabase(db_file)
-        return db.get_hbpr_record(hbnb_number)
-    except Exception as e:
-        print(f"Error getting HBPR record: {e}")
-        return None
-
-
-def update_hbpr_record_with_validation(chbpr_instance: CHbpr, db_file: str = None):
-    """使用CHbpr实例的结果更新hbpr_full_records表"""
-    try:
-        db = HbprDatabase(db_file)
-        return db.update_with_chbpr_results(chbpr_instance)
-    except Exception as e:
-        print(f"Error updating HBPR record: {e}")
-        return False
-
-
-
-
-def test_chbpr_with_sample_data():
-    """测试CHbpr类使用示例HBPR数据"""
-    print("TESTING CHbpr CLASS WITH SAMPLE DATA")
-    
-    # 读取示例文件
-    sample_file = "sample_hbpr.txt"
-    try:
-        print(f"Reading sample data from '{sample_file}'...")
-        with open(sample_file, 'r', encoding='utf-8', errors='ignore') as file:
-            content = file.read()   
-    except FileNotFoundError:
-        print(f"Error: {sample_file} not found!")
-        return
-    
-    # 创建CHbpr实例并处理记录
-    hbpr_processor = CHbpr()
-    hbpr_processor.run(content)
-    
-    # 获取结构化数据
-    structured_data = hbpr_processor.get_structured_data()
-    print("EXTRACTED DATA:")
-    print(f"  HBNB Number: {structured_data['hbnb_number']}")
-    print(f"  Boarding Number: {structured_data['boarding_number']}")
-    print(f"  PNR: {structured_data['PNR']}")
-    print(f"  Name: {structured_data['NAME']}")
-    print(f"  Seat: {structured_data['SEAT']}")
-    print(f"  Class: {structured_data['CLASS']}")
-    print(f"  Destination: {structured_data['DESTINATION']}")
-    print(f"  Passport Name: {structured_data['PSPT_NAME']}")
-    print(f"  FF: {structured_data['FF']}")
-    print(f"  Bag Pieces: {structured_data['BAG_PIECE']}")
-    print(f"  Bag Weight: {structured_data['BAG_WEIGHT']}")
-    print(f"  Bag Allowance: {structured_data['BAG_ALLOWANCE']}")
-    
-    # 显示验证状态
-    if hbpr_processor.is_valid():
-        print("  ✅ VALIDATION: PASSED")
-    else:
-        print("  ❌ VALIDATION: FAILED")
-        print("  ERRORS:")
-        for error in hbpr_processor.error_msg:
-            print(f"    - {error}")
-    
-    # 显示调试信息（部分）
-    if hbpr_processor.debug_msg:
-        print("  DEBUG INFO:")
-        for debug in hbpr_processor.debug_msg:
-            print(f"    - {debug}")
-    return 
-
-
-def test_full_workflow():
-    """测试完整工作流程：构建数据库 -> 获取记录 -> 处理 -> 更新"""
-    print("=== TESTING FULL WORKFLOW ===")
-    
-    try:
-        # 步骤1：构建数据库
-        db, processor = build_database_from_hbpr_list()
-        if not db or not processor:
-            return
-        
-        # 步骤2：获取一个HBPR记录进行测试
-        test_hbnb = 2  # 测试HBNB号码
-        print(f"\nRetrieving HBPR record for HBNB {test_hbnb}...")
-        hbpr_content = db.get_hbpr_record(test_hbnb)
-        
-        print(f"Found HBPR record for HBNB {test_hbnb}")
-        print(f"Record length: {len(hbpr_content)} characters")
-        
-        # 步骤3：使用CHbpr处理记录
-        print(f"\nProcessing HBPR {test_hbnb} with CHbpr...")
-        chbpr = CHbpr()
-        chbpr.run(hbpr_content)
-        
-        # 步骤4：显示结果
-        data = chbpr.get_structured_data()
-        print(f"\nProcessing Results:")
-        print(f"  HBNB: {data['hbnb_number']}")
-        print(f"  Name: {data['NAME']}")
-        print(f"  Class: {data['CLASS']}")
-        print(f"  Valid: {chbpr.is_valid()}")
-        if not chbpr.is_valid():
-            print(f"  Errors: {data['error_count']}")
-            for error in chbpr.error_msg[:3]:
-                print(f"    - {error}")
-        
-        # 步骤5：更新数据库
-        print(f"\nUpdating hbpr_full_records table with validation results...")
-        success = db.update_with_chbpr_results(chbpr)
-        if success:
-            print("✅ Database updated successfully!")
-        else:
-            print("❌ Failed to update database")
-        
-        # 步骤6：显示统计信息
-        print(f"\nDatabase Statistics:")
-        stats = db.get_validation_stats()
-        print(f"  Total records: {stats['total_records']}")
-        print(f"  Validated records: {stats['validated_records']}")
-        print(f"  Valid records: {stats['valid_records']}")
-        print(f"  Invalid records: {stats['invalid_records']}")
-        
-        print(f"\n=== Test Complete ===")
-        
-    except Exception as e:
-        print(f"❌ Workflow failed: {e}")
-        print("Processing stopped.")
-
-
-def test_database_class():
-    """测试HbprDatabase类的功能"""
-    print("=== TESTING HbprDatabase CLASS ===")
-    
-    try:
-        # 测试数据库构建
-        print("1. Testing database building...")
-        db = HbprDatabase()
-        processor = db.build_from_hbpr_list()
-        print(f"   ✅ Database built: {db.db_file}")
-        
-        # 测试记录获取
-        print("\n2. Testing record retrieval...")
-        test_hbnb = 2
-        content = db.get_hbpr_record(test_hbnb)
-        print(f"   ✅ Retrieved HBNB {test_hbnb}, length: {len(content)} chars")
-        
-        # 测试CHbpr处理和数据库更新
-        print("\n3. Testing CHbpr processing and database update...")
-        chbpr = CHbpr()
-        chbpr.run(content)
-        success = db.update_with_chbpr_results(chbpr)
-        print(f"   ✅ Database update: {'SUCCESS' if success else 'FAILED'}")
-        
-        # 测试统计信息
-        print("\n4. Testing validation statistics...")
-        stats = db.get_validation_stats()
-        print(f"   ✅ Stats retrieved: {stats}")
-        
-        print("\n=== HbprDatabase Class Test Complete ===")
-        
-    except Exception as e:
-        print(f"❌ Database class test failed: {e}")
-
-
-def clean_bn_related_errors(db_file: str = None, dry_run: bool = True):
-    """清理数据库中与BN（登机号）相关的错误信息
-    
-    Args:
-        db_file: 数据库文件路径，如果为None则自动查找
-        dry_run: 如果为True，只显示将要清理的内容，不实际修改数据库
-    
-    Returns:
-        int: 清理的记录数量
-    """
-    try:
-        # 如果没有指定数据库文件，尝试查找
-        if not db_file:
-            db = HbprDatabase()
-            db.find_database()
-            db_file = db.db_file
-        
-        if not os.path.exists(db_file):
-            print(f"❌ 数据库文件不存在: {db_file}")
-            return 0
-        
-        print(f"🔧 清理BN相关错误 ({'预览模式' if dry_run else '执行模式'}): {db_file}")
-        
-        conn = sqlite3.connect(db_file)
-        cursor = conn.cursor()
-        
-        # 查找包含BN相关错误的记录
-        cursor.execute("""
-            SELECT hbnb_number, name, error_count, error_messages, is_valid
-            FROM hbpr_full_records 
-            WHERE error_messages IS NOT NULL AND error_messages != ''
-        """)
-        
-        all_error_records = cursor.fetchall()
-        
-        if not all_error_records:
-            print("✅ 没有找到需要清理的错误记录")
-            conn.close()
-            return 0
-        
-        cleaned_count = 0
-        
-        # BN相关错误的匹配模式 - BN#0是最常见的模式
-        bn_error_patterns = [
-            r'BN#0[^0-9]',  # BN#0 后面跟非数字字符（如分隔符）
-            r'Boarding Number should be 0',
-            r'boarding.*not found',
-            r'BN.*not.*found',
-            r'missing.*boarding.*number',
-        ]
-        
-        for hbnb, name, error_count, error_messages, is_valid in all_error_records:
-            if not error_messages:
-                continue
-            
-            # 按行分割错误信息
-            error_lines = error_messages.split('\n')
-            cleaned_lines = []
-            removed_errors = []
-            
-            for line in error_lines:
-                line = line.strip()
-                if not line:
-                    continue
-                
-                # 检查是否为BN相关错误
-                is_bn_error = False
-                for pattern in bn_error_patterns:
-                    if re.search(pattern, line, re.IGNORECASE):
-                        is_bn_error = True
-                        removed_errors.append(line)
-                        break
-                
-                # 如果不是BN相关错误，保留
-                if not is_bn_error:
-                    cleaned_lines.append(line)
-            
-            # 如果有BN错误被移除
-            if removed_errors:
-                new_error_messages = '\n'.join(cleaned_lines) if cleaned_lines else ''
-                new_error_count = len(cleaned_lines)
-                new_is_valid = 1 if new_error_count == 0 else 0
-                
-                if not dry_run:
-                    print(f"  🔧 清理 HBNB {hbnb} - {name or 'Unknown'}: {error_count} -> {new_error_count} 个错误")
-                else:
-                    print(f"  🔍 将清理 HBNB {hbnb} - {name or 'Unknown'}: {error_count} -> {new_error_count} 个错误")
-                
-                if not dry_run:
-                    # 实际更新数据库
-                    cursor.execute("""
-                        UPDATE hbpr_full_records 
-                        SET error_count = ?, error_messages = ?, is_valid = ?, validated_at = CURRENT_TIMESTAMP
-                        WHERE hbnb_number = ?
-                    """, (new_error_count, new_error_messages, new_is_valid, hbnb))
-                
-                cleaned_count += 1
-        
-        if not dry_run and cleaned_count > 0:
-            conn.commit()
-            print(f"\n✅ 已清理 {cleaned_count} 条记录中的BN相关错误")
-        elif dry_run:
-            print(f"\n🔍 预览: 将清理 {cleaned_count} 条记录")
-            print("使用 clean_bn_related_errors(dry_run=False) 执行实际清理")
-        else:
-            print(f"\n✅ 没有找到需要清理的BN相关错误")
-        
-        conn.close()
-        return cleaned_count
-        
-    except Exception as e:
-        print(f"❌ BN错误清理失败: {e}")
-        return 0
-
-
-
-def check_and_fix_bn_errors_in_chbpr():
-    """检查并修复CHbpr类中的BN错误处理逻辑
-    
-    确保CHbpr类不会为缺失的BN（登机号）生成错误信息，
-    因为BN是可选的字段。
-    """
-    print("🔍 检查CHbpr类的BN错误处理...")
-    
-    # 这个函数主要是提醒和文档化
-    print("✅ CHbpr类已正确处理可选的BN字段:")
-    print("   - BN不存在时，BoardingNumber设为0")
-    print("   - 不会为缺失的BN生成错误信息")
-    print("   - 但是在错误分隔符中会显示'BN#0'，这需要在数据库层面清理")
-
-
-
-def get_bn_cleanup_statistics(db_file: str = None):
-    """获取BN清理相关的统计信息"""
-    try:
-        if not db_file:
-            db = HbprDatabase()
-            db.find_database() 
-            db_file = db.db_file
-        
-        conn = sqlite3.connect(db_file)
-        cursor = conn.cursor()
-        
-        # 检查包含BN#0错误的记录数
-        cursor.execute("""
-            SELECT COUNT(*) FROM hbpr_full_records 
-            WHERE error_messages LIKE '%BN#0%'
-        """)
-        bn_zero_errors = cursor.fetchone()[0]
-        
-        # 检查总的错误记录数
-        cursor.execute("""
-            SELECT COUNT(*) FROM hbpr_full_records 
-            WHERE error_messages IS NOT NULL AND error_messages != ''
-        """)
-        total_error_records = cursor.fetchone()[0]
-        
-        # 检查有效记录数
-        cursor.execute("SELECT COUNT(*) FROM hbpr_full_records WHERE is_valid = 1")
-        valid_records = cursor.fetchone()[0]
-        
-        # 检查总记录数
-        cursor.execute("SELECT COUNT(*) FROM hbpr_full_records")
-        total_records = cursor.fetchone()[0]
-        
-        print(f"📊 BN错误统计信息 ({db_file}):")
-        print(f"   - 包含BN#0错误的记录: {bn_zero_errors}")
-        print(f"   - 总错误记录数: {total_error_records}")
-        print(f"   - 有效记录数: {valid_records}")
-        print(f"   - 总记录数: {total_records}")
-        
-        if total_records > 0:
-            clean_rate = ((total_records - bn_zero_errors) / total_records) * 100
-            print(f"   - 清理后预期成功率: {clean_rate:.1f}%")
-        
-        conn.close()
-        return {
-            'bn_zero_errors': bn_zero_errors,
-            'total_error_records': total_error_records,
-            'valid_records': valid_records,
-            'total_records': total_records
-        }
-        
-    except Exception as e:
-        print(f"❌ 统计信息获取失败: {e}")
-        return None
-
-
 
 def main():
-    """主函数"""
+    """主函数 - 测试erase_splited_records功能"""
     import sys
-    if len(sys.argv) > 1 and sys.argv[1] == '--test':
-        # 测试模式：测试CHbpr类
-        test_chbpr_with_sample_data()
-    elif len(sys.argv) > 1 and sys.argv[1] == '--workflow':
-        # 工作流测试模式
-        test_full_workflow()
-    elif len(sys.argv) > 1 and sys.argv[1] == '--build':
-        # 构建数据库模式
-        build_database_from_hbpr_list()
-    elif len(sys.argv) > 1 and sys.argv[1] == '--db-test':
-        # 数据库类测试模式
-        test_database_class()
-    elif len(sys.argv) > 1 and sys.argv[1] == '--clean-bn':
-        # BN错误清理模式
-        get_bn_cleanup_statistics()
-        clean_bn_related_errors(dry_run=False)
-    else:
-        # 默认：运行完整工作流测试
-        test_full_workflow()
+    import sqlite3
+    # 创建数据库实例
+    db = HbprDatabase("CA984_25JUL25.db")
+    try:
+        # 查找数据库文件
+        db.find_database()
+        print(f"找到数据库文件: {db.db_file}")
+        print("=" * 60)
+        # 连接数据库查看操作前的状态
+        conn = sqlite3.connect(db.db_file)
+        cursor = conn.cursor()
+        print("执行 erase_splited_records() 操作...")
+        success = db.erase_splited_records()
+        if success:
+            print("操作执行成功!")
+        else:
+            print("操作执行失败!")
+            return
+        print("\n" + "=" * 60)
+        # 连接数据库查看操作后的状态
+        conn = sqlite3.connect(db.db_file)
+        cursor = conn.cursor()
+        # 获取操作后的记录数和示例数据
+        cursor.execute("SELECT COUNT(*) FROM hbpr_full_records")
+        total_after = cursor.fetchone()[0]
+        print(f"操作后记录总数: {total_after}")
+        # 检查hbnb_number是否保留
+        cursor.execute("SELECT COUNT(*) FROM hbpr_full_records WHERE hbnb_number IS NOT NULL")
+        hbnb_count = cursor.fetchone()[0]
+        if hbnb_count == total_after:
+            print("✓ hbnb_number 字段完全保留")
+        else:
+            print(f"✗ hbnb_number 字段丢失: {hbnb_count}/{total_after}")
+        # 检查record_content是否保留
+        cursor.execute("SELECT COUNT(*) FROM hbpr_full_records WHERE record_content IS NOT NULL AND record_content != ''")
+        content_count = cursor.fetchone()[0]
+        if content_count == total_after:
+            print("✓ record_content 字段完全保留")
+        else:
+            print(f"✗ record_content 字段丢失: {content_count}/{total_after}")
+        conn.close()
+        print("\n" + "=" * 60)
+        print("测试完成!")
+    except Exception as e:
+        print(f"测试过程中发生错误: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 if __name__ == "__main__":
