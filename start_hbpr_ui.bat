@@ -17,8 +17,36 @@ echo [INFO] Python found:
 python --version
 
 echo.
+echo [INFO] Checking for virtual environment...
+
+:: Check if virtual environment exists
+if not exist ".venv" (
+    echo [INFO] Virtual environment not found. Creating one...
+    python -m venv .venv
+    if errorlevel 1 (
+        echo [ERROR] Failed to create virtual environment!
+        pause
+        exit /b 1
+    )
+    echo [SUCCESS] Virtual environment created successfully!
+)
+
+:: Activate virtual environment
+echo [INFO] Activating virtual environment...
+call .venv\Scripts\activate.bat
+if errorlevel 1 (
+    echo [ERROR] Failed to activate virtual environment!
+    pause
+    exit /b 1
+)
+
+echo [SUCCESS] Virtual environment activated!
+echo [INFO] Python in virtual environment: 
+python --version
+
+echo.
 echo [INFO] Installing required packages...
-pip install streamlit pandas openpyxl --quiet --disable-pip-version-check
+pip install -r requirements.txt --quiet --disable-pip-version-check
 
 if errorlevel 1 (
     echo [ERROR] Failed to install packages!
@@ -48,4 +76,6 @@ streamlit run hbpr_ui.py --server.headless false
 
 echo.
 echo [INFO] HBPR UI has been stopped.
+echo [INFO] Deactivating virtual environment...
+deactivate
 pause 
