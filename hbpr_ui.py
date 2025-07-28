@@ -16,6 +16,16 @@ from hbpr_info_processor import CHbpr, HbprDatabase
 import traceback
 
 
+RAW_CONTENT_FONT = """
+        <style>
+        .stTextArea textarea {
+            font-family: "Courier New", monospace !important;
+            font-size: 14px !important;
+        }
+        </style>
+        """
+
+
 def get_icon_base64(path):
     """将图标文件转换为base64编码"""
     try:
@@ -564,6 +574,8 @@ def view_single_record(db):
                 st.warning("⚠️ 剔除部分没有 #️⃣ BN or 💺 Seat 的记录")
             try:
                 content = db.get_hbpr_record(selected_record)
+                # 添加自定义CSS来设置Raw Content的字体
+                st.markdown(RAW_CONTENT_FONT, unsafe_allow_html=True)
                 st.text_area("Raw Content:", content, height=300, disabled=True)         
             except Exception as e:
                 st.error(f"❌ Error retrieving record: {str(e)}")
@@ -941,10 +953,9 @@ def show_error_messages(db):
                     
                     for error_type, label in zip(error_types, error_labels):
                         if row[error_type] and row[error_type].strip():
-                            errors = row[error_type].split('\n') if '\n' in row[error_type] else [row[error_type]]
-                            for error in errors:
-                                if error.strip():
-                                    st.error(f"🔴 {label}: {error.strip()}")
+                            # 使用markdown来支持换行显示
+                            error_text = row[error_type].replace('\n', '<br>')
+                            st.markdown(f"🔴 **{label}:** {error_text}", unsafe_allow_html=True)
                 else:
                     # 只显示选中的错误类型
                     error_field_map = {
@@ -956,10 +967,9 @@ def show_error_messages(db):
                     }
                     error_field = error_field_map[selected_error_type]
                     if row[error_field] and row[error_field].strip():
-                        errors = row[error_field].split('\n') if '\n' in row[error_field] else [row[error_field]]
-                        for error in errors:
-                            if error.strip():
-                                st.error(f"🔴 {selected_error_type}: {error.strip()}")
+                        # 使用markdown来支持换行显示
+                        error_text = row[error_field].replace('\n', '<br>')
+                        st.markdown(f"🔴 **{selected_error_type}:** {error_text}", unsafe_allow_html=True)
         if total_pages > 1:
             st.info(f"Showing page {page} of {total_pages} ({len(page_df)} of {total_errors} records)")
     except Exception as e:
@@ -971,6 +981,8 @@ def show_record_popup(db, hbnb_number):
     try:
         # 获取原始内容
         content = db.get_hbpr_record(hbnb_number)
+        # 添加自定义CSS来设置Raw Content的字体
+        st.markdown(RAW_CONTENT_FONT, unsafe_allow_html=True)
         # 显示原始内容，使用全宽度
         st.text_area(
             "Raw Content:",

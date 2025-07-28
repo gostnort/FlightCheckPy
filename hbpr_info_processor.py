@@ -316,7 +316,7 @@ class CHbpr:
     def __FlyerBenifit(self):
         """获取常旅客权益"""
         # 查找FF模式并提取FF号码
-        ff_pat = re.compile(r"FF/([A-Z]{2}\s\d+/[A-Z])")
+        ff_pat = re.compile(r"FF/([A-Z]{2}\s\d+/[A-Z].*)")
         ff_match = ff_pat.search(self.__Hbpr)
         # 默认没有会员，也不是国航常旅客
         result = {"piece": 0, "bol_ca": False}
@@ -325,17 +325,21 @@ class CHbpr:
             self.FF = ff_match.group(1)
             self.debug_msg.append("FF number = " + self.FF)
             match_content = self.__Hbpr[ff_match.start():ff_match.end()]
+            self.debug_msg.append("FF match content = " + match_content)
             # 检查是否为国航会员
             if self.FF.startswith("CA"):
                 result["bol_ca"] = True
             # 查找金卡标识 /*G
             if "/*G" in match_content:
                 result["piece"] = 1
+                self.debug_msg.append("Found Gold Card /*G")
             # 查找银卡标识 /*S (只对国航会员有效)
             elif "/*S" in match_content and result["bol_ca"]:
                 result["piece"] = 1
+                self.debug_msg.append("Found Silver Card /*S")
         else:
             self.FF = ""
+            self.debug_msg.append("No FF match found")
         self.debug_msg.append("flyer benif = " + str(result["piece"]))
         self.debug_msg.append("CA flyer    = " + str(result["bol_ca"]))
         self.FLYER_BENEFIT = result["piece"]
@@ -573,8 +577,8 @@ class CHbpr:
             else:
                 # 未找到签证信息，添加错误
                 self.error_msg["Visa"].append(
-                    f"HBPR{self.HbnbNumber},\tNo visa information found for {nationality} passport holder /n"
-                    f"(PAX: {self.NAME}, BN: {self.BoardingNumber})"
+                    f"HBPR{self.HbnbNumber},\tNo visa information found for {nationality} passport holder\n"
+                    f"PAX: {self.NAME}, BN: {self.BoardingNumber}"
                 )
         return
 
@@ -1002,55 +1006,92 @@ class HbprDatabase:
 
 
 def main():
-    """主函数 - 测试erase_splited_records功能"""
+    """主函数 - 测试行李计算逻辑"""
     import sys
-    import sqlite3
-    # 创建数据库实例
-    db = HbprDatabase("CA984_25JUL25.db")
+    
+    print("=" * 80)
+    print("测试行李计算逻辑 - HBNB 7 案例")
+    print("=" * 80)
+    
+    # 读取样本HBNB记录
     try:
-        # 查找数据库文件
-        db.find_database()
-        print(f"找到数据库文件: {db.db_file}")
-        print("=" * 60)
-        # 连接数据库查看操作前的状态
-        conn = sqlite3.connect(db.db_file)
-        cursor = conn.cursor()
-        print("执行 erase_splited_records() 操作...")
-        success = db.erase_splited_records()
-        if success:
-            print("操作执行成功!")
-        else:
-            print("操作执行失败!")
-            return
-        print("\n" + "=" * 60)
-        # 连接数据库查看操作后的状态
-        conn = sqlite3.connect(db.db_file)
-        cursor = conn.cursor()
-        # 获取操作后的记录数和示例数据
-        cursor.execute("SELECT COUNT(*) FROM hbpr_full_records")
-        total_after = cursor.fetchone()[0]
-        print(f"操作后记录总数: {total_after}")
-        # 检查hbnb_number是否保留
-        cursor.execute("SELECT COUNT(*) FROM hbpr_full_records WHERE hbnb_number IS NOT NULL")
-        hbnb_count = cursor.fetchone()[0]
-        if hbnb_count == total_after:
-            print("✓ hbnb_number 字段完全保留")
-        else:
-            print(f"✗ hbnb_number 字段丢失: {hbnb_count}/{total_after}")
-        # 检查record_content是否保留
-        cursor.execute("SELECT COUNT(*) FROM hbpr_full_records WHERE record_content IS NOT NULL AND record_content != ''")
-        content_count = cursor.fetchone()[0]
-        if content_count == total_after:
-            print("✓ record_content 字段完全保留")
-        else:
-            print(f"✗ record_content 字段丢失: {content_count}/{total_after}")
-        conn.close()
-        print("\n" + "=" * 60)
-        print("测试完成!")
+        with open("sample_hbpr.txt", "r", encoding="utf-8") as f:
+            sample_content = f.read()
+        print("✓ 成功读取 sample_hbpr.txt")
     except Exception as e:
-        print(f"测试过程中发生错误: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"✗ 读取 sample_hbpr.txt 失败: {e}")
+        return
+    
+    # 创建CHbpr实例并处理样本数据
+    chbpr = CHbpr()
+    print("\n开始处理HBNB记录...")
+    chbpr.run(sample_content)
+    
+    print("\n" + "=" * 80)
+    print("结构化数据提取结果:")
+    print("=" * 80)
+    
+    # 显示关键字段
+    print(f"HBNB Number: {chbpr.HbnbNumber}")
+    print(f"Passenger Name: {chbpr.NAME}")
+    print(f"Class: {chbpr.CLASS}")
+    print(f"Frequent Flyer: {chbpr.FF}")
+    print(f"FBA Piece: {chbpr.FBA_PIECE}")
+    print(f"IFBA Piece: {chbpr.IFBA_PIECE}")
+    print(f"Flyer Benefit: {chbpr.FLYER_BENEFIT}")
+    print(f"Is CA Flyer: {chbpr.IS_CA_FLYER}")
+    print(f"Checked Bag Pieces: {chbpr.BAG_PIECE}")
+    print(f"Checked Bag Weight: {chbpr.BAG_WEIGHT}")
+    print(f"Expected Pieces: {chbpr.EXPC_PIECE}")
+    print(f"Expected Weight: {chbpr.EXPC_WEIGHT}")
+    
+    print("\n" + "=" * 80)
+    print("调试信息:")
+    print("=" * 80)
+    for msg in chbpr.debug_msg:
+        print(f"  {msg}")
+    
+    print("\n" + "=" * 80)
+    print("错误信息:")
+    print("=" * 80)
+    for error_type, errors in chbpr.error_msg.items():
+        if errors:
+            print(f"{error_type}:")
+            for error in errors:
+                print(f"  {error}")
+        else:
+            print(f"{error_type}: 无错误")
+    
+    print("\n" + "=" * 80)
+    print("行李计算分析:")
+    print("=" * 80)
+    
+    # 手动验证计算
+    print("手动验证行李计算:")
+    print(f"  实际行李: {chbpr.BAG_PIECE} 件, {chbpr.BAG_WEIGHT} kg")
+    print(f"  允许行李: {chbpr.EXPC_PIECE} 件, {chbpr.EXPC_WEIGHT} kg")
+    
+    if chbpr.BAG_PIECE > chbpr.EXPC_PIECE:
+        print(f"  ✗ 行李件数超限: {chbpr.BAG_PIECE} > {chbpr.EXPC_PIECE}")
+    else:
+        print(f"  ✓ 行李件数正常: {chbpr.BAG_PIECE} <= {chbpr.EXPC_PIECE}")
+    
+    if chbpr.BAG_WEIGHT > chbpr.EXPC_WEIGHT:
+        print(f"  ✗ 行李重量超限: {chbpr.BAG_WEIGHT} > {chbpr.EXPC_WEIGHT}")
+    else:
+        print(f"  ✓ 行李重量正常: {chbpr.BAG_WEIGHT} <= {chbpr.EXPC_WEIGHT}")
+    
+    # 显示结构化数据
+    print("\n" + "=" * 80)
+    print("完整结构化数据:")
+    print("=" * 80)
+    structured_data = chbpr.get_structured_data()
+    for key, value in structured_data.items():
+        print(f"{key}: {value}")
+    
+    print("\n" + "=" * 80)
+    print("测试完成!")
+    print("=" * 80)
 
 
 if __name__ == "__main__":
