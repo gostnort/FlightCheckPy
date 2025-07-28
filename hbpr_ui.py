@@ -1509,8 +1509,8 @@ def show_records_table(db):
         
         # 查询已处理的记录
         df = pd.read_sql_query("""
-            SELECT hbnb_number, is_valid, name, seat, class, destination,
-                   bag_piece, bag_weight, ff, error_count, validated_at
+            SELECT hbnb_number, boarding_number, name, seat, class, destination,
+                   bag_piece, bag_weight, ff, error_count
             FROM hbpr_full_records 
             WHERE is_validated = 1
             ORDER BY hbnb_number
@@ -1523,24 +1523,16 @@ def show_records_table(db):
             return
         
         # 过滤选项
-        col1, col2, col3 = st.columns(3)
+        col1, col2 = st.columns(2)
         
         with col1:
-            filter_valid = st.selectbox("Filter by Validation:", ["All", "Valid Only", "Invalid Only"])
-        
-        with col2:
             filter_class = st.multiselect("Filter by Class:", df['class'].dropna().unique())
         
-        with col3:
+        with col2:
             filter_destination = st.multiselect("Filter by Destination:", df['destination'].dropna().unique())
         
         # 应用过滤器
         filtered_df = df.copy()
-        
-        if filter_valid == "Valid Only":
-            filtered_df = filtered_df[filtered_df['is_valid'] == 1]
-        elif filter_valid == "Invalid Only":
-            filtered_df = filtered_df[filtered_df['is_valid'] == 0]
         
         if filter_class:
             filtered_df = filtered_df[filtered_df['class'].isin(filter_class)]
@@ -1552,9 +1544,10 @@ def show_records_table(db):
         st.dataframe(
             filtered_df,
             use_container_width=True,
+            hide_index=True,  # 隐藏自动序列号
             column_config={
                 "hbnb_number": st.column_config.NumberColumn("HBNB", format="%d"),
-                "is_valid": st.column_config.CheckboxColumn("Valid"),
+                "boarding_number": st.column_config.NumberColumn("BN", format="%d"),
                 "name": "Name",
                 "seat": "Seat",
                 "class": "Class",
@@ -1562,8 +1555,7 @@ def show_records_table(db):
                 "bag_piece": st.column_config.NumberColumn("Bag Pieces", format="%d"),
                 "bag_weight": st.column_config.NumberColumn("Bag Weight", format="%d kg"),
                 "ff": "FF Number",
-                "error_count": st.column_config.NumberColumn("Errors", format="%d"),
-                "validated_at": st.column_config.DatetimeColumn("Validated At")
+                "error_count": st.column_config.NumberColumn("Errors", format="%d")
             }
         )
         

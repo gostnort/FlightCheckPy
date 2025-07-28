@@ -161,6 +161,8 @@ class CHbpr:
             search_start = seatMatch.end()
         # 搜索舱位（在座位之后）
         clsPat = re.compile(r"([A-Z])\s+")
+        if search_start < 38:
+            search_start = 38
         clsMatch = clsPat.search(name_row, search_start)
         if clsMatch:
             sub_class = clsMatch.group(1)
@@ -1397,92 +1399,56 @@ class HbprDatabase:
 
 
 def main():
-    """主函数 - 测试行李计算逻辑"""
+    """测试函数 - 专门测试 __GetPassengerInfo() 方法"""
     import sys
-    
-    print("=" * 80)
-    print("测试行李计算逻辑 - HBNB 7 案例")
-    print("=" * 80)
-    
+    import re
     # 读取样本HBNB记录
     try:
         with open("sample_hbpr.txt", "r", encoding="utf-8") as f:
             sample_content = f.read()
         print("✓ 成功读取 sample_hbpr.txt")
+        print(f"文件大小: {len(sample_content)} 字符")
     except Exception as e:
         print(f"✗ 读取 sample_hbpr.txt 失败: {e}")
         return
-    
-    # 创建CHbpr实例并处理样本数据
+    # 创建CHbpr实例
     chbpr = CHbpr()
-    print("\n开始处理HBNB记录...")
-    chbpr.run(sample_content)
-    
-    print("\n" + "=" * 80)
-    print("结构化数据提取结果:")
-    print("=" * 80)
-    
-    # 显示关键字段
-    print(f"HBNB Number: {chbpr.HbnbNumber}")
-    print(f"Passenger Name: {chbpr.NAME}")
-    print(f"Class: {chbpr.CLASS}")
-    print(f"Frequent Flyer: {chbpr.FF}")
-    print(f"FBA Piece: {chbpr.FBA_PIECE}")
-    print(f"IFBA Piece: {chbpr.IFBA_PIECE}")
-    print(f"Flyer Benefit: {chbpr.FLYER_BENEFIT}")
-    print(f"Is CA Flyer: {chbpr.IS_CA_FLYER}")
-    print(f"Checked Bag Pieces: {chbpr.BAG_PIECE}")
-    print(f"Checked Bag Weight: {chbpr.BAG_WEIGHT}")
-    print(f"Expected Pieces: {chbpr.EXPC_PIECE}")
-    print(f"Expected Weight: {chbpr.EXPC_WEIGHT}")
-    
-    print("\n" + "=" * 80)
-    print("调试信息:")
-    print("=" * 80)
-    for msg in chbpr.debug_msg:
-        print(f"  {msg}")
-    
-    print("\n" + "=" * 80)
-    print("错误信息:")
-    print("=" * 80)
-    for error_type, errors in chbpr.error_msg.items():
-        if errors:
-            print(f"{error_type}:")
-            for error in errors:
-                print(f"  {error}")
-        else:
-            print(f"{error_type}: 无错误")
-    
-    print("\n" + "=" * 80)
-    print("行李计算分析:")
-    print("=" * 80)
-    
-    # 手动验证计算
-    print("手动验证行李计算:")
-    print(f"  实际行李: {chbpr.BAG_PIECE} 件, {chbpr.BAG_WEIGHT} kg")
-    print(f"  允许行李: {chbpr.EXPC_PIECE} 件, {chbpr.EXPC_WEIGHT} kg")
-    
-    if chbpr.BAG_PIECE > chbpr.EXPC_PIECE:
-        print(f"  ✗ 行李件数超限: {chbpr.BAG_PIECE} > {chbpr.EXPC_PIECE}")
+    # 手动设置HBNB号码（模拟__GetHbnbNumber的结果）
+    hbnbPat = re.compile(r">HBPR:\s*[^,]+,(\d+)")
+    hbnbMatch = hbnbPat.search(sample_content)
+    if hbnbMatch:
+        chbpr.HbnbNumber = int(hbnbMatch.group(1))
+        print(f"\n✓ 提取到HBNB号码: {chbpr.HbnbNumber}")
     else:
-        print(f"  ✓ 行李件数正常: {chbpr.BAG_PIECE} <= {chbpr.EXPC_PIECE}")
+        chbpr.HbnbNumber = 65535
+        print(f"\n✗ 未找到HBNB号码，使用默认值: {chbpr.HbnbNumber}")
     
-    if chbpr.BAG_WEIGHT > chbpr.EXPC_WEIGHT:
-        print(f"  ✗ 行李重量超限: {chbpr.BAG_WEIGHT} > {chbpr.EXPC_WEIGHT}")
-    else:
-        print(f"  ✓ 行李重量正常: {chbpr.BAG_WEIGHT} <= {chbpr.EXPC_WEIGHT}")
-    
-    # 显示结构化数据
-    print("\n" + "=" * 80)
-    print("完整结构化数据:")
-    print("=" * 80)
-    structured_data = chbpr.get_structured_data()
-    for key, value in structured_data.items():
-        print(f"{key}: {value}")
+    # 设置私有变量
+    chbpr._CHbpr__Hbpr = sample_content
     
     print("\n" + "=" * 80)
-    print("测试完成!")
+    print("开始测试 __GetPassengerInfo() 方法")
     print("=" * 80)
+    
+    # 调用__GetPassengerInfo方法
+    try:
+        result = chbpr._CHbpr__GetPassengerInfo()
+        print(f"方法返回结果: {result}")
+    except Exception as e:
+        print(f"✗ 方法执行出错: {e}")
+        import traceback
+        traceback.print_exc()
+        return
+    
+    print("\n" + "=" * 80)
+    print("__GetPassengerInfo() 提取结果:")
+    print("=" * 80)
+    print(f"乘客姓名 (NAME): '{chbpr.NAME}'")
+    print(f"登机号 (BoardingNumber): {chbpr.BoardingNumber}")
+    print(f"座位号 (SEAT): '{chbpr.SEAT}'")
+    print(f"舱位等级 (CLASS): '{chbpr.CLASS}'")
+    print(f"目的地 (DESTINATION): '{chbpr.DESTINATION}'")
+    
 
 
 if __name__ == "__main__":
