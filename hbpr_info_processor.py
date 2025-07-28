@@ -635,8 +635,18 @@ class HbprDatabase:
     
     
     def find_database(self):
-        """查找包含HBPR数据的数据库文件"""
-        db_files = glob.glob("*.db")
+        """查找包含HBPR数据的数据库文件，优先查找databases文件夹"""
+        # 首先查找databases文件夹中的数据库文件
+        databases_folder = "databases"
+        if os.path.exists(databases_folder):
+            db_files = glob.glob(os.path.join(databases_folder, "*.db"))
+        else:
+            db_files = []
+        
+        # 如果databases文件夹中没有找到，则查找根目录
+        if not db_files:
+            db_files = glob.glob("*.db")
+        
         if not db_files:
             raise FileNotFoundError("No database files found! Please build database first.")
         
@@ -674,6 +684,13 @@ class HbprDatabase:
         
         # 添加CHbpr字段到hbpr_full_records表
         self._add_chbpr_fields()
+        
+        # 初始化missing_numbers表
+        try:
+            self.update_missing_numbers_table()
+            print("Missing numbers table initialized")
+        except Exception as e:
+            print(f"Warning: Could not initialize missing numbers table: {e}")
         
         print(f"Database built successfully: {self.db_file}")
         return processor
@@ -926,6 +943,70 @@ class HbprDatabase:
             raise Exception(f"Database error: {e}")
 
 
+
+    def update_missing_numbers_table(self):
+        """重新计算并更新missing_numbers表"""
+        if not self.db_file:
+            self.find_database()
+        
+        try:
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            
+            # 检查是否存在missing_numbers表，如果不存在则创建
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='missing_numbers'")
+            if not cursor.fetchone():
+                cursor.execute('''
+                    CREATE TABLE missing_numbers (
+                        hbnb_number INTEGER PRIMARY KEY
+                    )
+                ''')
+                print("Created missing_numbers table")
+            
+            # 获取所有现有的HBNB号码（包括完整记录和简单记录）
+            cursor.execute("SELECT hbnb_number FROM hbpr_full_records ORDER BY hbnb_number")
+            full_records = [row[0] for row in cursor.fetchall()]
+            
+            # 检查是否存在hbpr_simple_records表
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='hbpr_simple_records'")
+            if cursor.fetchone():
+                cursor.execute("SELECT hbnb_number FROM hbpr_simple_records ORDER BY hbnb_number")
+                simple_records = [row[0] for row in cursor.fetchall()]
+            else:
+                simple_records = []
+            
+            # 合并所有HBNB号码
+            all_hbnb_numbers = set(full_records + simple_records)
+            
+            if not all_hbnb_numbers:
+                conn.close()
+                return False
+            
+            # 计算期望的范围
+            min_num = min(all_hbnb_numbers)
+            max_num = max(all_hbnb_numbers)
+            expected_numbers = set(range(min_num, max_num + 1))
+            
+            # 计算缺失的号码
+            missing_numbers = expected_numbers - all_hbnb_numbers
+            
+            # 清空现有的missing_numbers表
+            cursor.execute("DELETE FROM missing_numbers")
+            
+            # 插入新的缺失号码
+            for num in sorted(missing_numbers):
+                cursor.execute("INSERT INTO missing_numbers (hbnb_number) VALUES (?)", (num,))
+            
+            conn.commit()
+            conn.close()
+            
+            print(f"Updated missing_numbers table: {len(missing_numbers)} missing numbers")
+            return True
+            
+        except sqlite3.Error as e:
+            raise Exception(f"Database error: {e}")
+
+
     def get_hbnb_range_info(self):
         """获取HBNB号码范围信息"""
         if not self.db_file:
@@ -1000,6 +1081,316 @@ class HbprDatabase:
             
             conn.close()
             return True
+        except sqlite3.Error as e:
+            raise Exception(f"Database error: {e}")
+
+
+
+
+
+    def get_flight_info(self):
+        """获取当前数据库的航班信息"""
+        if not self.db_file:
+            self.find_database()
+        
+        try:
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            
+            # 检查是否存在flight_info表
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='flight_info'")
+            if not cursor.fetchone():
+                conn.close()
+                return None
+            
+            cursor.execute("SELECT flight_id, flight_number, flight_date FROM flight_info LIMIT 1")
+            result = cursor.fetchone()
+            conn.close()
+            
+            if result:
+                return {
+                    'flight_id': result[0],
+                    'flight_number': result[1],
+                    'flight_date': result[2]
+                }
+            return None
+            
+        except sqlite3.Error as e:
+            raise Exception(f"Database error: {e}")
+
+
+    def check_hbnb_exists(self, hbnb_number: int):
+        """检查HBNB号码是否存在于数据库中（完整记录或简单记录）"""
+        if not self.db_file:
+            self.find_database()
+        
+        try:
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            
+            # 检查完整记录
+            cursor.execute("SELECT 1 FROM hbpr_full_records WHERE hbnb_number = ?", (hbnb_number,))
+            full_exists = cursor.fetchone() is not None
+            
+            # 检查简单记录
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='hbpr_simple_records'")
+            if cursor.fetchone():
+                cursor.execute("SELECT 1 FROM hbpr_simple_records WHERE hbnb_number = ?", (hbnb_number,))
+                simple_exists = cursor.fetchone() is not None
+            else:
+                simple_exists = False
+            
+            conn.close()
+            
+            return {
+                'exists': full_exists or simple_exists,
+                'full_record': full_exists,
+                'simple_record': simple_exists
+            }
+            
+        except sqlite3.Error as e:
+            raise Exception(f"Database error: {e}")
+
+
+    def create_simple_record(self, hbnb_number: int, record_line: str):
+        """创建简单HBPR记录"""
+        if not self.db_file:
+            self.find_database()
+        
+        try:
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            
+            # 确保hbpr_simple_records表存在
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS hbpr_simple_records (
+                    hbnb_number INTEGER PRIMARY KEY,
+                    record_line TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            # 插入简单记录
+            cursor.execute(
+                'INSERT OR REPLACE INTO hbpr_simple_records (hbnb_number, record_line) VALUES (?, ?)',
+                (hbnb_number, record_line)
+            )
+            
+            conn.commit()
+            conn.close()
+            
+            print(f"Created simple record for HBNB {hbnb_number}")
+            return True
+            
+        except sqlite3.Error as e:
+            raise Exception(f"Database error: {e}")
+
+
+    def create_full_record(self, hbnb_number: int, record_content: str):
+        """创建完整HBPR记录"""
+        if not self.db_file:
+            self.find_database()
+        
+        try:
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            
+            # 插入完整记录
+            cursor.execute(
+                'INSERT OR REPLACE INTO hbpr_full_records (hbnb_number, record_content) VALUES (?, ?)',
+                (hbnb_number, record_content)
+            )
+            
+            # 如果存在简单记录，删除它
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='hbpr_simple_records'")
+            if cursor.fetchone():
+                cursor.execute("DELETE FROM hbpr_simple_records WHERE hbnb_number = ?", (hbnb_number,))
+            
+            conn.commit()
+            conn.close()
+            
+            print(f"Created full record for HBNB {hbnb_number}")
+            return True
+            
+        except sqlite3.Error as e:
+            raise Exception(f"Database error: {e}")
+
+
+    def delete_simple_record(self, hbnb_number: int):
+        """删除简单HBPR记录"""
+        if not self.db_file:
+            self.find_database()
+        
+        try:
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            
+            cursor.execute("DELETE FROM hbpr_simple_records WHERE hbnb_number = ?", (hbnb_number,))
+            
+            conn.commit()
+            conn.close()
+            
+            # 更新missing_numbers表
+            try:
+                self.update_missing_numbers_table()
+                print(f"Updated missing numbers table after deleting HBNB {hbnb_number}")
+            except Exception as e:
+                print(f"Warning: Could not update missing numbers table: {e}")
+            
+            print(f"Deleted simple record for HBNB {hbnb_number}")
+            return True
+            
+        except sqlite3.Error as e:
+            raise Exception(f"Database error: {e}")
+
+
+    def extract_flight_info_from_hbpr(self, hbpr_content: str):
+        """从HBPR内容中提取航班信息"""
+        import re
+        
+        # 查找航班信息模式
+        match = re.search(r'>HBPR:\s*([^*,]+)', hbpr_content)
+        if match:
+            flight_info = match.group(1).strip()
+            # 解析航班号和日期
+            if '/' in flight_info:
+                parts = flight_info.split('/')
+                if len(parts) >= 2:
+                    flight_number = parts[0]
+                    date = parts[1].split('*')[0] if '*' in parts[1] else parts[1]
+                    return {
+                        'flight_number': flight_number,
+                        'flight_date': date,
+                        'flight_info': flight_info
+                    }
+            
+            return {
+                'flight_number': flight_info,
+                'flight_date': 'Unknown',
+                'flight_info': flight_info
+            }
+        
+        return None
+
+
+    def extract_hbnb_from_simple_record(self, record_line: str):
+        """从简单记录中提取HBNB号码"""
+        import re
+        
+        # 格式: hbpr *,{NUMBER} 或 HBPR *,{NUMBER}
+        match = re.search(r'hbpr\s*[^,]*,(\d+)', record_line, re.IGNORECASE)
+        if match:
+            return int(match.group(1))
+        return None
+
+
+    def is_simple_record(self, content: str):
+        """判断是否为简单记录"""
+        import re
+        
+        # 简单记录格式: hbpr *,{NUMBER} 或 HBPR *,{NUMBER}
+        return bool(re.match(r'^hbpr\s*[^,]*,(\d+)$', content.strip(), re.IGNORECASE))
+
+
+    def is_full_record(self, content: str):
+        """判断是否为完整记录"""
+        # 完整记录以 >HBPR: 开头
+        return content.strip().startswith('>HBPR:')
+
+
+    def validate_flight_info_match(self, hbpr_content: str):
+        """验证HBPR内容中的航班信息是否与数据库匹配"""
+        if not self.db_file:
+            self.find_database()
+        
+        # 获取数据库中的航班信息
+        db_flight_info = self.get_flight_info()
+        if not db_flight_info:
+            return {'match': False, 'reason': 'No flight info in database'}
+        
+        # 从HBPR内容中提取航班信息
+        hbpr_flight_info = self.extract_flight_info_from_hbpr(hbpr_content)
+        if not hbpr_flight_info:
+            return {'match': False, 'reason': 'No flight info found in HBPR content'}
+        
+        # 比较航班信息
+        db_flight_number = db_flight_info['flight_number']
+        hbpr_flight_number = hbpr_flight_info['flight_number']
+        
+        if db_flight_number == hbpr_flight_number:
+            return {
+                'match': True,
+                'db_flight': db_flight_info,
+                'hbpr_flight': hbpr_flight_info
+            }
+        else:
+            return {
+                'match': False,
+                'reason': f'Flight number mismatch: DB={db_flight_number}, HBPR={hbpr_flight_number}',
+                'db_flight': db_flight_info,
+                'hbpr_flight': hbpr_flight_info
+            }
+
+
+    def get_simple_records(self):
+        """获取所有简单记录"""
+        if not self.db_file:
+            self.find_database()
+        
+        try:
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            
+            # 检查是否存在hbpr_simple_records表
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='hbpr_simple_records'")
+            if not cursor.fetchone():
+                conn.close()
+                return []
+            
+            cursor.execute("SELECT hbnb_number, record_line FROM hbpr_simple_records ORDER BY hbnb_number")
+            results = cursor.fetchall()
+            conn.close()
+            
+            return [{'hbnb_number': row[0], 'record_line': row[1]} for row in results]
+            
+        except sqlite3.Error as e:
+            raise Exception(f"Database error: {e}")
+
+
+    def get_record_summary(self):
+        """获取记录摘要信息"""
+        if not self.db_file:
+            self.find_database()
+        
+        try:
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            
+            # 获取完整记录数量
+            cursor.execute("SELECT COUNT(*) FROM hbpr_full_records")
+            full_count = cursor.fetchone()[0]
+            
+            # 获取简单记录数量
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='hbpr_simple_records'")
+            if cursor.fetchone():
+                cursor.execute("SELECT COUNT(*) FROM hbpr_simple_records")
+                simple_count = cursor.fetchone()[0]
+            else:
+                simple_count = 0
+            
+            # 获取已验证记录数量
+            cursor.execute("SELECT COUNT(*) FROM hbpr_full_records WHERE is_validated = 1")
+            validated_count = cursor.fetchone()[0]
+            
+            conn.close()
+            
+            return {
+                'full_records': full_count,
+                'simple_records': simple_count,
+                'validated_records': validated_count,
+                'total_records': full_count + simple_count
+            }
+            
         except sqlite3.Error as e:
             raise Exception(f"Database error: {e}")
 

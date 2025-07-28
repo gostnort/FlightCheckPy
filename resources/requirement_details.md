@@ -17,6 +17,7 @@ FlightCheckPy/
 ├── run_button.py          # PR record processing (legacy)
 ├── start_hbpr_ui.bat      # Windows batch file to start UI
 ├── requirements.txt       # Python dependencies
+├── databases/             # Database files directory (new)
 └── resources/             # Application resources
     └── fcp0.5.ico        # Application icon
 ```
@@ -33,6 +34,8 @@ FlightCheckPy/
 - `show_process_records()`: Record processing interface
 - `show_view_results()`: Results viewing and analysis
 - `show_settings()`: System configuration
+- `process_manual_input()`: Advanced manual HBPR input functionality
+- `parse_hbnb_input()`: Parse HBNB number ranges and lists
 
 **Key Features**:
 - Multi-page navigation with sidebar
@@ -41,6 +44,11 @@ FlightCheckPy/
 - Missing HBNB number identification
 - Batch processing capabilities
 - Export and reporting functions
+- **NEW**: Manual HBPR input with database selection
+- **NEW**: Flexible HBNB number range input (e.g., "400-410,412")
+- **NEW**: Database folder organization (`databases/` directory)
+- **NEW**: Smart record replacement logic
+- **NEW**: Automatic missing numbers table updates
 
 ### 2. `hbpr_info_processor.py` - HBPR Record Processing
 **Purpose**: Advanced HBPR record processing with validation and structured data extraction.
@@ -60,6 +68,15 @@ FlightCheckPy/
 - `HbprDatabase.build_from_hbpr_list()`: Build database from file
 - `HbprDatabase.get_validation_stats()`: Get processing statistics
 - `HbprDatabase.get_missing_hbnb_numbers()`: Find missing records
+- **NEW**: `HbprDatabase.find_database()`: Smart database discovery (prioritizes `databases/` folder)
+- **NEW**: `HbprDatabase.create_simple_record()`: Create simple HBPR records
+- **NEW**: `HbprDatabase.create_full_record()`: Create full HBPR records
+- **NEW**: `HbprDatabase.check_hbnb_exists()`: Check HBNB record existence and type
+- **NEW**: `HbprDatabase.delete_simple_record()`: Delete simple records
+- **NEW**: `HbprDatabase.validate_flight_info_match()`: Validate flight information consistency
+- **NEW**: `HbprDatabase.get_flight_info()`: Get database flight information
+- **NEW**: `HbprDatabase.remove_from_missing_numbers()`: Remove HBNB from missing numbers table
+- **NEW**: `HbprDatabase.update_missing_numbers_table()`: Recalculate missing numbers table
 
 ### 3. `hbpr_list_processor.py` - Batch Processing
 **Purpose**: Batch processing of HBPR record lists and database creation.
@@ -75,6 +92,10 @@ FlightCheckPy/
 - `HBPRProcessor.create_database()`: Create flight-specific databases
 - `HBPRProcessor.store_records()`: Store records in database
 - `HBPRProcessor.generate_report()`: Generate processing reports
+
+**Recent Updates**:
+- **NEW**: Database creation now automatically saves to `databases/` folder
+- **NEW**: Automatic folder creation if `databases/` doesn't exist
 
 ### 4. `general_func.py` - Utility Functions
 **Purpose**: Centralized configuration and utility functions.
@@ -107,7 +128,7 @@ FlightCheckPy/
 graph TD
     A[HBPR Input Files] --> B[HBPRProcessor]
     B --> C[Parse Records]
-    C --> D[Create Database]
+    C --> D[Create Database in databases/]
     D --> E[HbprDatabase]
     E --> F[Store Records]
     F --> G[CHbpr Validation]
@@ -115,6 +136,9 @@ graph TD
     H --> I[Database Storage]
     I --> J[Web UI Display]
     J --> K[User Interaction]
+    K --> L[Manual Input Processing]
+    L --> M[Smart Record Replacement]
+    M --> N[Update Missing Numbers]
 ```
 
 ### Class Hierarchy and Dependencies
@@ -144,7 +168,16 @@ HbprDatabase:
 │   ├── update_with_chbpr_results() → Store validation results
 │   ├── get_validation_stats() → Retrieve statistics
 │   ├── get_missing_hbnb_numbers() → Find gaps
-│   └── erase_splited_records() → Clean up data
+│   ├── erase_splited_records() → Clean up data
+│   ├── find_database() → Smart database discovery (databases/ folder priority)
+│   ├── create_simple_record() → Create simple HBPR records
+│   ├── create_full_record() → Create full HBPR records
+│   ├── check_hbnb_exists() → Check record existence and type
+│   ├── delete_simple_record() → Remove simple records
+│   ├── validate_flight_info_match() → Validate flight consistency
+│   ├── get_flight_info() → Get database flight information
+│   ├── remove_from_missing_numbers() → Remove HBNB from missing table
+│   └── update_missing_numbers_table() → Recalculate missing numbers
 └── Output: Database operations and queries
 ```
 
@@ -158,7 +191,7 @@ HBPRProcessor:
 │   ├── _parse_full_record() → Extract complete records
 │   ├── _parse_simple_record() → Extract simple records
 │   ├── find_missing_numbers() → Identify gaps
-│   └── create_database() → Generate database
+│   └── create_database() → Generate database in databases/ folder
 └── Output: Flight-specific databases
 ```
 
@@ -184,7 +217,15 @@ CREATE TABLE hbpr_full_records (
 );
 ```
 
-**2. hbpr_processing_results**
+**2. hbpr_simple_records**
+```sql
+CREATE TABLE hbpr_simple_records (
+    hbnb_number INTEGER PRIMARY KEY,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+**3. hbpr_processing_results**
 ```sql
 CREATE TABLE hbpr_processing_results (
     hbnb_number INTEGER,
@@ -199,7 +240,14 @@ CREATE TABLE hbpr_processing_results (
 );
 ```
 
-**3. CHbpr Fields (Structured Data)**
+**4. missing_numbers**
+```sql
+CREATE TABLE missing_numbers (
+    hbnb_number INTEGER PRIMARY KEY
+);
+```
+
+**5. CHbpr Fields (Structured Data)**
 ```sql
 -- Additional fields added to hbpr_processing_results
 PNR TEXT,
@@ -233,6 +281,9 @@ streamlit run hbpr_ui.py
 - Real-time database management
 - Interactive record processing
 - Statistical analysis and reporting
+- **NEW**: Manual HBPR input with smart database selection
+- **NEW**: Flexible HBNB number range input
+- **NEW**: Database folder organization
 
 ### 2. Command Line Processing
 ```bash
@@ -247,7 +298,7 @@ python hbpr_info_processor.py
 python hbpr_list_processor.py
 ```
 - Processes HBPR list files
-- Creates flight-specific databases
+- Creates flight-specific databases in `databases/` folder
 - Identifies missing records
 - Generates processing reports
 
@@ -259,6 +310,7 @@ python hbpr_list_processor.py
 - **Name Matching**: Passenger name consistency verification
 - **Class Validation**: Fare class and upgrade verification
 - **HBNB Number Validation**: Record completeness checking
+- **Flight Information Validation**: Consistency checking between records and database
 
 ### Structured Data Extraction
 - **30+ Data Fields**: Comprehensive data field extraction
@@ -271,6 +323,14 @@ python hbpr_list_processor.py
 - **Statistical Reporting**: Processing success rates
 - **Missing Data Identification**: Gap analysis in record sequences
 - **Validation Results**: Pass/fail status for each validation rule
+
+### Manual Input Processing
+- **Smart Database Discovery**: Prioritizes `databases/` folder, falls back to root
+- **Flexible HBNB Input**: Supports single numbers, ranges, and comma-separated lists
+- **Record Type Management**: Handles full records, simple records, and replacements
+- **Batch Processing**: Efficient creation of multiple simple records
+- **Progress Tracking**: Real-time feedback for batch operations
+- **Data Integrity**: Automatic missing numbers table updates
 
 ## Web UI Features
 
@@ -287,6 +347,17 @@ python hbpr_list_processor.py
 - **Batch Processing**: Multi-record processing with progress tracking
 - **Export Capabilities**: Data export in various formats
 - **Record Viewing**: Individual record inspection and validation
+- **NEW**: Manual HBPR Input Interface
+- **NEW**: Database Selection with Status Indicators
+- **NEW**: HBNB Range Input with Validation
+- **NEW**: Processing Status and Summary Display
+
+### Manual HBPR Input Interface
+- **Database Selection**: Smart dropdown with flight information display
+- **Status Indicators**: Visual feedback for database and record status
+- **Input Validation**: Real-time validation of HBNB number formats
+- **Processing Feedback**: Detailed progress and result summaries
+- **Error Handling**: Comprehensive error messages and recovery options
 
 ## Configuration and Constants
 
@@ -301,6 +372,14 @@ python hbpr_list_processor.py
 - Error threshold settings
 - Debug output levels
 - Processing batch sizes
+- **NEW**: Database folder organization (`databases/` directory)
+- **NEW**: HBNB number validation range (1-99999)
+
+### Database Organization
+- **Default Location**: `databases/` folder in project root
+- **Automatic Creation**: Folder created if it doesn't exist
+- **Fallback Mechanism**: Searches root directory if `databases/` is empty
+- **File Naming**: `{flight_id}.db` format (e.g., `CA123_20231201.db`)
 
 ## Development Guidelines
 
@@ -314,6 +393,7 @@ python hbpr_list_processor.py
 - Preference for not automatically updating requirement documents
 - Focus on processing efficiency
 - Minimal redundant data storage
+- **NEW**: Efficient batch processing for multiple record creation
 
 ## API and Integration Points
 
@@ -322,18 +402,24 @@ python hbpr_list_processor.py
 - Standardized table schemas
 - Configurable database file locations
 - Transaction-based operations
+- **NEW**: Smart database discovery with folder prioritization
+- **NEW**: Automatic missing numbers table management
 
 ### File Processing Integration
 - Support for HBPR format files
 - Configurable encoding handling
 - Batch processing capabilities
 - Error recovery mechanisms
+- **NEW**: Flexible HBNB number input parsing
+- **NEW**: Database folder organization
 
 ### Web UI Integration
 - Streamlit-based interface
 - Real-time data updates
 - Interactive user controls
 - Responsive design
+- **NEW**: Advanced manual input interface
+- **NEW**: Progress tracking and status feedback
 
 ## Performance Characteristics
 
@@ -342,12 +428,16 @@ python hbpr_list_processor.py
 - Optimized regular expression usage
 - Batch database operations
 - Memory-efficient data structures
+- **NEW**: Efficient batch simple record creation
+- **NEW**: Smart database querying with caching
 
 ### Scalability Features
 - Configurable batch sizes
 - Database partitioning support
 - Multi-threaded processing capabilities
 - Resource usage monitoring
+- **NEW**: Database folder organization for better file management
+- **NEW**: Flexible input parsing for large HBNB ranges
 
 ## Quality Assurance
 
@@ -356,12 +446,16 @@ python hbpr_list_processor.py
 - Regex pattern validation
 - Database integrity checking
 - Performance benchmarking
+- **NEW**: HBNB input format validation
+- **NEW**: Database folder organization testing
 
 ### Monitoring and Reporting
 - Processing statistics
 - Error rate tracking
 - Data quality metrics
 - Performance monitoring
+- **NEW**: Manual input processing statistics
+- **NEW**: Missing numbers table accuracy verification
 
 ## Missing Components
 
@@ -369,3 +463,24 @@ python hbpr_list_processor.py
 - `obtain_info.py`: Contains CPax class for PR record processing
 - This file appears to be missing from the current project structure
 - Referenced by `run_button.py` for legacy PR processing functionality
+
+## Recent Updates and Improvements
+
+### Manual HBPR Input System
+- **Database Selection**: Smart dropdown prioritizing `databases/` folder
+- **Input Flexibility**: Support for HBNB ranges and comma-separated lists
+- **Record Management**: Intelligent handling of existing records
+- **Data Integrity**: Automatic missing numbers table updates
+- **User Experience**: Progress tracking and detailed feedback
+
+### Database Organization
+- **Folder Structure**: Dedicated `databases/` folder for all database files
+- **Automatic Creation**: System creates folder if it doesn't exist
+- **Fallback Logic**: Searches root directory if `databases/` is empty
+- **Consistent Naming**: Standardized database file naming convention
+
+### Enhanced Error Handling
+- **Input Validation**: Comprehensive validation of HBNB number formats
+- **Database Operations**: Robust error handling for all database operations
+- **User Feedback**: Clear error messages and recovery suggestions
+- **Data Consistency**: Automatic maintenance of missing numbers table

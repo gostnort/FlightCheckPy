@@ -35,6 +35,42 @@ def get_icon_base64(path):
         return ""
 
 
+def parse_hbnb_input(input_text: str) -> list:
+    """
+    解析HBNB输入，支持单个数字、范围和逗号分隔的列表
+    例如: "400-410,412,415-420" -> [400, 401, 402, ..., 410, 412, 415, 416, ..., 420]
+    """
+    if not input_text.strip():
+        return []
+    
+    hbnb_numbers = set()
+    parts = [part.strip() for part in input_text.split(',')]
+    
+    for part in parts:
+        if '-' in part:
+            # 处理范围，如 "400-410"
+            try:
+                start, end = map(int, part.split('-'))
+                if start > end:
+                    start, end = end, start  # 自动交换顺序
+                if start < 1 or end > 99999:
+                    raise ValueError(f"Range {start}-{end} is out of valid range (1-99999)")
+                hbnb_numbers.update(range(start, end + 1))
+            except ValueError as e:
+                raise ValueError(f"Invalid range format '{part}': {str(e)}")
+        else:
+            # 处理单个数字
+            try:
+                number = int(part)
+                if number < 1 or number > 99999:
+                    raise ValueError(f"Number {number} is out of valid range (1-99999)")
+                hbnb_numbers.add(number)
+            except ValueError as e:
+                raise ValueError(f"Invalid number format '{part}': {str(e)}")
+    
+    return sorted(list(hbnb_numbers))
+
+
 def main():
     """主UI函数"""
     st.set_page_config(
@@ -51,8 +87,8 @@ def main():
     # 导航链接
     if st.sidebar.button("🏠 Home", use_container_width=True):
         st.session_state.current_page = "🏠 Home"
-    if st.sidebar.button("🗄️ Database Management", use_container_width=True):
-        st.session_state.current_page = "🗄️ Database Management"
+    if st.sidebar.button("🗄️ Database", use_container_width=True):
+        st.session_state.current_page = "🗄️ Database"
     if st.sidebar.button("🔍 Process Records", use_container_width=True):
         st.session_state.current_page = "🔍 Process Records"
     if st.sidebar.button("📊 View Results", use_container_width=True):
@@ -71,7 +107,7 @@ def main():
         """.format(get_icon_base64("resources/fcp.ico")), unsafe_allow_html=True)
         st.markdown("---")
         show_home_page()
-    elif current_page == "🗄️ Database Management":
+    elif current_page == "🗄️ Database":
         show_database_management()
     elif current_page == "🔍 Process Records":
         show_process_records()
@@ -83,6 +119,11 @@ def main():
 
 def show_home_page():
     """显示主页"""
+    # 检查是否需要刷新
+    if 'refresh_home' in st.session_state and st.session_state.refresh_home:
+        st.session_state.refresh_home = False
+        st.rerun()
+    
     st.header("🏠 Home Page")
     col1, col2 = st.columns(2)
     with col1:
@@ -95,16 +136,31 @@ def show_home_page():
             # 获取HBNB范围信息
             range_info = db.get_hbnb_range_info()
             missing_numbers = db.get_missing_hbnb_numbers()
+            record_summary = db.get_record_summary()
+            
             # 显示HBNB范围信息
             metrics_col1, metrics_col2, metrics_col3, metrics_col4 = st.columns(4)
             with metrics_col1:
                 st.metric("HBNB Range", f"{range_info['min']} - {range_info['max']}")
             with metrics_col2:
-                st.metric("Total Expected", range_info['total_expected'])
+                st.metric("Total Records", record_summary['total_records'])
             with metrics_col3:
-                st.metric("Total Found", range_info['total_found'])
+                st.metric("Full Records", record_summary['full_records'])
             with metrics_col4:
+                st.metric("Simple Records", record_summary['simple_records'])
+            
+            # 显示验证统计
+            validation_col1, validation_col2, validation_col3 = st.columns(3)
+            with validation_col1:
+                st.metric("Validated Records", record_summary['validated_records'])
+            with validation_col2:
                 st.metric("Missing Numbers", len(missing_numbers))
+            with validation_col3:
+                if record_summary['total_records'] > 0:
+                    completeness = (record_summary['validated_records'] / record_summary['total_records']) * 100
+                    st.metric("Completeness", f"{completeness:.1f}%")
+                else:
+                    st.metric("Completeness", "0%")
             # 显示缺失号码表格
             if missing_numbers:
                 st.subheader("🚫 Missing HBNB Numbers")
@@ -134,31 +190,40 @@ def show_home_page():
     with col2:
         st.subheader("🚀 Quick Actions")
         if st.button("🗄️ Build Database", use_container_width=True):
-            st.session_state.current_page = "🗄️ Database Management"
+            st.session_state.current_page = "🗄️ Database"
             st.rerun()
         if st.button("🔍 Process HBPR Record", use_container_width=True):
             st.session_state.current_page = "🔍 Process Records"
             st.rerun()
+        if st.button("📄 Manual Input", use_container_width=True):
+            st.session_state.current_page = "🔍 Process Records"
+            st.rerun()
         if st.button("📊 View Results", use_container_width=True):
             st.session_state.current_page = "📊 View Results"
+            st.rerun()
+        if st.button("🔄 Refresh Home Page", use_container_width=True):
             st.rerun()
     st.markdown("---")
     # 最近活动
     st.subheader("📝 How to Use")
     st.markdown("""
     1. **Database Management**: Build your database from HBPR list files
-    2. **Process Records**: Select and process individual HBPR records
+    2. **Process Records**: Select and process individual HBPR records or manually input new records
     3. **View Results**: Browse validation results and export data
     4. **Settings**: Configure system preferences
+    
+    **Manual Input Features:**
+    - Select database from dropdown
+    - Input full HBPR records with flight info validation
+    - Create simple HBNB records for placeholders
+    - Automatic replacement of simple records with full records
     """)
 
 
 def show_database_management():
     """显示数据库管理页面"""
     st.header("🗄️ Database Management")
-    
-    tab1, tab2, tab3 = st.tabs(["📥 Build Database", "🔍 Database Info", "🧹 Maintenance"])
-    
+    tab1, tab2, tab3 = st.tabs(["📥 Build Database", "🔍 Database Info", "🧹 Maintenance"])   
     with tab1:
         st.subheader("📥 Build Database from HBPR List")
         # 文件选择
@@ -172,15 +237,12 @@ def show_database_management():
             with open("uploaded_hbpr_list.txt", "wb") as f:
                 f.write(uploaded_file.getbuffer())
             st.success("✅ File uploaded successfully!")
-        
         # 使用上传的文件
         if uploaded_file and st.button("🔨 Build from Uploaded File", use_container_width=True):
             build_database_ui("uploaded_hbpr_list.txt")
-    
     with tab2:
         st.subheader("🔍 Database Information")
         show_database_info()
-    
     with tab3:
         st.subheader("🧹 Database Maintenance")
         show_database_maintenance()
@@ -256,7 +318,12 @@ def build_database_ui(input_file):
                 st.info(f"Showing page {page} of {total_pages} ({len(page_missing)} of {len(missing_numbers)} missing numbers)")
         else:
             st.success("✅ No missing HBNB numbers found!")
-        
+        # Delete the uploaded file after successful database building
+        try:
+            if os.path.exists(input_file):
+                os.remove(input_file)
+        except Exception:
+            pass   
     except Exception as e:
         status_text.text("❌ Error building database")
         st.error(f"Error: {str(e)}")
@@ -266,7 +333,14 @@ def build_database_ui(input_file):
 def show_database_info():
     """显示数据库信息"""
     try:
-        db_files = glob.glob("*.db")
+        # 搜索数据库文件，优先查找databases文件夹
+        db_files = []
+        if os.path.exists("databases"):
+            db_files = glob.glob("databases/*.db")
+        
+        # 如果databases文件夹中没有找到，则搜索根目录
+        if not db_files:
+            db_files = glob.glob("*.db")
         
         if not db_files:
             st.warning("⚠️ No database files found.")
@@ -331,55 +405,41 @@ def show_database_maintenance():
     """显示数据库维护选项"""
     st.warning("⚠️ Maintenance operations are irreversible!")
     
-    db_files = glob.glob("*.db")
+    # 搜索数据库文件，优先查找databases文件夹
+    db_files = []
+    if os.path.exists("databases"):
+        db_files = glob.glob("databases/*.db")
+    
+    # 如果databases文件夹中没有找到，则搜索根目录
+    if not db_files:
+        db_files = glob.glob("*.db")
     
     if db_files:
         selected_db = st.selectbox("Select database file:", db_files)
         
-        col1, col2, col3 = st.columns(3)
+        col1, col2 = st.columns(2)
         
         with col1:
+            # 删除数据库按钮
             if st.button("🗑️ Delete Database", use_container_width=True):
-                if st.button("⚠️ Confirm Delete", use_container_width=True):
-                    try:
-                        os.remove(selected_db)
-                        st.success(f"✅ Deleted {selected_db}")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"❌ Error deleting database: {str(e)}")
+                try:
+                    os.remove(selected_db)
+                    st.success(f"✅ Deleted {selected_db}")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"❌ Error deleting database: {str(e)}")
         
         with col2:
-            if st.button("🔄 Reset Validation Data", use_container_width=True):
+            # 更新missing_numbers表按钮
+            if st.button("🔄 Update Missing Numbers", use_container_width=True):
                 try:
-                    conn = sqlite3.connect(selected_db)
-                    cursor = conn.cursor()
-                    cursor.execute("""
-                        UPDATE hbpr_full_records SET 
-                        is_validated = 0, is_valid = NULL, 
-                        pnr = NULL, name = NULL, seat = NULL, class = NULL,
-                        destination = NULL, bag_piece = NULL, bag_weight = NULL,
-                        bag_allowance = NULL, ff = NULL, pspt_name = NULL,
-                        pspt_exp_date = NULL, ckin_msg = NULL, expc_piece = NULL,
-                        expc_weight = NULL, asvc_piece = NULL, fba_piece = NULL,
-                        ifba_piece = NULL, flyer_benefit = NULL, is_ca_flyer = NULL,
-                        error_count = NULL, error_baggage = NULL, error_passport = NULL, error_name = NULL, error_visa = NULL, error_other = NULL, validated_at = NULL
-                    """)
-                    conn.commit()
-                    conn.close()
-                    st.success("✅ Validation data reset")
+                    db = HbprDatabase(selected_db)
+                    db.update_missing_numbers_table()
+                    st.success("✅ Missing numbers table updated successfully!")
                 except Exception as e:
-                    st.error(f"❌ Error resetting data: {str(e)}")
-        
-        with col3:
-            if st.button("🧹 Erase All Records", use_container_width=True):
-                if st.button("⚠️ Confirm Erase", use_container_width=True):
-                    try:
-                        db = HbprDatabase(selected_db)
-                        db.erase_all_records_except_core()
-                        st.success("✅ All records erased except hbnb_number and record_content")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"❌ Error erasing records: {str(e)}")
+                    st.error(f"❌ Error updating missing numbers table: {str(e)}")
+    else:
+        st.info("ℹ️ No database files found.")
 
 
 def show_process_records():
@@ -413,11 +473,17 @@ def process_all_records(db):
     st.subheader("🚀 Process All Records")
     
     try:
-        # 获取所有数据库文件
-        db_files = glob.glob("*.db")
+        # 搜索数据库文件，优先查找databases文件夹
+        db_files = []
+        if os.path.exists("databases"):
+            db_files = glob.glob("databases/*.db")
+        
+        # 如果databases文件夹中没有找到，则搜索根目录
+        if not db_files:
+            db_files = glob.glob("*.db")
         
         if not db_files:
-            st.error("❌ No database files found in root path.")
+            st.error("❌ No database files found.")
             return
         
         # 处理控制
@@ -848,6 +914,7 @@ def show_error_summary(db):
                     label=f"{labels[label]} {label}",
                     value=count
                 )
+        st.markdown("---")
     except Exception as e:
         st.error(f"❌ Error loading error summary: {str(e)}")
 
@@ -999,23 +1066,357 @@ def process_manual_input():
     """手动输入处理"""
     st.subheader("📄 Manual HBPR Input")
     
-    hbpr_content = st.text_area(
-        "Paste HBPR content here:",
-        height=300,
-        placeholder="Paste your HBPR record content here..."
-    )
-    
-    if st.button("🔍 Process Manual Input", use_container_width=True):
-        if hbpr_content.strip():
+    # 搜索根目录中的数据库文件
+    try:
+        import glob
+        import os
+        
+        # 优先搜索数据库文件夹中的.db文件
+        db_files = []
+        if os.path.exists("databases"):
+            db_files = glob.glob("databases/*.db")
+        
+        # 如果数据库文件夹中没有找到，则搜索根目录
+        if not db_files:
+            db_files = glob.glob("*.db")
+        
+        if not db_files:
+            st.error("❌ No HBPR databases found! Please build a database first.")
+            st.info("💡 Tip: Consider creating a 'databases' folder to organize your database files.")
+            return
+        
+        # 数据库选择下拉框
+        st.subheader("🗄️ Select Database")
+        
+        # 显示数据库文件夹建议
+        if not os.path.exists("databases"):
+            with st.expander("💡 Database Organization Suggestion"):
+                st.write("Consider creating a 'databases' folder to organize your database files:")
+                if st.button("📁 Create 'databases' folder"):
+                    try:
+                        os.makedirs("databases", exist_ok=True)
+                        st.success("✅ 'databases' folder created!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ Error creating folder: {str(e)}")
+        
+        db_options = []
+        for db_file in db_files:
+            # 尝试获取航班信息用于显示
             try:
-                chbpr = CHbpr()
-                chbpr.run(hbpr_content)
-                st.success("✅ Manual input processed!")
-                display_processing_results(chbpr)
-            except Exception as e:
-                st.error(f"❌ Error processing manual input: {str(e)}")
+                temp_db = HbprDatabase(db_file)
+                flight_info = temp_db.get_flight_info()
+                if flight_info:
+                    display_name = f"{flight_info['flight_number']} ({flight_info['flight_date']}) - {db_file}"
+                else:
+                    display_name = f"Unknown Flight - {db_file}"
+            except:
+                display_name = f"Database - {db_file}"
+            
+            db_options.append((display_name, db_file))
+        
+        # 使用列布局来放置选择框和状态标记
+        col1, col2 = st.columns([4, 1])
+        
+        with col1:
+            selected_db_display = st.selectbox(
+                "Choose database:",
+                options=[opt[0] for opt in db_options],
+                key="manual_input_db_select"
+            )
+        
+        # 获取选中的数据库文件
+        selected_db_file = None
+        for display_name, db_file in db_options:
+            if display_name == selected_db_display:
+                selected_db_file = db_file
+                break
+        
+        if not selected_db_file:
+            st.error("❌ Please select a database.")
+            return
+        
+        # 使用选中的数据库
+        db = HbprDatabase(selected_db_file)
+        
+        # 显示状态标记
+        flight_info = db.get_flight_info()
+        with col2:
+            if flight_info:
+                st.markdown("✅")
+            else:
+                st.markdown("⚠️")
+        
+        st.markdown("---")
+        
+        # 输入类型选择
+        input_type = st.radio(
+            "📝 Input Type:",
+            ["Full HBPR Record", "Simple HBNB Record"],
+            horizontal=True,
+            help="Full HBPR Record: Complete HBPR content with passenger details\nSimple HBNB Record: Just HBNB number for placeholder"
+        )
+        
+        if input_type == "Full HBPR Record":
+            # 完整HBPR记录输入
+            st.subheader("📄 Full HBPR Record Input")
+            
+            hbpr_content = st.text_area(
+                "Paste full HBPR content here:",
+                height=300,
+                placeholder="Paste your complete HBPR record content here...\nExample: >HBPR: CA984/25JUL25*LAX,12345\n...",
+                key="manual_input_hbpr_content"
+            )
+            
+            if st.button("🔍 Process Full Record", use_container_width=True):
+                if hbpr_content.strip():
+                    try:
+                        # 处理HBPR记录
+                        chbpr = CHbpr()
+                        chbpr.run(hbpr_content)
+                        
+                        # 获取当前数据库的flight_info
+                        flight_info = db.get_flight_info()
+                        
+                        # 获取HBNB的simple_record和full_record信息
+                        hbnb_exists = db.check_hbnb_exists(chbpr.HbnbNumber)
+                        
+                        # 显示处理前的状态信息
+                        st.subheader("📋 Processing Information")
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            st.write("**Database Flight Info:**")
+                            if flight_info:
+                                st.write(f"Flight: {flight_info['flight_number']}")
+                                st.write(f"Date: {flight_info['flight_date']}")
+                            else:
+                                st.write("No flight info available")
+                        
+                        with col2:
+                            st.write("**HBNB Status:**")
+                            if hbnb_exists['exists']:
+                                if hbnb_exists['full_record']:
+                                    st.write(f"HBNB {chbpr.HbnbNumber}: Full record exists")
+                                elif hbnb_exists['simple_record']:
+                                    st.write(f"HBNB {chbpr.HbnbNumber}: Simple record exists")
+                            else:
+                                st.write(f"HBNB {chbpr.HbnbNumber}: New record")
+                        
+                        # 验证航班信息匹配
+                        flight_validation = db.validate_flight_info_match(hbpr_content)
+                        
+                        if not flight_validation['match']:
+                            st.error(f"❌ Flight info mismatch: {flight_validation['reason']}")
+                            if 'db_flight' in flight_validation and 'hbpr_flight' in flight_validation:
+                                col1, col2 = st.columns(2)
+                                with col1:
+                                    st.write("**Database Flight:**")
+                                    st.write(f"Number: {flight_validation['db_flight']['flight_number']}")
+                                    st.write(f"Date: {flight_validation['db_flight']['flight_date']}")
+                                with col2:
+                                    st.write("**HBPR Flight:**")
+                                    st.write(f"Number: {flight_validation['hbpr_flight']['flight_number']}")
+                                    st.write(f"Date: {flight_validation['hbpr_flight']['flight_date']}")
+                            return
+                        
+                        # 处理记录替换/创建逻辑
+                        if hbnb_exists['exists']:
+                            if hbnb_exists['simple_record']:
+                                # 如果存在简单记录，删除它并创建完整记录
+                                db.delete_simple_record(chbpr.HbnbNumber)
+                                st.info(f"🔄 Replaced simple record for HBNB {chbpr.HbnbNumber}")
+                            
+                            # 创建或更新完整记录
+                            db.create_full_record(chbpr.HbnbNumber, hbpr_content)
+                            st.success(f"✅ Updated full record for HBNB {chbpr.HbnbNumber}")
+                        else:
+                            # 创建新的完整记录
+                            db.create_full_record(chbpr.HbnbNumber, hbpr_content)
+                            st.success(f"✅ Created new full record for HBNB {chbpr.HbnbNumber}")
+                        
+                        # 更新验证结果
+                        db.update_with_chbpr_results(chbpr)
+                        
+                        # 更新missing_numbers表
+                        try:
+                            db.update_missing_numbers_table()
+                            st.info("🔄 Updated missing numbers table")
+                        except Exception as e:
+                            st.warning(f"⚠️ Warning: Could not update missing numbers table: {str(e)}")
+                        
+                        st.success("✅ Full record processed and stored!")
+                        display_processing_results(chbpr)
+                        
+                        # 设置刷新标志
+                        st.session_state.refresh_home = True
+                        
+                        # 清空输入框
+                        st.session_state.manual_input_hbpr_content = ""
+                        
+                    except Exception as e:
+                        st.error(f"❌ Error processing full record: {str(e)}")
+                        st.error(traceback.format_exc())
+                else:
+                    st.warning("⚠️ Please enter HBPR content first.")
+        
         else:
-            st.warning("⚠️ Please enter HBPR content first.")
+            # 简单HBNB记录输入
+            st.subheader("🔢 Simple HBNB Record Input")
+            
+            hbnb_input = st.text_input(
+                "HBNB Numbers:",
+                placeholder="e.g., 400-410,412,415-420",
+                help="Enter HBNB numbers to create simple records. Supports:\n• Single number: 400\n• Range: 400-410\n• Comma-separated list: 400,412,415\n• Mixed: 400-410,412,415-420"
+            )
+            
+            # 解析HBNB输入
+            hbnb_numbers = []
+            if hbnb_input.strip():
+                try:
+                    hbnb_numbers = parse_hbnb_input(hbnb_input)
+                    if not hbnb_numbers:
+                        st.warning("⚠️ No valid HBNB numbers found in input")
+                except ValueError as e:
+                    st.error(f"❌ Invalid input format: {str(e)}")
+            
+            # 显示HBNB状态预览（仅显示前5个）
+            if hbnb_numbers:
+                st.subheader("📋 HBNB Status Preview")
+                preview_numbers = hbnb_numbers[:5]
+                for hbnb_num in preview_numbers:
+                    hbnb_exists = db.check_hbnb_exists(hbnb_num)
+                    if hbnb_exists['exists']:
+                        if hbnb_exists['full_record']:
+                            st.error(f"❌ HBNB {hbnb_num}: Full record exists")
+                        else:
+                            st.warning(f"⚠️ HBNB {hbnb_num}: Simple record exists")
+                    else:
+                        st.success(f"✅ HBNB {hbnb_num}: Available")
+                
+                if len(hbnb_numbers) > 5:
+                    st.info(f"ℹ️ ... and {len(hbnb_numbers) - 5} more HBNB numbers")
+            
+            # 创建简单记录的按钮
+            if st.button("➕ Create Simple Records", use_container_width=True):
+                if not hbnb_numbers:
+                    st.warning("⚠️ Please enter valid HBNB numbers first")
+                    return
+                
+                try:
+                    # 获取当前数据库的flight_info
+                    flight_info = db.get_flight_info()
+                    
+                    # 显示处理前的状态信息
+                    st.subheader("📋 Processing Information")
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.write("**Database Flight Info:**")
+                        if flight_info:
+                            st.write(f"Flight: {flight_info['flight_number']}")
+                            st.write(f"Date: {flight_info['flight_date']}")
+                        else:
+                            st.write("No flight info available")
+                    
+                    with col2:
+                        st.write(f"**HBNB Numbers to Process:** {len(hbnb_numbers)}")
+                    
+                    # 处理每个HBNB数字
+                    created_count = 0
+                    skipped_count = 0
+                    error_count = 0
+                    
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
+                    
+                    for i, hbnb_num in enumerate(hbnb_numbers):
+                        status_text.text(f"Processing HBNB {hbnb_num}... ({i+1}/{len(hbnb_numbers)})")
+                        
+                        try:
+                            # 检查HBNB是否存在
+                            hbnb_exists = db.check_hbnb_exists(hbnb_num)
+                            
+                            if hbnb_exists['exists']:
+                                if hbnb_exists['full_record']:
+                                    st.warning(f"⚠️ Skipped HBNB {hbnb_num}: Full record already exists")
+                                    skipped_count += 1
+                                else:
+                                    st.info(f"ℹ️ Skipped HBNB {hbnb_num}: Simple record already exists")
+                                    skipped_count += 1
+                            else:
+                                # 创建简单记录
+                                record_line = f"HBPR *,{hbnb_num}"
+                                db.create_simple_record(hbnb_num, record_line)
+                                st.success(f"✅ Created simple record for HBNB {hbnb_num}")
+                                created_count += 1
+                        
+                        except Exception as e:
+                            st.error(f"❌ Error processing HBNB {hbnb_num}: {str(e)}")
+                            error_count += 1
+                        
+                        # 更新进度条
+                        progress_bar.progress((i + 1) / len(hbnb_numbers))
+                    
+                    # 显示最终结果
+                    st.subheader("📊 Processing Summary")
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Created", created_count, delta=f"+{created_count}")
+                    with col2:
+                        st.metric("Skipped", skipped_count)
+                    with col3:
+                        st.metric("Errors", error_count, delta=f"-{error_count}" if error_count > 0 else None)
+                    
+                    if created_count > 0:
+                        st.success(f"✅ Successfully created {created_count} simple records!")
+                        
+                        # 更新missing_numbers表
+                        try:
+                            db.update_missing_numbers_table()
+                            st.info("🔄 Updated missing numbers table")
+                        except Exception as e:
+                            st.warning(f"⚠️ Warning: Could not update missing numbers table: {str(e)}")
+                        
+                        # 设置刷新标志
+                        st.session_state.refresh_home = True
+                    
+                except Exception as e:
+                    st.error(f"❌ Error creating simple records: {str(e)}")
+                    st.error(traceback.format_exc())
+        
+        # 显示简单记录列表
+        st.markdown("---")
+        st.subheader("📋 Simple Records in Database")
+        
+        try:
+            simple_records = db.get_simple_records()
+            if simple_records:
+                # 创建DataFrame显示简单记录
+                simple_df = pd.DataFrame(simple_records)
+                st.dataframe(simple_df, use_container_width=True, height=200)
+                
+                # 显示统计信息
+                summary = db.get_record_summary()
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Total Records", summary['total_records'])
+                with col2:
+                    st.metric("Full Records", summary['full_records'])
+                with col3:
+                    st.metric("Simple Records", summary['simple_records'])
+                with col4:
+                    st.metric("Validated Records", summary['validated_records'])
+            else:
+                st.info("ℹ️ No simple records found in database.")
+                
+        except Exception as e:
+            st.error(f"❌ Error loading simple records: {str(e)}")
+    
+    except Exception as e:
+        st.error(f"❌ Error accessing databases: {str(e)}")
+        st.info("💡 Please build a database first in the Database Management page.")
+
 
 
 def show_view_results():

@@ -178,8 +178,13 @@ class HBPRProcessor:
     
     def create_database(self, flight_id: str) -> str:
         """为指定航班创建SQLite数据库"""
-        # 生成数据库文件名
-        db_file = f"{flight_id}.db"
+        # 确保databases文件夹存在
+        databases_folder = "databases"
+        if not os.path.exists(databases_folder):
+            os.makedirs(databases_folder)
+        
+        # 生成数据库文件名（在databases文件夹中）
+        db_file = os.path.join(databases_folder, f"{flight_id}.db")
         # 删除已存在的数据库（带重试机制）
         if os.path.exists(db_file):
             try:
