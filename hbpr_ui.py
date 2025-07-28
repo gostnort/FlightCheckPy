@@ -352,7 +352,7 @@ def show_database_maintenance():
                         pspt_exp_date = NULL, ckin_msg = NULL, expc_piece = NULL,
                         expc_weight = NULL, asvc_piece = NULL, fba_piece = NULL,
                         ifba_piece = NULL, flyer_benefit = NULL, is_ca_flyer = NULL,
-                        error_count = NULL, error_messages = NULL, validated_at = NULL
+                        error_count = NULL, error_baggage = NULL, error_passport = NULL, error_name = NULL, error_visa = NULL, error_other = NULL, validated_at = NULL
                     """)
                     conn.commit()
                     conn.close()
@@ -400,7 +400,7 @@ def show_process_records():
 
 def process_all_records(db):
     """处理所有记录并显示错误信息"""
-    st.subheader("🚀 Process All HBPR Records")
+    st.subheader("🚀 Process All Records")
     
     try:
         # 获取所有数据库文件
@@ -427,8 +427,9 @@ def process_all_records(db):
             if st.button("🧹 Erase Result", use_container_width=True):
                 erase_splited_records(db)
         
+        # 显示错误分组统计
+        show_error_summary(db)
         # 显示错误信息
-        st.subheader("⚠️ Error Messages")
         show_error_messages(db)
         
     except Exception as e:
@@ -649,8 +650,11 @@ def display_processing_results(chbpr):
     # 错误信息
     if not chbpr.is_valid():
         st.subheader("⚠️ Validation Errors")
-        for error in chbpr.error_msg:
-            st.error(error)
+        for error_type, error_list in chbpr.error_msg.items():
+            if error_list:  # 只显示有错误的类型
+                st.subheader(f"🔴 {error_type} Errors")
+                for error in error_list:
+                    st.error(error)
     
     # 调试信息
     with st.expander("🔧 Debug Information"):
@@ -766,7 +770,7 @@ def erase_bn_related_errors(db):
                     pspt_exp_date = NULL, ckin_msg = NULL, expc_piece = NULL,
                     expc_weight = NULL, asvc_piece = NULL, fba_piece = NULL,
                     ifba_piece = NULL, flyer_benefit = NULL, is_ca_flyer = NULL,
-                    error_count = NULL, error_messages = NULL, validated_at = NULL
+                    error_count = NULL, error_baggage = NULL, error_passport = NULL, error_name = NULL, error_visa = NULL, error_other = NULL, validated_at = NULL
                 """)
                 
                 # 获取更新的记录数
@@ -791,21 +795,90 @@ def erase_bn_related_errors(db):
         st.error(f"❌ Error during cleanup: {str(e)}")
 
 
+def show_error_summary(db):
+    """显示错误分组统计"""
+    try:
+        conn = sqlite3.connect(db.db_file)
+        # 查询有错误的记录
+        df = pd.read_sql_query("""
+            SELECT error_baggage, error_passport, error_name, error_visa, error_other
+            FROM hbpr_full_records 
+            WHERE is_validated = 1 AND is_valid = 0 AND error_count > 0
+        """, conn)
+        conn.close()
+        
+        if df.empty:
+            st.info("ℹ️ No error messages found. All processed records are valid!")
+            return
+        
+        # 统计每种错误类型的数量
+        error_types = ['error_baggage', 'error_passport', 'error_name', 'error_visa', 'error_other']
+        error_labels = ['Baggage', 'Passport', 'Name', 'Visa', 'Other']
+        error_counts = {}
+        
+        for error_type, label in zip(error_types, error_labels):
+            # 计算非空错误的数量
+            count = df[df[error_type].notna() & (df[error_type] != '')].shape[0]
+            error_counts[label] = count
+        
+        # 显示错误统计
+        total_records_with_errors = len(df)
+        st.write(f"📊 **Total records with errors: {total_records_with_errors}**")
+        
+        labels = {'Baggage': '🧳',
+                   'Passport': '🪪', 'Name': '👤', 'Visa': '🛂', 'Other': '🔧'}
+
+        # 使用列显示每种错误类型的统计
+        cols = st.columns(5)
+        for i, (label, count) in enumerate(error_counts.items()):
+            with cols[i]:
+                st.metric(
+                    label=f"{labels[label]} {label}",
+                    value=count
+                )
+    except Exception as e:
+        st.error(f"❌ Error loading error summary: {str(e)}")
+
+
 def show_error_messages(db):
     """显示错误信息"""
     try:
         conn = sqlite3.connect(db.db_file)
         # 查询有错误的记录
         df = pd.read_sql_query("""
-            SELECT hbnb_number, name, error_count, error_messages, validated_at
+            SELECT hbnb_number, name, error_count, error_baggage, error_passport, error_name, error_visa, error_other, validated_at
             FROM hbpr_full_records 
-            WHERE is_validated = 1 AND is_valid = 0 AND error_messages IS NOT NULL
+            WHERE is_validated = 1 AND is_valid = 0 AND error_count > 0
             ORDER BY validated_at DESC, hbnb_number
         """, conn)
         conn.close()
+        
         if df.empty:
             st.info("ℹ️ No error messages found. All processed records are valid!")
             return
+        
+        # 添加错误类型过滤下拉框
+        error_types = ['All', 'Baggage', 'Passport', 'Name', 'Visa', 'Other']
+        selected_error_type = st.selectbox(
+            "🔍 Filter by Error Type:",
+            error_types
+        )
+        
+        # 根据选择的错误类型过滤记录
+        if selected_error_type != 'All':
+            error_field_map = {
+                'Baggage': 'error_baggage',
+                'Passport': 'error_passport', 
+                'Name': 'error_name',
+                'Visa': 'error_visa',
+                'Other': 'error_other'
+            }
+            error_field = error_field_map[selected_error_type]
+            df = df[df[error_field].notna() & (df[error_field] != '')]
+            
+            if df.empty:
+                st.info(f"ℹ️ No {selected_error_type} error messages found!")
+                return
         # 显示错误统计
         total_errors = len(df)
         st.write(f"**Found {total_errors} records with errors:**")
@@ -861,11 +934,32 @@ def show_error_messages(db):
                 if st.session_state.show_popup_for == row['hbnb_number']:
                     show_record_popup(db, row['hbnb_number'])
                 # 解析并显示错误信息
-                if row['error_messages']:
-                    errors = row['error_messages'].split('|') if '|' in row['error_messages'] else [row['error_messages']]
-                    for i, error in enumerate(errors, 1):
-                        if error.strip():
-                            st.error(f"Error {i}: {error.strip()}")
+                if selected_error_type == 'All':
+                    # 显示所有错误类型
+                    error_types = ['error_baggage', 'error_passport', 'error_name', 'error_visa', 'error_other']
+                    error_labels = ['Baggage', 'Passport', 'Name', 'Visa', 'Other']
+                    
+                    for error_type, label in zip(error_types, error_labels):
+                        if row[error_type] and row[error_type].strip():
+                            errors = row[error_type].split('\n') if '\n' in row[error_type] else [row[error_type]]
+                            for error in errors:
+                                if error.strip():
+                                    st.error(f"🔴 {label}: {error.strip()}")
+                else:
+                    # 只显示选中的错误类型
+                    error_field_map = {
+                        'Baggage': 'error_baggage',
+                        'Passport': 'error_passport', 
+                        'Name': 'error_name',
+                        'Visa': 'error_visa',
+                        'Other': 'error_other'
+                    }
+                    error_field = error_field_map[selected_error_type]
+                    if row[error_field] and row[error_field].strip():
+                        errors = row[error_field].split('\n') if '\n' in row[error_field] else [row[error_field]]
+                        for error in errors:
+                            if error.strip():
+                                st.error(f"🔴 {selected_error_type}: {error.strip()}")
         if total_pages > 1:
             st.info(f"Showing page {page} of {total_pages} ({len(page_df)} of {total_errors} records)")
     except Exception as e:

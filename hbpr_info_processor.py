@@ -16,7 +16,7 @@ from hbpr_list_processor import HBPRProcessor
 class CHbpr:
     """This class will process a single passenger information from HBPR page."""
     # 输出变量, 解析后的结构化数据字段 - 用于数据库存储
-    error_msg = []
+    error_msg = {"Baggage":[],"Passport":[],"Name":[],"Visa":[],"Other":[]}
     BoardingNumber = 0
     HbnbNumber = 0
     debug_msg = []
@@ -53,7 +53,8 @@ class CHbpr:
         try:
             # 初始化所有类级变量
             self.debug_msg.clear()
-            self.error_msg.clear()
+            for key in self.error_msg:
+                self.error_msg[key].clear()
             self.BoardingNumber = 0
             self.HbnbNumber = 0
             self.__ChkBagAverageWeight = 0
@@ -91,12 +92,12 @@ class CHbpr:
                 if self.BoardingNumber > 0:
                     self.__MatchingBag()
                     self.__GetPassportExp()
-                    #self.__GetVisaInfo()
+                    self.__GetVisaInfo()
                     self.__NameMatch()
                 else:
                     self.debug_msg.append("No BN number found, skipping validation")
         except Exception as e:
-            self.error_msg.append(
+            self.error_msg["Other"].append(
                 f"A Fatal Error occurred at HBPR{self.HbnbNumber}; "
                 f"Boarding Number should be {self.BoardingNumber}. Error: {str(e)}"
             )
@@ -129,7 +130,7 @@ class CHbpr:
         namePat = re.compile(r"(\d\.\s)([A-Z/+\s]{3,17})")
         nameMatch = namePat.search(self.__Hbpr)
         if not nameMatch:
-            self.error_msg.append(f"HBPR{self.HbnbNumber},\tPassenger name not found.")
+            self.error_msg["Other"].append(f"HBPR{self.HbnbNumber},\tPassenger name not found.")
             return False
         # 获取姓名
         self.NAME = nameMatch.group(2).strip()
@@ -175,7 +176,7 @@ class CHbpr:
                 self.DESTINATION = destMatch.group(1)
                 self.debug_msg.append("destination = " + self.DESTINATION)
         else:
-            self.error_msg.append(f"HBPR{self.HbnbNumber},\tNone validity classes are found.")
+            self.error_msg["Other"].append(f"HBPR{self.HbnbNumber},\tNone validity classes are found.")
             return False
         return True
 
@@ -300,7 +301,7 @@ class CHbpr:
             try:
                 result["FBA"] = int(self.__Hbpr[re_match.start() + 5])
             except:
-                self.error_msg.append(
+                self.error_msg["Other"].append(
                     f"HBPR{self.HbnbNumber},\tFBA got an error."
                 )
         pat = re.compile(r"\sIFBA/\dPC")
@@ -400,23 +401,23 @@ class CHbpr:
         if max_bag:
             self.BAG_ALLOWANCE = max_bag.get("piece")
         if self.BAG_PIECE > max_bag["piece"]:
-            self.error_msg.append(
+            self.error_msg["Baggage"].append(
                 f"HBPR{self.HbnbNumber},\thas "
                 f"{self.BAG_PIECE - max_bag['piece']} extra bag(s)."
             )
-            self.error_msg.append(self.__CaptureCkin())
+            self.error_msg["Baggage"].append(self.__CaptureCkin())
         elif self.BAG_WEIGHT > max_bag["weight"]:
-                self.error_msg.append(
+                self.error_msg["Baggage"].append(
                     f"HBPR{self.HbnbNumber},\tbaggage is overweight "
                     f"{self.BAG_WEIGHT - max_bag['weight']} KGs."
                 )
-                self.error_msg.append(self.__CaptureCkin())
+                self.error_msg["Baggage"].append(self.__CaptureCkin())
         elif self.__ChkBagAverageWeight > args.ClassBagWeight(self.CLASS):
-            self.error_msg.append(
+            self.error_msg["Baggage"].append(
                 f"HBPR{self.HbnbNumber},\tbaggage is overweight "
                 f"{self.__ChkBagAverageWeight - args.ClassBagWeight(self.CLASS)} KGs."
             )
-            self.error_msg.append(self.__CaptureCkin())
+            self.error_msg["Baggage"].append(self.__CaptureCkin())
         return
 
 
@@ -485,7 +486,7 @@ class CHbpr:
             return True
         else:
             str_difference_percentage = f"The Booking and Passport names match {difference_percentage:.1%}"
-            self.error_msg.append(
+            self.error_msg["Name"].append(
                 f"HBPR{self.HbnbNumber},\t{str_difference_percentage}"
             )
         return False
@@ -496,7 +497,7 @@ class CHbpr:
         recordName = self.NAME
         psptName = self.PSPT_NAME
         if recordName == self.__ERROR_NUMBER or psptName == self.__ERROR_NUMBER:
-            self.error_msg.append(
+            self.error_msg["Name"].append(
                 f"HBPR{self.HbnbNumber},\tPAX name not found."
             )
             return
@@ -531,7 +532,7 @@ class CHbpr:
                 nextDate = nextDate + deltaT
                 if nextDate > expDate:
                     errMsg = f"The passport expired on {expDate.strftime('%d%b%Y')}."
-                    self.error_msg.append(
+                    self.error_msg["Passport"].append(
                         f"HBPR{self.HbnbNumber},\t{errMsg}"
                     )
         except Exception as e:
@@ -571,7 +572,7 @@ class CHbpr:
                     self.debug_msg.append("CKIN VISA found")
             else:
                 # 未找到签证信息，添加错误
-                self.error_msg.append(
+                self.error_msg["Visa"].append(
                     f"HBPR{self.HbnbNumber},\tNo visa information found for {nationality} passport holder /n"
                     f"(PAX: {self.NAME}, BN: {self.BoardingNumber})"
                 )
@@ -602,15 +603,19 @@ class CHbpr:
             'IFBA_PIECE': self.IFBA_PIECE,
             'FLYER_BENEFIT': self.FLYER_BENEFIT,
             'IS_CA_FLYER': self.IS_CA_FLYER,
-            'has_error': len(self.error_msg) > 0,
-            'error_count': len(self.error_msg),
-            'error_messages': '\n'.join(self.error_msg) if self.error_msg else ''
+            'has_error': any(self.error_msg.values()),
+            'error_baggage': '\n'.join(self.error_msg["Baggage"]) if self.error_msg["Baggage"] else '',
+            'error_passport': '\n'.join(self.error_msg["Passport"]) if self.error_msg["Passport"] else '',
+            'error_name': '\n'.join(self.error_msg["Name"]) if self.error_msg["Name"] else '',
+            'error_visa': '\n'.join(self.error_msg["Visa"]) if self.error_msg["Visa"] else '',
+            'error_other': '\n'.join(self.error_msg["Other"]) if self.error_msg["Other"] else '',
+            'error_count': sum(1 for value in self.error_msg.values() if value)
         }
 
 
     def is_valid(self):
         """检查记录是否通过验证（无错误）"""
-        return len(self.error_msg) == 0
+        return not any(self.error_msg.values())
 
 
 
@@ -708,7 +713,11 @@ class HbprDatabase:
                 ('flyer_benefit', 'INTEGER'),
                 ('is_ca_flyer', 'BOOLEAN'),
                 ('error_count', 'INTEGER'),
-                ('error_messages', 'TEXT'),
+                ('error_baggage', 'TEXT'),
+                ('error_passport', 'TEXT'),
+                ('error_name', 'TEXT'),
+                ('error_visa', 'TEXT'),
+                ('error_other', 'TEXT'),
                 ('validated_at', 'TIMESTAMP')
             ]
             
@@ -801,7 +810,11 @@ class HbprDatabase:
                     flyer_benefit = ?,
                     is_ca_flyer = ?,
                     error_count = ?,
-                    error_messages = ?,
+                    error_baggage = ?,
+                    error_passport = ?,
+                    error_name = ?,
+                    error_visa = ?,
+                    error_other = ?,
                     validated_at = CURRENT_TIMESTAMP
                 WHERE hbnb_number = ?
             ''', (
@@ -827,7 +840,11 @@ class HbprDatabase:
                 data['FLYER_BENEFIT'],
                 data['IS_CA_FLYER'],
                 data['error_count'],
-                data['error_messages'],
+                data['error_baggage'],
+                data['error_passport'],
+                data['error_name'],
+                data['error_visa'],
+                data['error_other'],
                 hbnb_number
             ))
             
