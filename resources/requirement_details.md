@@ -32,8 +32,24 @@ graph TD
     B -->|Yes| H
     H --> I[Main Application]
     I --> J[Logout Option]
-    J --> K[Clear Session]
+    J --> K[Clear Session & Files]
     K --> C
+```
+
+### File Management Flow
+```mermaid
+graph TD
+    A[User Uploads File] --> B[Save to uploaded_hbpr_list.txt]
+    B --> C[Track File Path in Session]
+    C --> D[User Navigates Away]
+    D --> E{Previous Page = Database?}
+    E -->|Yes| F[Delete Uploaded File]
+    E -->|No| G[Continue Navigation]
+    F --> H[Clear File Path from Session]
+    H --> G
+    G --> I[User Logs Out]
+    I --> J[Clean Up Any Remaining Files]
+    J --> K[Clear All Session Data]
 ```
 
 ## System Architecture
@@ -411,6 +427,15 @@ python hbpr_list_processor.py
 - **Processing Feedback**: Detailed progress and result summaries
 - **Error Handling**: Comprehensive error messages and recovery options
 
+### File Upload and Cleanup System
+- **Smart File Tracking**: Uploaded files are tracked in session state for lifecycle management
+- **Navigation-Triggered Cleanup**: Files are automatically deleted when users navigate away from the Database Management page
+- **Page Transition Detection**: System detects when users switch between pages and triggers cleanup
+- **Logout Cleanup**: Complete file cleanup when users log out of the system
+- **Error-Resilient Operations**: File deletion operations are protected with exception handling
+- **Temporary File Management**: Prevents system clutter by removing temporary uploaded files
+- **Session State Management**: Proper tracking and cleanup of file references in user sessions
+
 ## Configuration and Constants
 
 ### Baggage Weight Constants
@@ -422,12 +447,21 @@ python hbpr_list_processor.py
 ### System Configuration
 - **Authentication Settings**: SHA256 hash validation for user credentials
 - **Session Management**: User session state and authentication status
+- **File Management**: Session state tracking for uploaded files and cleanup
 - **Database file naming conventions**: Secure database access patterns
 - **Error threshold settings**: Protected error handling
 - **Debug output levels**: Authenticated debugging capabilities
 - **Processing batch sizes**: Secure batch processing limits
 - **Database folder organization** (`databases/` directory): Protected database structure
 - **HBNB number validation range** (1-99999): Secure input validation
+
+### Session State Variables
+- **`current_page`**: Tracks the current active page for navigation
+- **`previous_page`**: Stores the previous page for navigation-based cleanup detection
+- **`uploaded_file_path`**: Tracks the path of uploaded files for cleanup management
+- **`authenticated`**: User authentication status
+- **`username`**: Current logged-in user
+- **`settings`**: System configuration settings
 
 ### Database Organization
 - **Default Location**: `databases/` folder in project root
@@ -448,6 +482,15 @@ python hbpr_list_processor.py
 - Focus on processing efficiency
 - Minimal redundant data storage
 - **NEW**: Efficient batch processing for multiple record creation
+- **File Cleanup**: Automatic removal of temporary uploaded files to prevent disk space accumulation
+- **Session State Optimization**: Efficient tracking of file paths without storing file contents in memory
+
+### File Management Best Practices
+- **Immediate Cleanup**: Files are deleted as soon as users navigate away from upload functionality
+- **Error Handling**: All file operations are wrapped in try-catch blocks to prevent application crashes
+- **Session Tracking**: File paths are tracked in session state for proper lifecycle management
+- **Logout Cleanup**: Complete cleanup of all temporary files when users log out
+- **Path Validation**: File existence is verified before deletion attempts
 
 ## API and Integration Points
 
@@ -545,3 +588,11 @@ python hbpr_list_processor.py
 - **Database Operations**: Robust error handling for all database operations
 - **User Feedback**: Clear error messages and recovery suggestions
 - **Data Consistency**: Automatic maintenance of missing numbers table
+
+### File Management and Cleanup
+- **Automatic File Cleanup**: Uploaded files are automatically deleted when navigating away from the Database Management page
+- **Session State Tracking**: File paths are tracked in session state for proper cleanup management
+- **Navigation-Based Cleanup**: Files are cleaned up when users switch to other pages or tabs
+- **Logout Cleanup**: All uploaded files are cleaned up when users log out
+- **Error-Safe Cleanup**: File deletion operations are wrapped in try-catch blocks to prevent errors
+- **Memory Management**: Prevents accumulation of temporary files in the system

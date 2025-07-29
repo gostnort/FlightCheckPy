@@ -31,7 +31,8 @@ class CHbpr:
     FF = ""
     PSPT_NAME = ""
     PSPT_EXP_DATE = ""
-    CKIN_MSG = ""
+    CKIN_MSG = []
+    ASVC_MSG = []
     EXPC_PIECE = 0
     EXPC_WEIGHT = 0
     ASVC_PIECE = 0
@@ -74,7 +75,9 @@ class CHbpr:
             self.FF = ""
             self.PSPT_NAME = ""
             self.PSPT_EXP_DATE = ""
-            self.CKIN_MSG = ""
+            self.CKIN_MSG = []
+            self.ASVC_MSG = []
+            self.CKIN_EXBG = ""
             self.EXPC_PIECE = 0
             self.EXPC_WEIGHT = 0
             self.ASVC_PIECE = 0
@@ -201,13 +204,6 @@ class CHbpr:
         self.PSPT_NAME = self.__PsptName()
         if self.PSPT_NAME == self.__ERROR_NUMBER:
             self.PSPT_NAME = ""
-        # 提取EXPC、ASVC、FBA等行李信息
-        expc_data = self.__ExpcStatement()
-        if expc_data:
-            self.EXPC_PIECE = expc_data.get("piece", 0)
-            self.EXPC_WEIGHT = expc_data.get("weight", 0)
-        # 提取ASVC行李
-        self.ASVC_PIECE = self.__AsvcBagStatement()
         # 提取常规行李额度
         regular_bags = self.__RegularBags()
         if regular_bags:
@@ -218,7 +214,7 @@ class CHbpr:
         # 提取常旅客权益
         self.__FlyerBenifit()
         # 提取CKIN信息
-        self.__CaptureCkin()
+        self.CKIN_EXBG = self.__CaptureCkin()
         return
 
 
@@ -271,6 +267,8 @@ class CHbpr:
             end_index = re_match.end()
         # 插入EXPC总重量
         result["weight"] = w_total
+        self.EXPC_PIECE = result["piece"]
+        self.EXPC_WEIGHT = w_total
         self.debug_msg.append("expc piece = " + str(result.get("piece", 0)))
         self.debug_msg.append("expc ttl w = " + str(result["weight"]))
         return result
@@ -282,7 +280,10 @@ class CHbpr:
         asvc_pat = re.compile(r"ASVC-[^\n]*")
         asvc_matches = asvc_pat.findall(self.__Hbpr)
         result_piece = 0
-        if not asvc_matches:
+        if asvc_matches:
+            for match in asvc_matches:
+                self.ASVC_MSG.append(match.strip())
+        else:
             return result_piece
         # 遍历所有ASVC行
         for asvc_line in asvc_matches:
@@ -299,6 +300,7 @@ class CHbpr:
                     self.debug_msg.append(f"asvc bag PC type error in: {asvc_line[:50]}...")
         if result_piece > 0:
             self.debug_msg.append(f"asvc total pieces = {result_piece}")
+        self.ASVC_PIECE = result_piece
         return result_piece
 
 
@@ -318,6 +320,8 @@ class CHbpr:
         re_match = pat.search(self.__Hbpr)
         if re_match:
             result["IFBA"] = 1
+        self.FBA_PIECE = result["FBA"]
+        self.IFBA_PIECE = result["IFBA"]
         self.debug_msg.append("adult bag  = " + str(result["FBA"]))
         self.debug_msg.append("Infant bag = " + str(result["IFBA"]))
         return result
@@ -359,59 +363,66 @@ class CHbpr:
 
     def __CalculateBagPieceAndWeight(self):
         """计算行李件数和重量"""
-        expc = self.__ExpcStatement()
-        asvc = self.__AsvcBagStatement()
+        self.__ExpcStatement() # 函数结果已经共享给EXPC_PIECE和EXPC_WEIGHT
+        asvc_piece = self.__AsvcBagStatement()
         result = {"piece": 0, "weight": 0}
         arg = CArgs()
-        if expc:
-            result["piece"] = expc["piece"] + asvc
-            result["weight"] = expc["weight"] + asvc * arg.ClassBagWeight(
-                self.CLASS
-            )
-            self.debug_msg.append("total piece = " + str(result["piece"]))
-            self.debug_msg.append("total weigh = " + str(result["weight"]))
-            return result
         # 总件数=常旅客+网购+成人票+婴儿票
-        result["piece"] = self.FLYER_BENEFIT + asvc + self.FBA_PIECE + self.IFBA_PIECE
+        result["piece"] = self.FLYER_BENEFIT + asvc_piece + self.FBA_PIECE + self.IFBA_PIECE
         if self.IS_CA_FLYER:
             # 总重量 =（CA常旅客+网购+成人票） x 舱位重量
             result["weight"] = (
-                self.FLYER_BENEFIT + asvc + self.FBA_PIECE
+                self.FLYER_BENEFIT + self.FBA_PIECE + asvc_piece
             ) * arg.ClassBagWeight(self.CLASS)
         else:
             # 总重量 = （非CA常旅客 x 金卡限制）+ （网购+成人票）x 舱位重量
             result["weight"] = self.FLYER_BENEFIT * arg.ForeignGoldFlyerBagWeight() + (
-                asvc + self.FBA_PIECE
+                self.FBA_PIECE + asvc_piece
             ) * arg.ClassBagWeight(self.CLASS)
         if self.IFBA_PIECE != 0:
             # 总重量 附加 婴儿票重量
             result["weight"] = result["weight"] + arg.InfBagWeight()
+        if result["weight"] < self.EXPC_WEIGHT:
+            result["weight"] = self.EXPC_WEIGHT
+        if result["piece"] < self.EXPC_PIECE:
+            result["piece"] = self.EXPC_PIECE
         self.debug_msg.append("total piece = " + str(result["piece"]))
         self.debug_msg.append("total weigh = " + str(result["weight"]))
         return result
 
 
     def __CaptureCkin(self):
-        """捕获CKIN信息"""
-        pat = re.compile(r"CKIN\sEXBG")
-        re_match = pat.search(self.__Hbpr)
-        ckin_msg = "CKIN not found."
-        if re_match:
-            # 查找完整的CKIN行
-            line_start = self.__Hbpr.rfind('\n', 0, re_match.start()) + 1
-            line_end = self.__Hbpr.find('\n', re_match.end())
-            if line_end == -1:
-                line_end = len(self.__Hbpr)
-            ckin_msg = self.__Hbpr[line_start:line_end]
-            # 设置CKIN_MSG字段
-            self.CKIN_MSG = ckin_msg
-        return ckin_msg
+        """
+        捕获CKIN信息，并设置CKIN_MSG字段
+        搜索所有以'CKIN '开头的行
+        如果CKIN信息不存在，则设置CKIN_MSG字段为"CKIN not found."
+        只返回CKIN EXBG信息,如果有的话。
+        """
+        # 清空之前的CKIN_MSG列表
+        self.CKIN_MSG.clear()
+        # 使用findall来找到所有匹配的CKIN行
+        pat = re.compile(r"CKIN\s+[^\n]*")
+        re_matches = pat.findall(self.__Hbpr)
+        if re_matches:
+            # 将所有找到的CKIN行添加到列表中
+            for match in re_matches:
+                self.CKIN_MSG.append(match.strip())
+        else:
+            #self.CKIN_MSG.append("CKIN not found.")
+            return "CKIN not found."
+        # 查找EXBG信息
+        for msg in self.CKIN_MSG:
+            if "EXBG" in msg:
+                self.CKIN_EXBG = msg
+                return msg
+        return "CKIN EXBG not found."
 
 
     def __MatchingBag(self):
         """匹配行李"""
         max_bag = self.__CalculateBagPieceAndWeight()
         args = CArgs()
+        bol_ckin_exbg = False
         if max_bag:
             self.BAG_ALLOWANCE = max_bag.get("piece")
         if self.BAG_PIECE > max_bag["piece"]:
@@ -419,19 +430,23 @@ class CHbpr:
                 f"HBPR{self.HbnbNumber},\thas "
                 f"{self.BAG_PIECE - max_bag['piece']} extra bag(s)."
             )
-            self.error_msg["Baggage"].append(self.__CaptureCkin())
+            bol_ckin_exbg = True
         elif self.BAG_WEIGHT > max_bag["weight"]:
+            if self.BAG_WEIGHT > args.ClassBagWeight(self.CLASS) * self.BAG_PIECE:
                 self.error_msg["Baggage"].append(
-                    f"HBPR{self.HbnbNumber},\tbaggage is overweight "
+                    f"HBPR{self.HbnbNumber},the baggage is overweight "
                     f"{self.BAG_WEIGHT - max_bag['weight']} KGs."
                 )
-                self.error_msg["Baggage"].append(self.__CaptureCkin())
-        elif self.__ChkBagAverageWeight > args.ClassBagWeight(self.CLASS):
-            self.error_msg["Baggage"].append(
-                f"HBPR{self.HbnbNumber},\tbaggage is overweight "
-                f"{self.__ChkBagAverageWeight - args.ClassBagWeight(self.CLASS)} KGs."
-            )
-            self.error_msg["Baggage"].append(self.__CaptureCkin())
+                bol_ckin_exbg = True
+        elif self.__ChkBagAverageWeight > (max_bag["weight"] / max_bag["piece"]):
+            if self.__ChkBagAverageWeight > args.ClassBagWeight(self.CLASS):
+                self.error_msg["Baggage"].append(
+                    f"HBPR{self.HbnbNumber},the baggage average weight is overweight "
+                    f"{self.__ChkBagAverageWeight - (max_bag['weight'] / max_bag['piece'])} KGs."
+                )
+                bol_ckin_exbg = True
+        if bol_ckin_exbg:
+            self.error_msg["Baggage"].append(self.CKIN_EXBG)
         return
 
 
@@ -607,7 +622,8 @@ class CHbpr:
             'FF': self.FF,
             'PSPT_NAME': self.PSPT_NAME,
             'PSPT_EXP_DATE': self.PSPT_EXP_DATE,
-            'CKIN_MSG': self.CKIN_MSG,
+            'CKIN_MSG': '; '.join(self.CKIN_MSG) if self.CKIN_MSG else '',
+            'ASVC_MSG': '; '.join(self.ASVC_MSG) if self.ASVC_MSG else '',
             'EXPC_PIECE': self.EXPC_PIECE,
             'EXPC_WEIGHT': self.EXPC_WEIGHT,
             'ASVC_PIECE': self.ASVC_PIECE,
@@ -630,21 +646,27 @@ class CHbpr:
 
     def __GetConnectingFlights(self):
         """获取连接航班"""
+        result = {}
         # 获取进港航班
-        inbound_pattern = r"\s*(I/[A-Z]{2}\d+/\d{2}[A-Z]{3})\s*"
+        inbound_pattern = r"\s(I/[A-Z]{2}\d+/\d{2}[A-Z]{3})\s"
         inbound_match = re.search(inbound_pattern, self.__Hbpr)
         if inbound_match:
             self.INBOUND_FLIGHT = inbound_match.group(1).replace("I/", "")
+            result["inbound_station"] = self.__Hbpr[inbound_match.start()+37:inbound_match.start()+40]
         else:
             self.INBOUND_FLIGHT = ""
         # 获取出港航班
-        outbound_pattern = r"\s*(O/[A-Z]{2}\d+/\d{2}[A-Z]{3})\s*"
+        outbound_pattern = r"\s(O/[A-Z]{2}\d+/\d{2}[A-Z]{3})\s"
         outbound_match = re.search(outbound_pattern, self.__Hbpr)
         if outbound_match:
             self.OUTBOUND_FLIGHT = outbound_match.group(1).replace("O/", "")
+            result["outbound_station"] = self.__Hbpr[outbound_match.start()+37:outbound_match.start()+40]
+            self.DESTINATION = result['outbound_station']
         else:
             self.OUTBOUND_FLIGHT = ""
-        return 
+        self.debug_msg.append(f"INBOUND_FLIGHT = {self.INBOUND_FLIGHT}, OUTBOUND_FLIGHT = {self.OUTBOUND_FLIGHT}")
+        self.debug_msg.append(f"INBOUND_STATION = {result['inbound_station']}, OUTBOUND_STATION = {result['outbound_station']}")
+        return result
     
 
     def __GetProperties(self):
@@ -812,6 +834,7 @@ class HbprDatabase:
                 ('pspt_name', 'TEXT'),
                 ('pspt_exp_date', 'TEXT'),
                 ('ckin_msg', 'TEXT'),
+                ('asvc_msg', 'TEXT'),
                 ('expc_piece', 'INTEGER'),
                 ('expc_weight', 'INTEGER'),
                 ('asvc_piece', 'INTEGER'),
@@ -912,6 +935,7 @@ class HbprDatabase:
                     pspt_name = ?,
                     pspt_exp_date = ?,
                     ckin_msg = ?,
+                    asvc_msg = ?,
                     expc_piece = ?,
                     expc_weight = ?,
                     asvc_piece = ?,
@@ -945,6 +969,7 @@ class HbprDatabase:
                 data['PSPT_NAME'],
                 data['PSPT_EXP_DATE'],
                 data['CKIN_MSG'],
+                data['ASVC_MSG'],
                 data['EXPC_PIECE'],
                 data['EXPC_WEIGHT'],
                 data['ASVC_PIECE'],
@@ -1499,7 +1524,8 @@ def main():
     chbpr = CHbpr()
     chbpr.run(sample_content)
     
-    print("PROPERTIES:", chbpr.PROPERTIES)
+    print("Debug Message:", chbpr.debug_msg)
+    print("error_msg:", chbpr.error_msg)
 
 
 if __name__ == "__main__":
