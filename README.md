@@ -6,7 +6,7 @@
 
 ## 🔐 安全特性
 
-### 用户认证系统
+### 用户认证
 - **SHA256 加密**: 使用 SHA256 哈希算法进行密码验证
 
 ## 主要功能
@@ -24,7 +24,7 @@
 
 1. **下载项目**
    ```bash
-   git clone [项目地址]
+   git clone https://github.com/gostnort/FlightCheckPy
    cd FlightCheckPy
    ```
 
@@ -32,8 +32,6 @@
    ```bash
    python -m venv .venv
    .venv/scripts/activate  # Windows
-   # 或
-   source .venv/bin/activate  # Linux/Mac
    ```
 
 3. **安装依赖**
