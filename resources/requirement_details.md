@@ -128,6 +128,12 @@ FlightCheckPy/
 - `HbprDatabase.validate_flight_info_match()`: Validate flight information consistency
 - `HbprDatabase.get_flight_info()`: Get database flight information
 - `HbprDatabase.update_missing_numbers_table()`: Recalculate and update missing numbers table
+- `HbprDatabase.create_duplicate_record_table()`: Create duplicate_record table
+- `HbprDatabase.create_duplicate_record()`: Create duplicate records with original reference
+- `HbprDatabase.get_duplicate_records()`: Get all duplicate records for a specific HBNB
+- `HbprDatabase.get_all_duplicate_hbnbs()`: Get all HBNBs that have duplicate records
+- `HbprDatabase.get_duplicate_record_content()`: Get content of specific duplicate record
+- `HbprDatabase.get_combined_records_for_display()`: Get combined records for UI display
 
 
 ### 3. `hbpr_list_processor.py` - Batch Processing
@@ -239,6 +245,12 @@ HbprDatabase:
 │   ├── validate_flight_info_match() → Validate flight consistency
 │   ├── get_flight_info() → Get database flight information
 │   ├── update_missing_numbers_table() → Recalculate missing numbers table
+│   ├── create_duplicate_record_table() → Create duplicate record table
+│   ├── create_duplicate_record() → Create duplicate records
+│   ├── get_duplicate_records() → Get duplicates for specific HBNB
+│   ├── get_all_duplicate_hbnbs() → Get all HBNBs with duplicates
+│   ├── get_duplicate_record_content() → Get specific duplicate content
+│   └── get_combined_records_for_display() → Get combined display data
 
 └── Output: Database operations and queries
 ```
@@ -275,7 +287,42 @@ CArgs:
 CREATE TABLE hbpr_full_records (
     hbnb_number INTEGER PRIMARY KEY,
     record_content TEXT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    bol_duplicate BOOLEAN DEFAULT 0,
+    -- Additional CHbpr validation fields:
+    is_validated BOOLEAN DEFAULT 0,
+    is_valid BOOLEAN,
+    boarding_number INTEGER,
+    pnr TEXT,
+    name TEXT,
+    seat TEXT,
+    class TEXT,
+    destination TEXT,
+    bag_piece INTEGER,
+    bag_weight INTEGER,
+    bag_allowance INTEGER,
+    ff TEXT,
+    pspt_name TEXT,
+    pspt_exp_date TEXT,
+    ckin_msg TEXT,
+    asvc_msg TEXT,
+    expc_piece INTEGER,
+    expc_weight INTEGER,
+    asvc_piece INTEGER,
+    fba_piece INTEGER,
+    ifba_piece INTEGER,
+    flyer_benefit INTEGER,
+    is_ca_flyer BOOLEAN,
+    inbound_flight TEXT,
+    outbound_flight TEXT,
+    properties TEXT,
+    error_count INTEGER,
+    error_baggage TEXT,
+    error_passport TEXT,
+    error_name TEXT,
+    error_visa TEXT,
+    error_other TEXT,
+    validated_at TIMESTAMP
 );
 ```
 
@@ -309,9 +356,21 @@ CREATE TABLE missing_numbers (
 );
 ```
 
-**5. CHbpr Fields (Structured Data)**
+**5. duplicate_record**
 ```sql
--- Additional fields added to hbpr_processing_results
+CREATE TABLE duplicate_record (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    hbnb_number INTEGER NOT NULL,
+    original_hbnb_id INTEGER NOT NULL,
+    record_content TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (original_hbnb_id) REFERENCES hbpr_full_records(hbnb_number)
+);
+```
+
+**6. CHbpr Fields (Structured Data)**
+```sql
+-- Additional fields added to hbpr_full_records
 PNR TEXT,
 NAME TEXT,
 SEAT TEXT,
@@ -348,6 +407,7 @@ streamlit run hbpr_ui.py
 - **Manual HBPR input** with smart database selection
 - **Flexible HBNB number range input**
 - **Database folder organization**
+- **Duplicate record management** with interactive UI
 
 ### 2. Command Line Processing
 ```bash
@@ -402,7 +462,7 @@ python hbpr_list_processor.py
 - **Login**: Secure authentication interface with SHA256 validation
 - **Home**: System overview and statistics (authenticated access)
 - **Database**: Database operations and maintenance (protected)
-- **Process Records**: Record processing and validation (authenticated)
+- **Process Records**: Record processing, validation, and duplicate management (authenticated)
 - **View Results**: Results analysis and export (secure access)
 - **Settings**: System configuration (authenticated users)
 - **Logout**: Secure session termination and cleanup
@@ -419,6 +479,8 @@ python hbpr_list_processor.py
 - **Database Selection with Status Indicators**: Protected database operations
 - **HBNB Range Input with Validation**: Secure input processing
 - **Processing Status and Summary Display**: Authenticated progress tracking
+- **Duplicate Record Management**: Create and view duplicate HBPR records
+- **Interactive Record Viewer**: Two-column layout for record selection and content display
 
 ### Manual HBPR Input Interface
 - **Database Selection**: Smart dropdown with flight information display
@@ -426,6 +488,36 @@ python hbpr_list_processor.py
 - **Input Validation**: Real-time validation of HBNB number formats
 - **Processing Feedback**: Detailed progress and result summaries
 - **Error Handling**: Comprehensive error messages and recovery options
+- **Dual Button System**: "Replace the Record" and "Create a Duplicate Record" options
+- **View Type Selection**: Radio buttons to switch between Simple Records and Duplicate Records
+
+### Duplicate Record Management System
+- **Purpose**: Manage multiple versions of the same HBNB record for comparison and analysis
+- **Database Integration**: Uses dedicated `duplicate_record` table with foreign key references
+- **Data Integrity**: Automatically sets `bol_duplicate` flag on original records
+
+#### **Creation Workflow**
+1. **Prerequisites**: Original full record must exist in database
+2. **Validation**: Same flight information validation as regular records
+3. **Storage**: Duplicate stored with reference to original HBNB ID
+4. **Flagging**: Original record marked with `bol_duplicate = 1`
+
+#### **User Interface Features**
+- **Two-Column Layout**: Left panel for selection, right panel for content display
+- **HBNB Selection**: Dropdown showing all HBNBs with duplicate records
+- **Interactive DataFrame**: Click-to-select interface with three columns:
+  - **Type**: "Original" or "Duplicate"
+  - **Record ID**: "original" for originals, numeric ID for duplicates
+  - **Created At**: Timestamp or "Original Record"
+- **Content Display**: Read-only text area (422px height) showing full HBPR content
+- **Visual Feedback**: Different styling for original vs duplicate records
+- **Default View**: Shows original record content when no specific selection made
+
+#### **Data Management**
+- **Sorting Logic**: Original records appear first, duplicates sorted by creation time
+- **Record Relationships**: Maintains parent-child relationship between original and duplicates
+- **Content Integrity**: Full HBPR content preserved for each duplicate
+- **Statistics Display**: Shows count of duplicates per HBNB
 
 ### File Upload and Cleanup System
 - **Smart File Tracking**: Uploaded files are tracked in session state for lifecycle management
@@ -596,3 +688,15 @@ python hbpr_list_processor.py
 - **Logout Cleanup**: All uploaded files are cleaned up when users log out
 - **Error-Safe Cleanup**: File deletion operations are wrapped in try-catch blocks to prevent errors
 - **Memory Management**: Prevents accumulation of temporary files in the system
+
+### Duplicate Record Management (New Feature)
+- **Advanced Record Versioning**: Create and manage multiple versions of HBPR records for the same HBNB
+- **Database Schema Enhancement**: New `duplicate_record` table with proper foreign key relationships
+- **Original Record Flagging**: `bol_duplicate` field automatically tracks records with duplicates
+- **Intelligent UI Layout**: Two-column responsive design (2:3 ratio) for optimal user experience
+- **Interactive Record Selection**: Click-to-view functionality with real-time content display
+- **Data Integrity Validation**: Ensures original records exist before allowing duplicate creation
+- **Comprehensive Error Handling**: Fixed session state management and validation errors
+- **Read-Only Content Display**: Protected content viewing with disabled text area (422px height)
+- **Temporal Organization**: Automatic sorting by creation time for duplicates
+- **Visual Differentiation**: Clear indicators for original vs duplicate record types
