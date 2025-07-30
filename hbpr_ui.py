@@ -1313,7 +1313,16 @@ def process_manual_input():
                 key="manual_input_hbpr_content"
             )
             
-            if st.button("🔍 Process Full Record", use_container_width=True):
+            # Add two buttons side by side
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                replace_clicked = st.button("🔍 Replace the Record", use_container_width=True)
+            
+            with col2:
+                duplicate_clicked = st.button("📋 Create a Duplicate Record", use_container_width=True)
+            
+            if replace_clicked:
                 if hbpr_content.strip():
                     try:
                         # 处理HBPR记录
@@ -1401,6 +1410,90 @@ def process_manual_input():
                         
                     except Exception as e:
                         st.error(f"❌ Error processing full record: {str(e)}")
+                        st.error(traceback.format_exc())
+                else:
+                    st.warning("⚠️ Please enter HBPR content first.")
+            
+            if duplicate_clicked:
+                if hbpr_content.strip():
+                    try:
+                        # 处理HBPR记录
+                        chbpr = CHbpr()
+                        chbpr.run(hbpr_content)
+                        
+                        # 获取当前数据库的flight_info
+                        flight_info = db.get_flight_info()
+                        
+                        # 获取HBNB的simple_record和full_record信息
+                        hbnb_exists = db.check_hbnb_exists(chbpr.HbnbNumber)
+                        
+                        # 显示处理前的状态信息
+                        st.subheader("📋 Duplicate Record Processing Information")
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            st.write("**Database Flight Info:**")
+                            if flight_info:
+                                st.write(f"Flight: {flight_info['flight_number']}")
+                                st.write(f"Date: {flight_info['flight_date']}")
+                            else:
+                                st.write("No flight info available")
+                        
+                        with col2:
+                            st.write("**HBNB Status:**")
+                            if hbnb_exists['exists']:
+                                if hbnb_exists['full_record']:
+                                    st.write(f"HBNB {chbpr.HbnbNumber}: Full record exists")
+                                elif hbnb_exists['simple_record']:
+                                    st.write(f"HBNB {chbpr.HbnbNumber}: Simple record exists")
+                            else:
+                                st.write(f"HBNB {chbpr.HbnbNumber}: New record")
+                        
+                        # 验证航班信息匹配
+                        flight_validation = db.validate_flight_info_match(hbpr_content)
+                        
+                        if not flight_validation['match']:
+                            st.error(f"❌ Flight info mismatch: {flight_validation['reason']}")
+                            if 'db_flight' in flight_validation and 'hbpr_flight' in flight_validation:
+                                col1, col2 = st.columns(2)
+                                with col1:
+                                    st.write("**Database Flight:**")
+                                    st.write(f"Number: {flight_validation['db_flight']['flight_number']}")
+                                    st.write(f"Date: {flight_validation['db_flight']['flight_date']}")
+                                with col2:
+                                    st.write("**HBPR Flight:**")
+                                    st.write(f"Number: {flight_validation['hbpr_flight']['flight_number']}")
+                                    st.write(f"Date: {flight_validation['hbpr_flight']['flight_date']}")
+                            return
+                        
+                        # 检查原始记录是否存在
+                        if not hbnb_exists['full_record']:
+                            st.error(f"❌ Cannot create duplicate: No full record exists for HBNB {chbpr.HbnbNumber}")
+                            st.info("💡 Please create the original full record first using 'Replace the Record' button.")
+                            return
+                        
+                        # 创建重复记录
+                        db.create_duplicate_record(chbpr.HbnbNumber, chbpr.HbnbNumber, hbpr_content)
+                        st.success(f"✅ Created duplicate record for HBNB {chbpr.HbnbNumber}")
+                        
+                        # 更新验证结果
+                        db.update_with_chbpr_results(chbpr)
+                        
+                        # 更新missing_numbers表
+                        try:
+                            db.update_missing_numbers_table()
+                            st.info("🔄 Updated missing numbers table")
+                        except Exception as e:
+                            st.warning(f"⚠️ Warning: Could not update missing numbers table: {str(e)}")
+                        
+                        st.success("✅ Duplicate record processed and stored!")
+                        display_processing_results(chbpr)
+                        
+                        # 设置刷新标志
+                        st.session_state.refresh_home = True
+                        
+                    except Exception as e:
+                        st.error(f"❌ Error processing duplicate record: {str(e)}")
                         st.error(traceback.format_exc())
                 else:
                     st.warning("⚠️ Please enter HBPR content first.")
@@ -1530,33 +1623,145 @@ def process_manual_input():
                     st.error(f"❌ Error creating simple records: {str(e)}")
                     st.error(traceback.format_exc())
         
-        # 显示简单记录列表
+        # 显示记录列表区域
         st.markdown("---")
-        st.subheader("📋 Simple Records in Database")
+        st.subheader("📋 Records in Database")
+        
+        # 添加视图类型选择
+        view_type = st.radio(
+            "Select view type:",
+            ["Simple Records", "Duplicate Records"],
+            horizontal=True,
+            help="Simple Records: Regular HBPR records\nDuplicate Records: Records with duplicates"
+        )
         
         try:
-            simple_records = db.get_simple_records()
-            if simple_records:
-                # 创建DataFrame显示简单记录
-                simple_df = pd.DataFrame(simple_records)
-                st.dataframe(simple_df, use_container_width=True, height=200)
+            if view_type == "Simple Records":
+                # 显示简单记录
+                simple_records = db.get_simple_records()
+                if simple_records:
+                    # 创建DataFrame显示简单记录
+                    simple_df = pd.DataFrame(simple_records)
+                    st.dataframe(simple_df, use_container_width=True, height=200)
+                    
+                    # 显示统计信息
+                    summary = db.get_record_summary()
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("Total Records", summary['total_records'])
+                    with col2:
+                        st.metric("Full Records", summary['full_records'])
+                    with col3:
+                        st.metric("Simple Records", summary['simple_records'])
+                    with col4:
+                        st.metric("Validated Records", summary['validated_records'])
+                else:
+                    st.info("ℹ️ No simple records found in database.")
+            
+            else:  # Duplicate Records view
+                # 获取有重复记录的HBNB号码
+                duplicate_hbnbs = db.get_all_duplicate_hbnbs()
                 
-                # 显示统计信息
-                summary = db.get_record_summary()
-                col1, col2, col3, col4 = st.columns(4)
-                with col1:
-                    st.metric("Total Records", summary['total_records'])
-                with col2:
-                    st.metric("Full Records", summary['full_records'])
-                with col3:
-                    st.metric("Simple Records", summary['simple_records'])
-                with col4:
-                    st.metric("Validated Records", summary['validated_records'])
-            else:
-                st.info("ℹ️ No simple records found in database.")
+                if duplicate_hbnbs:
+                    # 创建两列布局
+                    left_col, right_col = st.columns([2, 3])
+                    
+                    with left_col:
+                        # 选择要查看的HBNB
+                        selected_hbnb = st.selectbox(
+                            "Select HBNB to view duplicates:",
+                            options=duplicate_hbnbs,
+                            help="Select an HBNB number to view its duplicate records"
+                        )
+                        
+                        if selected_hbnb:
+                            # 获取原始记录和重复记录
+                            original_record = db.get_hbpr_record(selected_hbnb)
+                            duplicate_records = db.get_duplicate_records(selected_hbnb)
+                            
+                            # 创建组合数据用于DataFrame显示
+                            display_data = []
+                            
+                            # 添加原始记录（在顶部）
+                            display_data.append({
+                                'Type': 'Original',
+                                'Record ID': 'original',
+                                'Created At': 'Original Record'
+                            })
+                            
+                            # 添加重复记录（按创建时间排序）
+                            for dup in duplicate_records:
+                                display_data.append({
+                                    'Type': 'Duplicate',
+                                    'Record ID': dup['id'],
+                                    'Created At': dup['created_at']
+                                })
+                            
+                            # 显示DataFrame
+                            if display_data:
+                                records_df = pd.DataFrame(display_data)
+                                
+                                # 使用st.dataframe创建可选择的表格
+                                event = st.dataframe(
+                                    records_df,
+                                    use_container_width=True,
+                                    height=400,
+                                    hide_index=True,
+                                    on_select="rerun",
+                                    selection_mode="single-row"
+                                )
+                            
+                            # 显示统计信息
+                            st.markdown("### 📊 Statistics")
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.metric("Original HBNB", selected_hbnb)
+                            with col2:
+                                st.metric("Duplicates", len(duplicate_records))
+                    
+                    with right_col:
+                        # Record Content区域
+                        st.markdown("### 📄 Record Content")
+                        
+                        if selected_hbnb and display_data:
+                            # 检查是否有选中的行
+                            if event.selection.rows:
+                                selected_row_index = event.selection.rows[0]
+                                selected_row = records_df.iloc[selected_row_index]
+                                
+                                if selected_row['Type'] == 'Original':
+                                    # 显示原始记录
+                                    record_content = original_record
+                                    record_label = f"Original Record (HBNB: {selected_hbnb})"
+                                else:
+                                    # 显示重复记录
+                                    record_id = int(selected_row['Record ID'])
+                                    record_content = db.get_duplicate_record_content(record_id)
+                                    record_label = f"Duplicate Record (ID: {record_id})"                               
+                            else:
+                                # 默认显示原始记录
+                                record_content = original_record
+                                record_label = f"Original Record (HBNB: {selected_hbnb})"
+                                st.info("👈 Click on a row to view its content")
+                                st.info(f"🔘 **{record_label}** (Default)")
+                            
+                            # 在文本区域显示记录内容（只读）
+                            st.text_area(
+                                "Content:",
+                                value=record_content,
+                                height=422,
+                                disabled=True,  # 设置为只读
+                                key=f"readonly_content_{selected_hbnb}_{event.selection.rows[0] if event.selection.rows else 'default'}"
+                            )
+                        else:
+                            st.info("Select an HBNB from the left to view records")
+                
+                else:
+                    st.info("ℹ️ No duplicate records found in database.")
+                    st.info("💡 Create duplicate records using the 'Create a Duplicate Record' button above.")
                 
         except Exception as e:
-            st.error(f"❌ Error loading simple records: {str(e)}")
+            st.error(f"❌ Error loading records: {str(e)}")
     
     except Exception as e:
         st.error(f"❌ Error accessing databases: {str(e)}")

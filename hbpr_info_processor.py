@@ -860,7 +860,8 @@ class HbprDatabase:
                 ('error_name', 'TEXT'),
                 ('error_visa', 'TEXT'),
                 ('error_other', 'TEXT'),
-                ('validated_at', 'TIMESTAMP')
+                ('validated_at', 'TIMESTAMP'),
+                ('bol_duplicate', 'BOOLEAN DEFAULT 0')
             ]
             
             # 添加不存在的字段
@@ -1523,6 +1524,199 @@ class HbprDatabase:
         except sqlite3.Error as e:
             raise Exception(f"Database error: {e}")
 
+
+    def create_duplicate_record_table(self):
+        """创建duplicate_record表"""
+        if not self.db_file:
+            self.find_database()
+        
+        try:
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            
+            # 创建duplicate_record表
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS duplicate_record (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    hbnb_number INTEGER NOT NULL,
+                    original_hbnb_id INTEGER NOT NULL,
+                    record_content TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (original_hbnb_id) REFERENCES hbpr_full_records(hbnb_number)
+                )
+            ''')
+            
+            conn.commit()
+            conn.close()
+            print("Created duplicate_record table")
+            
+        except sqlite3.Error as e:
+            raise Exception(f"Database error: {e}")
+    
+    
+    def create_duplicate_record(self, hbnb_number: int, original_hbnb_id: int, record_content: str):
+        """创建重复记录"""
+        if not self.db_file:
+            self.find_database()
+        
+        try:
+            # 确保duplicate_record表存在
+            self.create_duplicate_record_table()
+            
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            
+            # 插入重复记录
+            cursor.execute(
+                'INSERT INTO duplicate_record (hbnb_number, original_hbnb_id, record_content) VALUES (?, ?, ?)',
+                (hbnb_number, original_hbnb_id, record_content)
+            )
+            
+            # 更新原始记录的bol_duplicate标志
+            cursor.execute(
+                'UPDATE hbpr_full_records SET bol_duplicate = 1 WHERE hbnb_number = ?',
+                (original_hbnb_id,)
+            )
+            
+            conn.commit()
+            conn.close()
+            
+            print(f"Created duplicate record for HBNB {hbnb_number} (original: {original_hbnb_id})")
+            return True
+            
+        except sqlite3.Error as e:
+            raise Exception(f"Database error: {e}")
+    
+    
+    def get_duplicate_records(self, original_hbnb_id: int):
+        """获取指定HBNB的所有重复记录"""
+        if not self.db_file:
+            self.find_database()
+        
+        try:
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            
+            # 检查duplicate_record表是否存在
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='duplicate_record'")
+            if not cursor.fetchone():
+                conn.close()
+                return []
+            
+            # 获取重复记录
+            cursor.execute(
+                'SELECT id, hbnb_number, record_content, created_at FROM duplicate_record WHERE original_hbnb_id = ? ORDER BY created_at',
+                (original_hbnb_id,)
+            )
+            results = cursor.fetchall()
+            conn.close()
+            
+            return [{'id': row[0], 'hbnb_number': row[1], 'record_content': row[2], 'created_at': row[3]} for row in results]
+            
+        except sqlite3.Error as e:
+            raise Exception(f"Database error: {e}")
+    
+    
+    def get_all_duplicate_hbnbs(self):
+        """获取所有有重复记录的HBNB号码"""
+        if not self.db_file:
+            self.find_database()
+        
+        try:
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            
+            # 检查duplicate_record表是否存在
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='duplicate_record'")
+            if not cursor.fetchone():
+                conn.close()
+                return []
+            
+            # 获取所有有重复记录的HBNB号码
+            cursor.execute(
+                'SELECT DISTINCT original_hbnb_id FROM duplicate_record ORDER BY original_hbnb_id'
+            )
+            results = cursor.fetchall()
+            conn.close()
+            
+            return [row[0] for row in results]
+            
+        except sqlite3.Error as e:
+            raise Exception(f"Database error: {e}")
+    
+    
+    def get_duplicate_record_content(self, duplicate_id: int):
+        """根据duplicate record ID获取记录内容"""
+        if not self.db_file:
+            self.find_database()
+        
+        try:
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            
+            cursor.execute(
+                'SELECT record_content FROM duplicate_record WHERE id = ?',
+                (duplicate_id,)
+            )
+            result = cursor.fetchone()
+            conn.close()
+            
+            if result:
+                return result[0]
+            else:
+                raise ValueError(f"No duplicate record found with ID {duplicate_id}")
+                
+        except sqlite3.Error as e:
+            raise Exception(f"Database error: {e}")
+    
+    
+    def get_combined_records_for_display(self):
+        """获取用于显示的组合记录（包括原始记录和重复记录）"""
+        if not self.db_file:
+            self.find_database()
+        
+        try:
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            
+            records = []
+            
+            # 获取所有完整记录
+            cursor.execute(
+                'SELECT hbnb_number, record_content, created_at, bol_duplicate FROM hbpr_full_records ORDER BY hbnb_number'
+            )
+            full_records = cursor.fetchall()
+            
+            for record in full_records:
+                hbnb_number, content, created_at, bol_duplicate = record
+                records.append({
+                    'type': 'original',
+                    'hbnb_number': hbnb_number,
+                    'record_content': content,
+                    'created_at': created_at,
+                    'has_duplicates': bool(bol_duplicate),
+                    'duplicate_id': None
+                })
+                
+                # 如果有重复记录，也添加进来
+                if bol_duplicate:
+                    duplicates = self.get_duplicate_records(hbnb_number)
+                    for dup in duplicates:
+                        records.append({
+                            'type': 'duplicate',
+                            'hbnb_number': dup['hbnb_number'],
+                            'record_content': dup['record_content'],
+                            'created_at': dup['created_at'],
+                            'has_duplicates': False,
+                            'duplicate_id': dup['id'],
+                            'original_hbnb': hbnb_number
+                        })
+            
+            conn.close()
+            return records
+            
+        except sqlite3.Error as e:
+            raise Exception(f"Database error: {e}")
 
 
 def main():
