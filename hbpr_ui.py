@@ -284,9 +284,19 @@ def show_home_page():
         st.subheader("📈 System Overview")
         # 检查数据库状态
         try:
-            db = HbprDatabase()
-            db.find_database()
-            st.success(f"✅ Database connected: `{db.db_file}`")
+            # 获取最新的数据库文件
+            db_files = get_sorted_database_files(sort_by='creation_time', reverse=True)
+            
+            if not db_files:
+                st.error("❌ No database files found!")
+                st.info("💡 Please build a database first using the Database Management page.")
+                return
+            
+            # 使用最新的数据库
+            newest_db_file = db_files[0]
+            db = HbprDatabase(newest_db_file)
+            st.success(f"✅ Database connected: `{newest_db_file}`")
+            
             # 获取HBNB范围信息
             range_info = db.get_hbnb_range_info()
             missing_numbers = db.get_missing_hbnb_numbers()
@@ -559,18 +569,15 @@ def show_database_maintenance():
     """显示数据库维护选项"""
     st.warning("⚠️ Maintenance operations are irreversible!")
     
-    # 搜索数据库文件，优先查找databases文件夹
-    db_files = []
-    if os.path.exists("databases"):
-        db_files = glob.glob("databases/*.db")
-    
-    # 如果databases文件夹中没有找到，则搜索根目录
-    if not db_files:
-        db_files = glob.glob("*.db")
+    # 使用新的数据库选择函数，按创建时间排序，最新的在前
+    selected_db, db_files = create_database_selectbox(
+        label="Select database file:", 
+        key="maintenance_db_select",
+        default_index=0,  # 默认选择最新的数据库
+        show_flight_info=False
+    )
     
     if db_files:
-        selected_db = st.selectbox("Select database file:", db_files)
-        
         col1, col2 = st.columns(2)
         
         with col1:
@@ -630,15 +637,10 @@ def process_all_records(db):
     st.subheader("🚀 Process All Records")
     
     try:
-        # 搜索数据库文件，优先查找databases文件夹
-        db_files = []
-        if os.path.exists("databases"):
-            db_files = glob.glob("databases/*.db")
-        
-        # 如果databases文件夹中没有找到，则搜索根目录
-        if not db_files:
-            db_files = glob.glob("*.db")
-        
+        # 获取数据库文件列表
+        db_files = get_sorted_database_files(sort_by='creation_time', reverse=True)
+        # 数据库选择下拉框 - 只显示数据库文件名
+        db_names = [os.path.basename(db_file) for db_file in db_files]
         if not db_files:
             st.error("❌ No database files found.")
             return
@@ -647,11 +649,20 @@ def process_all_records(db):
         col1, col2 = st.columns(2)
         
         with col1:
-            selected_db = st.selectbox("Select Database:", db_files, 
-                                     index=db_files.index(db.db_file) if db.db_file in db_files else 0)
+            # 数据库选择下拉框
+            selected_db_name = st.selectbox(
+                "Select Database:", 
+                options=db_names,
+                index=0,  # 默认选择最新的数据库
+                key="process_all_db_select"
+            )
+            
+            # 获取完整的文件路径
+            selected_db_file = db_files[db_names.index(selected_db_name)]
+            
             # 如果选择了不同的数据库，重新初始化
-            if selected_db != db.db_file:
-                db = HbprDatabase(selected_db)
+            if selected_db_file != db.db_file:
+                db = HbprDatabase(selected_db_file)
         
         with col2:
             if st.button("🚀 Start Processing", use_container_width=True):
@@ -1225,26 +1236,6 @@ def process_manual_input():
     
     # 搜索根目录中的数据库文件
     try:
-        import glob
-        import os
-        
-        # 优先搜索数据库文件夹中的.db文件
-        db_files = []
-        if os.path.exists("databases"):
-            db_files = glob.glob("databases/*.db")
-        
-        # 如果数据库文件夹中没有找到，则搜索根目录
-        if not db_files:
-            db_files = glob.glob("*.db")
-        
-        if not db_files:
-            st.error("❌ No HBPR databases found! Please build a database first.")
-            st.info("💡 Tip: Consider creating a 'databases' folder to organize your database files.")
-            return
-        
-        # 数据库选择下拉框
-        st.subheader("🗄️ Select Database")
-        
         # 显示数据库文件夹建议
         if not os.path.exists("databases"):
             with st.expander("💡 Database Organization Suggestion"):
@@ -1257,55 +1248,52 @@ def process_manual_input():
                     except Exception as e:
                         st.error(f"❌ Error creating folder: {str(e)}")
         
-        db_options = []
-        for db_file in db_files:
-            # 尝试获取航班信息用于显示
-            try:
-                temp_db = HbprDatabase(db_file)
-                flight_info = temp_db.get_flight_info()
-                if flight_info:
-                    display_name = f"{flight_info['flight_number']} ({flight_info['flight_date']}) - {db_file}"
-                else:
-                    display_name = f"Unknown Flight - {db_file}"
-            except:
-                display_name = f"Database - {db_file}"
-            
-            db_options.append((display_name, db_file))
+        # 获取数据库文件列表
+        db_files = get_sorted_database_files(sort_by='creation_time', reverse=True)
         
-        # 使用列布局来放置选择框和状态标记
-        col1, col2 = st.columns([4, 1])
+        if not db_files:
+            st.error("❌ No HBPR databases found! Please build a database first.")
+            st.info("💡 Tip: Consider creating a 'databases' folder to organize your database files.")
+            return
+        
+        # 将子标题和选择框放在同一行
+        col1, col2, col3 = st.columns([4, 4, 1])
         
         with col1:
-            selected_db_display = st.selectbox(
+            st.markdown("### 🗄️ Select Database")
+        
+        with col2:
+            # 数据库选择下拉框 - 只显示数据库文件名
+            db_names = [os.path.basename(db_file) for db_file in db_files]
+            selected_db_name = st.selectbox(
                 "Choose database:",
-                options=[opt[0] for opt in db_options],
+                options=db_names,
+                index=0,  # 默认选择最新的数据库
                 key="manual_input_db_select"
             )
+            # 获取完整的文件路径
+            selected_db_file = db_files[db_names.index(selected_db_name)]
         
-        # 获取选中的数据库文件
-        selected_db_file = None
-        for display_name, db_file in db_options:
-            if display_name == selected_db_display:
-                selected_db_file = db_file
-                break
-        
+        with col3:
+            # 状态指示器
+            if selected_db_file:
+                try:
+                    temp_db = HbprDatabase(selected_db_file)
+                    flight_info = temp_db.get_flight_info()
+                    if flight_info:
+                        st.markdown("✅")
+                    else:
+                        st.markdown("⚠️")
+                except:
+                    st.markdown("⚠️")
+            else:
+                st.markdown("")
         if not selected_db_file:
             st.error("❌ Please select a database.")
             return
-        
         # 使用选中的数据库
         db = HbprDatabase(selected_db_file)
-        
-        # 显示状态标记
-        flight_info = db.get_flight_info()
-        with col2:
-            if flight_info:
-                st.markdown("✅")
-            else:
-                st.markdown("⚠️")
-        
         st.markdown("---")
-        
         # 输入类型选择
         input_type = st.radio(
             "📝 Input Type:",
@@ -1584,8 +1572,26 @@ def show_view_results():
     st.header("📊 View Processing Results")
     
     try:
-        db = HbprDatabase()
-        db.find_database()
+        # 获取数据库文件列表
+        db_files = get_sorted_database_files(sort_by='creation_time', reverse=True)
+        
+        if not db_files:
+            st.error("❌ No database files found.")
+            st.info("💡 Please build a database first in the Database Management page.")
+            return
+        
+        # 数据库选择下拉框 - 只显示数据库文件名
+        db_names = [os.path.basename(db_file) for db_file in db_files]
+        selected_db_name = st.selectbox(
+            "Select Database:", 
+            options=db_names,
+            index=0,  # 默认选择最新的数据库
+            key="view_results_db_select"
+        )
+        
+        # 获取完整的文件路径
+        selected_db_file = db_files[db_names.index(selected_db_name)]
+        db = HbprDatabase(selected_db_file)
         
         tab1, tab2, tab3 = st.tabs(["📈 Statistics", "📋 Records Table", "📤 Export Data"])
         
@@ -1600,6 +1606,7 @@ def show_view_results():
     
     except Exception as e:
         st.error(f"❌ Database not available: {str(e)}")
+        st.info("💡 Please build a database first in the Database Management page.")
 
 
 def show_statistics(db):
@@ -1960,6 +1967,109 @@ def show_settings():
         - SQLite for database
         - Pandas for data analysis
         """)
+
+
+def get_sorted_database_files(sort_by='creation_time', reverse=True):
+    """
+    获取排序后的数据库文件列表
+    
+    Args:
+        sort_by (str): 排序方式 - 'creation_time', 'modification_time', 'name'
+        reverse (bool): 是否反向排序（True为最新的在前）
+    
+    Returns:
+        list: 排序后的数据库文件路径列表
+    """
+    # 搜索数据库文件，优先查找databases文件夹
+    db_files = []
+    if os.path.exists("databases"):
+        db_files = glob.glob("databases/*.db")
+    
+    # 如果databases文件夹中没有找到，则搜索根目录
+    if not db_files:
+        db_files = glob.glob("*.db")
+    
+    if not db_files:
+        return []
+    
+    # 根据指定方式排序
+    if sort_by == 'creation_time':
+        # 按创建时间排序
+        db_files.sort(key=lambda x: os.path.getctime(x), reverse=reverse)
+    elif sort_by == 'modification_time':
+        # 按修改时间排序
+        db_files.sort(key=lambda x: os.path.getmtime(x), reverse=reverse)
+    elif sort_by == 'name':
+        # 按文件名排序
+        db_files.sort(key=lambda x: os.path.basename(x), reverse=reverse)
+    else:
+        # 默认按创建时间排序
+        db_files.sort(key=lambda x: os.path.getctime(x), reverse=reverse)
+    
+    return db_files
+
+
+def create_database_selectbox(label="Select database:", key=None, default_index=0, show_flight_info=False):
+    """
+    创建数据库选择下拉框
+    
+    Args:
+        label (str): 下拉框标签
+        key (str): Streamlit组件key
+        default_index (int): 默认选中的索引（0为最新的数据库）
+        show_flight_info (bool): 是否显示航班信息
+    
+    Returns:
+        tuple: (selected_db_file, db_files_list) 或 (None, []) 如果没有数据库
+    """
+    db_files = get_sorted_database_files(sort_by='creation_time', reverse=True)
+    
+    if not db_files:
+        return None, []
+    
+    if show_flight_info:
+        # 显示航班信息的版本
+        db_options = []
+        for db_file in db_files:
+            try:
+                temp_db = HbprDatabase(db_file)
+                flight_info = temp_db.get_flight_info()
+                if flight_info:
+                    display_name = f"{flight_info['flight_number']} ({flight_info['flight_date']}) - {os.path.basename(db_file)}"
+                else:
+                    display_name = f"Unknown Flight - {os.path.basename(db_file)}"
+            except:
+                display_name = f"Database - {os.path.basename(db_file)}"
+            
+            db_options.append((display_name, db_file))
+        
+        selected_db_display = st.selectbox(
+            label,
+            options=[opt[0] for opt in db_options],
+            index=default_index,
+            key=key
+        )
+        
+        # 获取选中的数据库文件
+        selected_db_file = None
+        for display_name, db_file in db_options:
+            if display_name == selected_db_display:
+                selected_db_file = db_file
+                break
+        
+        return selected_db_file, db_files
+    else:
+        # 简单版本，只显示文件名
+        db_names = [os.path.basename(db_file) for db_file in db_files]
+        selected_db_name = st.selectbox(
+            label,
+            options=db_names,
+            index=default_index,
+            key=key
+        )
+        # 获取完整的文件路径
+        selected_db_file = db_files[db_names.index(selected_db_name)]
+        return selected_db_file, db_files
 
 
 if __name__ == "__main__":

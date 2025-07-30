@@ -288,7 +288,7 @@ class CHbpr:
         # 遍历所有ASVC行
         for asvc_line in asvc_matches:
             # 查找该行中所有的PC数量
-            pc_pat = re.compile(r"/(\d)PC\s")
+            pc_pat = re.compile(r"/PDBG/(\d+)PC")
             pc_matches = pc_pat.findall(asvc_line)
             # 累加所有PC数量
             for pc_count in pc_matches:
@@ -306,6 +306,7 @@ class CHbpr:
 
     def __RegularBags(self):
         """获取常规行李额度"""
+        # 一般订座都有FBA项目
         pat = re.compile(r"\sFBA/\dPC")
         re_match = pat.search(self.__Hbpr)
         result = {"FBA": 0, "IFBA": 0}
@@ -316,12 +317,18 @@ class CHbpr:
                 self.error_msg["Other"].append(
                     f"HBPR{self.HbnbNumber},\tFBA got an error."
                 )
+        # 婴儿票有IFBA项目
         pat = re.compile(r"\sIFBA/\dPC")
         re_match = pat.search(self.__Hbpr)
         if re_match:
             result["IFBA"] = 1
         self.FBA_PIECE = result["FBA"]
         self.IFBA_PIECE = result["IFBA"]
+        # 员工票客只能使用默认的行李额度
+        pat = re.compile(r"\sPAD-SA\s")
+        re_match = pat.search(self.__Hbpr)
+        if re_match:
+            result["FBA"] = 2
         self.debug_msg.append("adult bag  = " + str(result["FBA"]))
         self.debug_msg.append("Infant bag = " + str(result["IFBA"]))
         return result
@@ -655,6 +662,7 @@ class CHbpr:
             result["inbound_station"] = self.__Hbpr[inbound_match.start()+37:inbound_match.start()+40]
         else:
             self.INBOUND_FLIGHT = ""
+            result["inbound_station"] = ""
         # 获取出港航班
         outbound_pattern = r"\s(O/[A-Z]{2}\d+/\d{2}[A-Z]{3})\s"
         outbound_match = re.search(outbound_pattern, self.__Hbpr)
@@ -664,6 +672,7 @@ class CHbpr:
             self.DESTINATION = result['outbound_station']
         else:
             self.OUTBOUND_FLIGHT = ""
+            result["outbound_station"] = ""
         self.debug_msg.append(f"INBOUND_FLIGHT = {self.INBOUND_FLIGHT}, OUTBOUND_FLIGHT = {self.OUTBOUND_FLIGHT}")
         self.debug_msg.append(f"INBOUND_STATION = {result['inbound_station']}, OUTBOUND_STATION = {result['outbound_station']}")
         return result
