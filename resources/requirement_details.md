@@ -86,6 +86,7 @@ FlightCheckPy/
 - `show_settings()`: System configuration
 - `process_manual_input()`: Advanced manual HBPR input functionality
 - `parse_hbnb_input()`: Parse HBNB number ranges and lists
+- `validate_full_hbpr_record()`: Multi-layer HBPR record format validation
 
 **Key Features**:
 - **Secure Authentication**: SHA256-based login system with session management
@@ -130,6 +131,9 @@ FlightCheckPy/
 - `HbprDatabase.update_missing_numbers_table()`: Recalculate and update missing numbers table
 - `HbprDatabase.create_duplicate_record_table()`: Create duplicate_record table
 - `HbprDatabase.create_duplicate_record()`: Create duplicate records with original reference
+- `HbprDatabase.create_duplicate_record_with_time()`: Create duplicate records with specified timestamp
+- `HbprDatabase.get_original_record_info()`: Retrieve original record content and creation timestamp
+- `HbprDatabase.auto_backup_before_replace()`: Orchestrate backup process before record replacement
 - `HbprDatabase.get_duplicate_records()`: Get all duplicate records for a specific HBNB
 - `HbprDatabase.get_all_duplicate_hbnbs()`: Get all HBNBs that have duplicate records
 - `HbprDatabase.get_duplicate_record_content()`: Get content of specific duplicate record
@@ -144,7 +148,8 @@ FlightCheckPy/
 
 **Core Functions**:
 - `HBPRProcessor.parse_file()`: Parse HBPR text file
-- `HBPRProcessor._parse_full_record()`: Parse complete HBPR records
+- `HBPRProcessor.parse_full_record()`: Public method for parsing complete HBPR records (used by UI validation)
+- `HBPRProcessor._parse_full_record()`: Parse complete HBPR records (internal)
 - `HBPRProcessor._parse_simple_record()`: Parse simple HBPR records
 - `HBPRProcessor.find_missing_numbers()`: Identify missing HBNB numbers
 - `HBPRProcessor.create_database()`: Create flight-specific databases
@@ -363,7 +368,7 @@ CREATE TABLE duplicate_record (
     hbnb_number INTEGER NOT NULL,
     original_hbnb_id INTEGER NOT NULL,
     record_content TEXT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,  -- Can be explicitly set to preserve original timestamps
     FOREIGN KEY (original_hbnb_id) REFERENCES hbpr_full_records(hbnb_number)
 );
 ```
@@ -688,15 +693,3 @@ python hbpr_list_processor.py
 - **Logout Cleanup**: All uploaded files are cleaned up when users log out
 - **Error-Safe Cleanup**: File deletion operations are wrapped in try-catch blocks to prevent errors
 - **Memory Management**: Prevents accumulation of temporary files in the system
-
-### Duplicate Record Management (New Feature)
-- **Advanced Record Versioning**: Create and manage multiple versions of HBPR records for the same HBNB
-- **Database Schema Enhancement**: New `duplicate_record` table with proper foreign key relationships
-- **Original Record Flagging**: `bol_duplicate` field automatically tracks records with duplicates
-- **Intelligent UI Layout**: Two-column responsive design (2:3 ratio) for optimal user experience
-- **Interactive Record Selection**: Click-to-view functionality with real-time content display
-- **Data Integrity Validation**: Ensures original records exist before allowing duplicate creation
-- **Comprehensive Error Handling**: Fixed session state management and validation errors
-- **Read-Only Content Display**: Protected content viewing with disabled text area (422px height)
-- **Temporal Organization**: Automatic sorting by creation time for duplicates
-- **Visual Differentiation**: Clear indicators for original vs duplicate record types

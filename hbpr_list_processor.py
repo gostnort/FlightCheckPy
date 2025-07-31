@@ -93,7 +93,7 @@ class HBPRProcessor:
                 flight_data['simple_records'][hbnb_num] = record_line
 
 
-    def _parse_full_record(self, lines: List[str], start_index: int) -> Tuple[Optional[str], Optional[int], str, int]:
+    def parse_full_record(self, lines: List[str], start_index: int) -> Tuple[Optional[str], Optional[int], str, int]:
         """
         解析完整HBPR记录并提取航班信息和HBNB号码
         如果解析成功，则设置self.flight_id 
@@ -104,6 +104,7 @@ class HBPRProcessor:
             hbnb_num: HBNB号码
             record_content: 记录内容
             i: 结束解析的行索引
+        UI的手工输入将调用这个函数，所以要公开。
         """
         line = lines[start_index].strip()
         # 提取航班信息和HBNB号码

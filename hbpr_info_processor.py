@@ -1588,6 +1588,93 @@ class HbprDatabase:
             raise Exception(f"Database error: {e}")
     
     
+    def create_duplicate_record_with_time(self, hbnb_number: int, original_hbnb_id: int, record_content: str, created_at: str):
+        """创建重复记录并指定创建时间"""
+        if not self.db_file:
+            self.find_database()
+        
+        try:
+            # 确保duplicate_record表存在
+            self.create_duplicate_record_table()
+            
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            
+            # 插入重复记录并指定创建时间
+            cursor.execute(
+                'INSERT INTO duplicate_record (hbnb_number, original_hbnb_id, record_content, created_at) VALUES (?, ?, ?, ?)',
+                (hbnb_number, original_hbnb_id, record_content, created_at)
+            )
+            
+            # 更新原始记录的bol_duplicate标志
+            cursor.execute(
+                'UPDATE hbpr_full_records SET bol_duplicate = 1 WHERE hbnb_number = ?',
+                (original_hbnb_id,)
+            )
+            
+            conn.commit()
+            conn.close()
+            
+            print(f"Created duplicate record for HBNB {hbnb_number} (original: {original_hbnb_id}) with original timestamp")
+            return True
+            
+        except sqlite3.Error as e:
+            raise Exception(f"Database error: {e}")
+    
+    
+    def get_original_record_info(self, hbnb_number: int):
+        """获取原始记录的内容和创建时间"""
+        if not self.db_file:
+            self.find_database()
+        
+        try:
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            
+            cursor.execute(
+                "SELECT record_content, created_at FROM hbpr_full_records WHERE hbnb_number = ?", 
+                (hbnb_number,)
+            )
+            result = cursor.fetchone()
+            conn.close()
+            
+            if result:
+                return {
+                    'record_content': result[0],
+                    'created_at': result[1]
+                }
+            else:
+                return None
+                
+        except sqlite3.Error as e:
+            raise Exception(f"Database error: {e}")
+    
+    
+    def auto_backup_before_replace(self, hbnb_number: int):
+        """在替换记录前自动备份原始记录"""
+        if not self.db_file:
+            self.find_database()
+        
+        try:
+            # 获取原始记录信息
+            original_info = self.get_original_record_info(hbnb_number)
+            
+            if original_info:
+                # 创建备份记录，保持原始创建时间
+                self.create_duplicate_record_with_time(
+                    hbnb_number, 
+                    hbnb_number, 
+                    original_info['record_content'], 
+                    original_info['created_at']
+                )
+                return True
+            else:
+                return False
+                
+        except Exception as e:
+            raise Exception(f"Auto backup failed: {e}")
+    
+    
     def get_duplicate_records(self, original_hbnb_id: int):
         """获取指定HBNB的所有重复记录"""
         if not self.db_file:

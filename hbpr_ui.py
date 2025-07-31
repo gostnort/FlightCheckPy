@@ -14,6 +14,7 @@ import base64
 import hashlib
 from datetime import datetime
 from hbpr_info_processor import CHbpr, HbprDatabase
+from hbpr_list_processor import HBPRProcessor
 import traceback
 
 
@@ -204,22 +205,22 @@ def main():
     # Show logged in user info
     if 'username' in st.session_state:
         st.sidebar.markdown(f"👤 **Logged in as:** {st.session_state.username}")
-        st.sidebar.markdown("---")
-    
-    # 导航链接
+    # Home page
     if st.sidebar.button("🏠 Home", use_container_width=True):
-        st.session_state.current_page = "🏠 Home"
+        st.session_state.current_page = "🏠 Home"    
+    st.sidebar.markdown("---")
+    # 导航链接
     if st.sidebar.button("🗄️ Database", use_container_width=True):
         st.session_state.current_page = "🗄️ Database"
     if st.sidebar.button("🔍 Process Records", use_container_width=True):
         st.session_state.current_page = "🔍 Process Records"
     if st.sidebar.button("📊 View Results", use_container_width=True):
         st.session_state.current_page = "📊 View Results"
+    # 设置页
+    st.sidebar.markdown("---")
     if st.sidebar.button("⚙️ Settings", use_container_width=True):
         st.session_state.current_page = "⚙️ Settings"
-    
     # Logout button
-    st.sidebar.markdown("---")
     if st.sidebar.button("🚪 Logout", use_container_width=True, type="secondary"):
         # Clean up any uploaded files before logout
         if st.session_state.uploaded_file_path and os.path.exists(st.session_state.uploaded_file_path):
@@ -1230,6 +1231,110 @@ def show_record_popup(db, hbnb_number):
         st.error(f"❌ Error retrieving record: {str(e)}")
 
 
+def validate_full_hbpr_record(hbpr_content):
+    """
+    Validate if the input content is a valid full HBPR record
+    
+    Args:
+        hbpr_content: String content to validate
+        
+    Returns:
+        dict: {
+            'is_valid': bool,
+            'hbnb_number': int or None,
+            'errors': list of error messages,
+            'chbpr_errors': dict of CHbpr error messages
+        }
+    """
+    result = {
+        'is_valid': False,
+        'hbnb_number': None,
+        'errors': [],
+        'chbpr_errors': {}
+    }
+    
+    # Check if content is not empty
+    if not hbpr_content or not hbpr_content.strip():
+        result['errors'].append("Input content is empty")
+        return result
+    
+    # Step 1: Check basic regex pattern for full HBPR record
+    # Must start with >HBPR: and contain flight info and HBNB number
+    hbpr_pattern = r'>HBPR:\s*[^,]+,(\d+)'
+    hbpr_match = re.search(hbpr_pattern, hbpr_content)
+    
+    if not hbpr_match:
+        result['errors'].append("Input does not contain valid full HBPR record format (>HBPR: flight_info,hbnb_number)")
+        return result
+    
+    try:
+        hbnb_number = int(hbpr_match.group(1))
+        result['hbnb_number'] = hbnb_number
+    except ValueError:
+        result['errors'].append("Invalid HBNB number format")
+        return result
+    
+    # Step 2: Use HBPRProcessor to parse and validate the record format
+    try:
+        # Create a temporary file-like content for parsing
+        lines = hbpr_content.split('\n')
+        
+        # Find the line that starts with >HBPR:
+        hbpr_line_index = -1
+        for i, line in enumerate(lines):
+            if line.strip().startswith('>HBPR:'):
+                hbpr_line_index = i
+                break
+        
+        if hbpr_line_index == -1:
+            result['errors'].append("No line starting with '>HBPR:' found in the content")
+            return result
+        
+        # Create HBPRProcessor instance
+        processor = HBPRProcessor("temp_input")  # We'll override the file reading
+        
+        # Use the public parse_full_record method starting from the HBPR line
+        parsed_hbnb, parsed_content, next_index = processor.parse_full_record(lines, hbpr_line_index)
+        
+        if parsed_hbnb is None:
+            result['errors'].append("HBPRProcessor failed to parse the full record format")
+            return result
+        
+        if parsed_hbnb != hbnb_number:
+            result['errors'].append(f"HBNB number mismatch: regex found {hbnb_number}, parser found {parsed_hbnb}")
+            return result
+            
+    except Exception as e:
+        result['errors'].append(f"HBPRProcessor validation failed: {str(e)}")
+        return result
+    
+    # Step 3: Use CHbpr to test the record and check for errors
+    try:
+        chbpr = CHbpr()
+        chbpr.run(hbpr_content)
+        
+        # Store CHbpr errors for reference
+        result['chbpr_errors'] = chbpr.error_msg
+        
+        # Check specifically for 'Other' category errors (critical errors)
+        if chbpr.error_msg.get('Other'):
+            result['errors'].append(f"CHbpr validation failed with critical errors: {'; '.join(chbpr.error_msg['Other'])}")
+            return result
+        
+        # Verify HBNB number was extracted correctly
+        if chbpr.HbnbNumber != hbnb_number:
+            result['errors'].append(f"CHbpr HBNB number mismatch: expected {hbnb_number}, got {chbpr.HbnbNumber}")
+            return result
+            
+    except Exception as e:
+        result['errors'].append(f"CHbpr processing failed: {str(e)}")
+        return result
+    
+    # If we reach here, all validations passed
+    result['is_valid'] = True
+    return result
+
+
 def process_manual_input():
     """手动输入处理"""
     st.subheader("📄 Manual HBPR Input")
@@ -1324,10 +1429,38 @@ def process_manual_input():
             
             if replace_clicked:
                 if hbpr_content.strip():
+                    # Step 1: Validate the full HBPR record format
+                    st.subheader("🔍 Validating HBPR Record")
+                    validation_result = validate_full_hbpr_record(hbpr_content)
+                    
+                    if not validation_result['is_valid']:
+                        st.error("❌ HBPR Record Validation Failed")
+                        for error in validation_result['errors']:
+                            st.error(f"• {error}")
+                        
+                        # Show CHbpr errors if available for debugging
+                        if validation_result['chbpr_errors']:
+                            with st.expander("🔧 Debug Information"):
+                                st.write("CHbpr Error Categories:")
+                                for category, errors in validation_result['chbpr_errors'].items():
+                                    if errors:
+                                        st.write(f"**{category}:** {'; '.join(errors)}")
+                        return
+                    
+                    # Validation passed - proceed with processing
+                    st.success("✅ HBPR Record Format Validation Passed")
+                    
                     try:
-                        # 处理HBPR记录
+                        # Create CHbpr instance for final processing (we know it's valid)
                         chbpr = CHbpr()
                         chbpr.run(hbpr_content)
+                        
+                        # Verify no critical errors occurred during processing
+                        if chbpr.error_msg.get('Other'):
+                            st.error("❌ Critical errors occurred during CHbpr processing:")
+                            for error in chbpr.error_msg['Other']:
+                                st.error(f"• {error}")
+                            return
                         
                         # 获取当前数据库的flight_info
                         flight_info = db.get_flight_info()
@@ -1337,7 +1470,7 @@ def process_manual_input():
                         
                         # 显示处理前的状态信息
                         st.subheader("📋 Processing Information")
-                        col1, col2 = st.columns(2)
+                        col1, col2, col3 = st.columns(3)
                         
                         with col1:
                             st.write("**Database Flight Info:**")
@@ -1357,6 +1490,19 @@ def process_manual_input():
                             else:
                                 st.write(f"HBNB {chbpr.HbnbNumber}: New record")
                         
+                        with col3:
+                            st.write("**Validation Status:**")
+                            st.success("✅ Format valid")
+                            st.success("✅ CHbpr test passed")
+                            if chbpr.error_msg:
+                                non_critical_errors = sum(1 for k, v in chbpr.error_msg.items() if k != 'Other' and v)
+                                if non_critical_errors > 0:
+                                    st.warning(f"⚠️ {non_critical_errors} non-critical warnings")
+                                else:
+                                    st.success("✅ No validation warnings")
+                            else:
+                                st.success("✅ No validation warnings")
+                        
                         # 验证航班信息匹配
                         flight_validation = db.validate_flight_info_match(hbpr_content)
                         
@@ -1374,8 +1520,22 @@ def process_manual_input():
                                     st.write(f"Date: {flight_validation['hbpr_flight']['flight_date']}")
                             return
                         
+                        # All validations passed - proceed with database operations
+                        st.subheader("💾 Database Operations")
+                        
                         # 处理记录替换/创建逻辑
                         if hbnb_exists['exists']:
+                            # Auto backup existing full record before replacement
+                            if hbnb_exists['full_record']:
+                                try:
+                                    backup_success = db.auto_backup_before_replace(chbpr.HbnbNumber)
+                                    if backup_success:
+                                        st.info(f"📦 Auto-backed up original record for HBNB {chbpr.HbnbNumber} with original timestamp")
+                                    else:
+                                        st.warning(f"⚠️ Original record NOT exist for HBNB {chbpr.HbnbNumber}")
+                                except Exception as e:
+                                    st.warning(f"⚠️ Backup failed for HBNB {chbpr.HbnbNumber}: {str(e)}")
+                            
                             if hbnb_exists['simple_record']:
                                 # 如果存在简单记录，删除它并创建完整记录
                                 db.delete_simple_record(chbpr.HbnbNumber)
@@ -1383,7 +1543,10 @@ def process_manual_input():
                             
                             # 创建或更新完整记录
                             db.create_full_record(chbpr.HbnbNumber, hbpr_content)
-                            st.success(f"✅ Updated full record for HBNB {chbpr.HbnbNumber}")
+                            if hbnb_exists['full_record']:
+                                st.success(f"✅ Replaced full record for HBNB {chbpr.HbnbNumber} (original backed up)")
+                            else:
+                                st.success(f"✅ Updated record for HBNB {chbpr.HbnbNumber}")
                         else:
                             # 创建新的完整记录
                             db.create_full_record(chbpr.HbnbNumber, hbpr_content)
@@ -1400,13 +1563,11 @@ def process_manual_input():
                             st.warning(f"⚠️ Warning: Could not update missing numbers table: {str(e)}")
                         
                         st.success("✅ Full record processed and stored!")
+                        st.info("ℹ️ You can now clear the input box manually or enter new content.")
                         display_processing_results(chbpr)
                         
                         # 设置刷新标志
                         st.session_state.refresh_home = True
-                        
-                        # 清空输入框
-                        st.session_state.manual_input_hbpr_content = ""
                         
                     except Exception as e:
                         st.error(f"❌ Error processing full record: {str(e)}")
@@ -1685,7 +1846,7 @@ def process_manual_input():
                             # 添加原始记录（在顶部）
                             display_data.append({
                                 'Type': 'Original',
-                                'Record ID': 'original',
+                                'Record ID': 0,  # Use 0 for original record to maintain integer type
                                 'Created At': 'Original Record'
                             })
                             
@@ -1693,13 +1854,18 @@ def process_manual_input():
                             for dup in duplicate_records:
                                 display_data.append({
                                     'Type': 'Duplicate',
-                                    'Record ID': dup['id'],
+                                    'Record ID': int(dup['id']),  # Ensure integer type
                                     'Created At': dup['created_at']
                                 })
                             
                             # 显示DataFrame
                             if display_data:
                                 records_df = pd.DataFrame(display_data)
+                                
+                                # Ensure proper data types
+                                records_df['Record ID'] = records_df['Record ID'].astype(int)
+                                records_df['Type'] = records_df['Type'].astype(str)
+                                records_df['Created At'] = records_df['Created At'].astype(str)
                                 
                                 # 使用st.dataframe创建可选择的表格
                                 event = st.dataframe(
@@ -1708,7 +1874,12 @@ def process_manual_input():
                                     height=400,
                                     hide_index=True,
                                     on_select="rerun",
-                                    selection_mode="single-row"
+                                    selection_mode="single-row",
+                                    column_config={
+                                        "Record ID": st.column_config.NumberColumn("Record ID", format="%d"),
+                                        "Type": "Type",
+                                        "Created At": "Created At"
+                                    }
                                 )
                             
                             # 显示统计信息
