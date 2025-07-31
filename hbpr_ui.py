@@ -1419,7 +1419,7 @@ def process_manual_input():
             )
             
             # Add two buttons side by side
-            col1, col2 = st.columns(2)
+            col1, col2 = st.columns([3,1])
             
             with col1:
                 replace_clicked = st.button("🔍 Replace the Record", use_container_width=True)
