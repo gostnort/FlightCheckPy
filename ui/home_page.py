@@ -6,7 +6,7 @@ Home page for HBPR UI - System overview and quick actions
 import streamlit as st
 import pandas as pd
 from .common import apply_global_settings, create_database_selectbox, HbprDatabase
-
+import os
 
 def show_home_page():
     """显示主页"""
@@ -22,22 +22,37 @@ def show_home_page():
         st.subheader("📈 System Overview")
         # 检查数据库状态
         try:
-            # 数据库选择
-            selected_db_file, db_files = create_database_selectbox(
-                label="📊 Select Database to View:",
-                key="home_page_db_select",
-                default_index=0,  # 默认选择最新的数据库
-                show_flight_info=True  # 显示航班信息便于识别
-            )
-            
-            if not db_files:
-                st.error("❌ No database files found!")
-                st.info("💡 Please build a database first using the Database Management page.")
-                return
-            
-            # 使用选中的数据库
-            db = HbprDatabase(selected_db_file)
-            st.success(f"✅ Database connected: `{selected_db_file}`")
+            sub_col1, sub_col2 = st.columns(2)
+            with sub_col1:
+                # 数据库选择
+                selected_db_file, db_files = create_database_selectbox(
+                    label="📊 Select Database to View:",
+                    key="home_page_db_select",
+                    default_index=0,  # 默认选择最新的数据库
+                    show_flight_info=False
+                )
+            with sub_col2:
+                if not db_files:
+                    st.error("❌ No database files found!")
+                    st.info("💡 Please build a database first using the Database Management page.")
+                    return
+                # 使用选中的数据库
+                db = HbprDatabase(selected_db_file)
+                
+                # Compact success message
+                st.markdown(f"""
+                <style>
+                .compact-success {{
+                    background-color: #d4edda;
+                    border: 1px solid #c3e6cb;
+                    color: #155724;
+                    padding: 0.3rem 0.6rem;
+                    border-radius: 0.25rem;
+                    margin: 0.4rem 0;
+                }}
+                </style>
+                <div class="compact-success">✅ DB connected: <code>{os.path.basename(selected_db_file)}</code></div>
+                """, unsafe_allow_html=True)
             
             # 获取HBNB范围信息
             range_info = db.get_hbnb_range_info()
