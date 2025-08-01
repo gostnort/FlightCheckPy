@@ -5,7 +5,7 @@ Home page for HBPR UI - System overview and quick actions
 
 import streamlit as st
 import pandas as pd
-from .common import apply_global_settings, get_sorted_database_files, HbprDatabase
+from .common import apply_global_settings, create_database_selectbox, HbprDatabase
 
 
 def show_home_page():
@@ -22,18 +22,22 @@ def show_home_page():
         st.subheader("📈 System Overview")
         # 检查数据库状态
         try:
-            # 获取最新的数据库文件
-            db_files = get_sorted_database_files(sort_by='creation_time', reverse=True)
+            # 数据库选择
+            selected_db_file, db_files = create_database_selectbox(
+                label="📊 Select Database to View:",
+                key="home_page_db_select",
+                default_index=0,  # 默认选择最新的数据库
+                show_flight_info=True  # 显示航班信息便于识别
+            )
             
             if not db_files:
                 st.error("❌ No database files found!")
                 st.info("💡 Please build a database first using the Database Management page.")
                 return
             
-            # 使用最新的数据库
-            newest_db_file = db_files[0]
-            db = HbprDatabase(newest_db_file)
-            st.success(f"✅ Database connected: `{newest_db_file}`")
+            # 使用选中的数据库
+            db = HbprDatabase(selected_db_file)
+            st.success(f"✅ Database connected: `{selected_db_file}`")
             
             # 获取HBNB范围信息
             range_info = db.get_hbnb_range_info()
