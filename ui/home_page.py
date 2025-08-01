@@ -17,9 +17,7 @@ def show_home_page():
     if 'refresh_home' in st.session_state and st.session_state.refresh_home:
         st.session_state.refresh_home = False
         st.rerun()
-    
-    st.header("🏠 Home Page")
-    col1, col2 = st.columns(2)
+    col1, col2 = st.columns([3,2])
     with col1:
         st.subheader("📈 System Overview")
         # 检查数据库状态
