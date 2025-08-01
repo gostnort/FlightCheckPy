@@ -13,8 +13,8 @@ import re
 import base64
 import hashlib
 from datetime import datetime
-from hbpr_info_processor import CHbpr, HbprDatabase
-from hbpr_list_processor import HBPRProcessor
+from scripts.hbpr_info_processor import CHbpr, HbprDatabase
+from scripts.hbpr_list_processor import HBPRProcessor
 import traceback
 
 
