@@ -9,8 +9,8 @@ import datetime
 import sqlite3
 import os
 import glob
-from general_func import CArgs
-from hbpr_list_processor import HBPRProcessor
+from .general_func import CArgs
+from .hbpr_list_processor import HBPRProcessor
 
 
 class CHbpr:
