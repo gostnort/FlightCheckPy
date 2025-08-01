@@ -148,8 +148,7 @@ FlightCheckPy/
 
 **Core Functions**:
 - `HBPRProcessor.parse_file()`: Parse HBPR text file
-- `HBPRProcessor.parse_full_record()`: Public method for parsing complete HBPR records (used by UI validation)
-- `HBPRProcessor._parse_full_record()`: Parse complete HBPR records (internal)
+- `HBPRProcessor.parse_full_record()`: Parse complete HBPR records (used by UI validation and internal processing)
 - `HBPRProcessor._parse_simple_record()`: Parse simple HBPR records
 - `HBPRProcessor.find_missing_numbers()`: Identify missing HBNB numbers
 - `HBPRProcessor.create_database()`: Create flight-specific databases
@@ -267,7 +266,7 @@ HBPRProcessor:
 ├── Input: HBPR text file
 ├── Processing:
 │   ├── parse_file() → Parse entire file
-│   ├── _parse_full_record() → Extract complete records
+│   ├── parse_full_record() → Extract complete records
 │   ├── _parse_simple_record() → Extract simple records
 │   ├── find_missing_numbers() → Identify gaps
 │   └── create_database() → Generate database in databases/ folder

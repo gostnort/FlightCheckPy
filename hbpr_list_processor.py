@@ -48,7 +48,7 @@ class HBPRProcessor:
             line = lines[i].strip()
             # 检查完整HBPR记录
             if line.startswith('>HBPR:'):
-                hbnb_num, record_content, next_index = self._parse_full_record(lines, i)
+                hbnb_num, record_content, next_index = self.parse_full_record(lines, i)
                 if hbnb_num:
                     self.flight_data[self.flight_id]['hbnb_numbers'].add(hbnb_num)
                     # 合并同一HBNB记录的多个部分
