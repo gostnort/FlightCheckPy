@@ -9,7 +9,7 @@ import os
 import glob
 import sqlite3
 import traceback
-from ui.common import apply_global_settings, create_database_selectbox
+from ui.common import apply_global_settings, get_current_database
 from scripts.hbpr_info_processor import HbprDatabase
 from scripts.hbpr_list_processor import HBPRProcessor
 
@@ -198,15 +198,10 @@ def show_database_maintenance():
     """显示数据库维护选项"""
     st.warning("⚠️ Maintenance operations are irreversible!")
     
-    # 使用新的数据库选择函数，按创建时间排序，最新的在前
-    selected_db, db_files = create_database_selectbox(
-        label="Select database file:", 
-        key="maintenance_db_select",
-        default_index=0,  # 默认选择最新的数据库
-        show_flight_info=False
-    )
+    # 获取当前选中的数据库
+    selected_db = get_current_database()
     
-    if db_files:
+    if selected_db:
         col1, col2 = st.columns(2)
         
         with col1:
@@ -229,4 +224,4 @@ def show_database_maintenance():
                 except Exception as e:
                     st.error(f"❌ Error updating missing numbers table: {str(e)}")
     else:
-        st.info("ℹ️ No database files found.")
+        st.info("ℹ️ No database selected. Please select a database from the sidebar or create one first.")

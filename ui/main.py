@@ -9,8 +9,9 @@ from ui.common import get_icon_base64, apply_global_settings
 from ui.login_page import show_login_page
 from ui.home_page import show_home_page
 from ui.database_page import show_database_management
-from ui.settings_page import show_settings
-
+from ui.settings_page import show_settings  
+from ui.common import get_sorted_database_files
+from scripts.hbpr_info_processor import HbprDatabase
 
 def main():
     """主UI函数"""
@@ -57,6 +58,48 @@ def main():
     # Show logged in user info
     if 'username' in st.session_state:
         st.sidebar.markdown(f"👤 **Logged in as:** {st.session_state.username}")
+    
+    # Centralized database selection
+    st.sidebar.markdown("---")
+    # Get database files
+    db_files = get_sorted_database_files(sort_by='creation_time', reverse=True)
+    if db_files:
+        # Create options with flight information
+        db_options = []
+        for db_file in db_files:
+            try:
+                temp_db = HbprDatabase(db_file)
+                flight_info = temp_db.get_flight_info()
+                if flight_info:
+                    display_name = f"{os.path.basename(db_file)}"
+                else:
+                    display_name = f"Unknown Flight - {os.path.basename(db_file)}"
+            except:
+                display_name = f"Database - {os.path.basename(db_file)}"
+            
+            db_options.append((display_name, db_file))
+        # Sidebar selectbox
+        selected_db_display = st.sidebar.selectbox(
+            "Select Database:",
+            options=[opt[0] for opt in db_options],
+            index=0,
+            key="global_db_select"
+        )
+        
+        # Get selected database file
+        selected_db_file = None
+        for display_name, db_file in db_options:
+            if display_name == selected_db_display:
+                selected_db_file = db_file
+                break
+    else:
+        selected_db_file = None
+        st.sidebar.warning("⚠️ No databases found")
+        st.sidebar.info("💡 Create a database first")
+    
+    # Store selected database in session state for all pages to use
+    st.session_state.selected_database = selected_db_file
+    st.session_state.available_databases = db_files
     # Home page
     if st.sidebar.button("🏠 Home", use_container_width=True):
         st.session_state.current_page = "🏠 Home"    

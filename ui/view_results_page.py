@@ -11,7 +11,7 @@ import re
 from datetime import datetime
 from io import BytesIO
 from scripts.hbpr_info_processor import HbprDatabase
-from ui.common import apply_global_settings, get_sorted_database_files
+from ui.common import apply_global_settings, get_current_database
 
 
 def show_view_results():
@@ -22,25 +22,14 @@ def show_view_results():
     st.header("📊 View Processing Results")
     
     try:
-        # 获取数据库文件列表
-        db_files = get_sorted_database_files(sort_by='creation_time', reverse=True)
+        # 获取当前选中的数据库
+        selected_db_file = get_current_database()
         
-        if not db_files:
-            st.error("❌ No database files found.")
-            st.info("💡 Please build a database first in the Database Management page.")
+        if not selected_db_file:
+            st.error("❌ No database selected.")
+            st.info("💡 Please select a database from the sidebar or build one first in the Database Management page.")
             return
         
-        # 数据库选择下拉框 - 只显示数据库文件名
-        db_names = [os.path.basename(db_file) for db_file in db_files]
-        selected_db_name = st.selectbox(
-            "Select Database:", 
-            options=db_names,
-            index=0,  # 默认选择最新的数据库
-            key="view_results_db_select"
-        )
-        
-        # 获取完整的文件路径
-        selected_db_file = db_files[db_names.index(selected_db_name)]
         db = HbprDatabase(selected_db_file)
         
         tab1, tab2, tab3 = st.tabs(["📈 Statistics", "📋 Records Table", "📤 Export Data"])
@@ -56,7 +45,7 @@ def show_view_results():
     
     except Exception as e:
         st.error(f"❌ Database not available: {str(e)}")
-        st.info("💡 Please build a database first in the Database Management page.")
+        st.info("💡 Please select a database from the sidebar or build one first in the Database Management page.")
 
 
 def show_statistics(db):

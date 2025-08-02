@@ -11,7 +11,7 @@ import re
 from datetime import datetime
 from scripts.hbpr_info_processor import CHbpr, HbprDatabase
 from scripts.hbpr_list_processor import HBPRProcessor
-from ui.common import apply_global_settings, parse_hbnb_input, get_sorted_database_files
+from ui.common import apply_global_settings, parse_hbnb_input, get_current_database
 import traceback
 
 
@@ -47,37 +47,26 @@ def process_all_records(db):
     st.subheader("🚀 Process All Records")
     
     try:
-        # 获取数据库文件列表
-        db_files = get_sorted_database_files(sort_by='creation_time', reverse=True)
-        # 数据库选择下拉框 - 只显示数据库文件名
-        db_names = [os.path.basename(db_file) for db_file in db_files]
-        if not db_files:
-            st.error("❌ No database files found.")
+        # 获取当前选中的数据库
+        selected_db_file = get_current_database()
+        
+        if not selected_db_file:
+            st.error("❌ No database selected! Please select a database from the sidebar.")
             return
         
+        # 显示当前使用的数据库
+        st.info(f"Using database: `{os.path.basename(selected_db_file)}`")
+        
+        # 如果选择了不同的数据库，重新初始化
+        if selected_db_file != db.db_file:
+            db = HbprDatabase(selected_db_file)
+        st.markdown("**Processing Options:**")
         # 处理控制
         col1, col2 = st.columns(2)
-        
-        with col1:
-            # 数据库选择下拉框
-            selected_db_name = st.selectbox(
-                "Select Database:", 
-                options=db_names,
-                index=0,  # 默认选择最新的数据库
-                key="process_all_db_select"
-            )
-            
-            # 获取完整的文件路径
-            selected_db_file = db_files[db_names.index(selected_db_name)]
-            
-            # 如果选择了不同的数据库，重新初始化
-            if selected_db_file != db.db_file:
-                db = HbprDatabase(selected_db_file)
-        
-        with col2:
+        with col1: 
             if st.button("🚀 Start Processing", use_container_width=True):
-                start_processing_all_records(db, None)  # Always process all records
-            
+                    start_processing_all_records(db, None)  # Always process all records
+        with col2:
             if st.button("🧹 Erase Result", use_container_width=True):
                 erase_splited_records(db)
         
@@ -713,50 +702,33 @@ def process_manual_input():
                     except Exception as e:
                         st.error(f"❌ Error creating folder: {str(e)}")
         
-        # 获取数据库文件列表
-        db_files = get_sorted_database_files(sort_by='creation_time', reverse=True)
+        # 获取当前选中的数据库
+        selected_db_file = get_current_database()
         
-        if not db_files:
-            st.error("❌ No HBPR databases found! Please build a database first.")
+        if not selected_db_file:
+            st.error("❌ No database selected! Please select a database from the sidebar or build one first.")
             st.info("💡 Tip: Consider creating a 'databases' folder to organize your database files.")
             return
         
-        # 将子标题和选择框放在同一行
-        col1, col2, col3 = st.columns([4, 4, 1])
+        # 将子标题和状态指示器放在同一行
+        col1, col2 = st.columns([4, 1])
         
         with col1:
-            st.markdown("### 🗄️ Select Database")
+            st.markdown("### 🗄️ Database Selected")
+            # 显示当前选中的数据库名称
+            st.markdown(f"**Current Database:** `{os.path.basename(selected_db_file)}`")
         
         with col2:
-            # 数据库选择下拉框 - 只显示数据库文件名
-            db_names = [os.path.basename(db_file) for db_file in db_files]
-            selected_db_name = st.selectbox(
-                "Choose database:",
-                options=db_names,
-                index=0,  # 默认选择最新的数据库
-                key="manual_input_db_select"
-            )
-            # 获取完整的文件路径
-            selected_db_file = db_files[db_names.index(selected_db_name)]
-        
-        with col3:
             # 状态指示器
-            if selected_db_file:
-                try:
-                    temp_db = HbprDatabase(selected_db_file)
-                    flight_info = temp_db.get_flight_info()
-                    if flight_info:
-                        st.markdown("✅")
-                    else:
-                        st.markdown("⚠️")
-                except:
+            try:
+                temp_db = HbprDatabase(selected_db_file)
+                flight_info = temp_db.get_flight_info()
+                if flight_info:
+                    st.markdown("✅")
+                else:
                     st.markdown("⚠️")
-            else:
-                st.markdown("")
-        
-        if not selected_db_file:
-            st.error("❌ Please select a database.")
-            return
+            except:
+                st.markdown("⚠️")
         
         # 使用选中的数据库
         db = HbprDatabase(selected_db_file)

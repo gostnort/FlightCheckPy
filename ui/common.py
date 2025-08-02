@@ -215,3 +215,23 @@ def create_database_selectbox(label="Select database:", key=None, default_index=
         # 获取完整的文件路径
         selected_db_file = db_files[db_names.index(selected_db_name)]
         return selected_db_file, db_files
+
+
+def get_current_database():
+    """
+    获取当前选中的数据库文件路径（从session state）
+    
+    Returns:
+        str or None: 当前选中的数据库文件路径，如果没有选中则返回None
+    """
+    return st.session_state.get('selected_database', None)
+
+
+def get_available_databases():
+    """
+    获取可用的数据库文件列表（从session state）
+    
+    Returns:
+        list: 可用的数据库文件路径列表
+    """
+    return st.session_state.get('available_databases', [])

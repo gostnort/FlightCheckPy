@@ -5,7 +5,7 @@ Home page for HBPR UI - System overview and quick actions
 
 import streamlit as st
 import pandas as pd
-from ui.common import apply_global_settings, create_database_selectbox
+from ui.common import apply_global_settings, get_current_database
 from scripts.hbpr_info_processor import HbprDatabase
 import os
 
@@ -23,43 +23,20 @@ def show_home_page():
         st.subheader("📈 System Overview")
         # 检查数据库状态
         try:
-            sub_col1, sub_col2 = st.columns(2)
-            with sub_col1:
-                # 数据库选择
-                selected_db_file, db_files = create_database_selectbox(
-                    label="📊 Select Database to View:",
-                    key="home_page_db_select",
-                    default_index=0,  # 默认选择最新的数据库
-                    show_flight_info=False
-                )
-            with sub_col2:
-                if not db_files:
-                    st.error("❌ No database files found!")
-                    st.info("💡 Please build a database first using the Database Management page.")
-                    return
-                # 使用选中的数据库
-                db = HbprDatabase(selected_db_file)
-                
-                # Compact success message
-                st.markdown(f"""
-                <style>
-                .compact-success {{
-                    background-color: #d4edda;
-                    border: 1px solid #c3e6cb;
-                    color: #155724;
-                    padding: 0.3rem 0.6rem;
-                    border-radius: 0.25rem;
-                    margin: 0.4rem 0;
-                }}
-                </style>
-                <div class="compact-success">✅ DB connected: <code>{os.path.basename(selected_db_file)}</code></div>
-                """, unsafe_allow_html=True)
+            # 获取当前选中的数据库
+            selected_db_file = get_current_database()
             
+            if not selected_db_file:
+                st.error("❌ No database selected!")
+                st.info("💡 Please select a database from the sidebar or build one first using the Database Management page.")
+                return
+            # 使用选中的数据库
+            db = HbprDatabase(selected_db_file)
+            st.success(f"DB connected: {os.path.basename(selected_db_file)}")
             # 获取HBNB范围信息
             range_info = db.get_hbnb_range_info()
             missing_numbers = db.get_missing_hbnb_numbers()
             record_summary = db.get_record_summary()
-            
             # 显示HBNB范围信息
             metrics_col1, metrics_col2, metrics_col3, metrics_col4 = st.columns(4)
             with metrics_col1:
@@ -72,17 +49,11 @@ def show_home_page():
                 st.metric("Simple Records", record_summary['simple_records'])
             
             # 显示验证统计
-            validation_col1, validation_col2, validation_col3 = st.columns(3)
+            validation_col1, validation_col2, validation_col3, validation_col4 = st.columns(4)
             with validation_col1:
                 st.metric("Validated Records", record_summary['validated_records'])
             with validation_col2:
                 st.metric("Missing Numbers", len(missing_numbers))
-            with validation_col3:
-                if record_summary['total_records'] > 0:
-                    completeness = (record_summary['validated_records'] / record_summary['total_records']) * 100
-                    st.metric("Completeness", f"{completeness:.1f}%")
-                else:
-                    st.metric("Completeness", "0%")
             # 显示缺失号码表格
             if missing_numbers:
                 st.subheader("🚫 Missing HBNB Numbers")
