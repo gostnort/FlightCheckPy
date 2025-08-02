@@ -4,7 +4,7 @@ Login and authentication page for HBPR UI
 """
 
 import streamlit as st
-from .common import get_icon_base64, authenticate_user
+from ui.common import get_icon_base64, authenticate_user
 
 
 def show_login_page():
@@ -12,7 +12,7 @@ def show_login_page():
     st.markdown("""
     <div style="display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 30px;">
         <img src="data:image/x-icon;base64,{}" width="64" height="64">
-        <h1 style="margin: 0;">Flight Check 0.6 --- Python</h1>
+        <h1 style="margin: 0;">Flight Check 0.61 --- Python</h1>
     </div>
     """.format(get_icon_base64("resources/fcp.ico")), unsafe_allow_html=True)
     

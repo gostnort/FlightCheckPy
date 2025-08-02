@@ -5,7 +5,8 @@ Home page for HBPR UI - System overview and quick actions
 
 import streamlit as st
 import pandas as pd
-from .common import apply_global_settings, create_database_selectbox, HbprDatabase
+from ui.common import apply_global_settings, create_database_selectbox
+from scripts.hbpr_info_processor import HbprDatabase
 import os
 
 def show_home_page():

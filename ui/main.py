@@ -5,11 +5,11 @@ Main UI coordinator for HBPR Processing System
 
 import streamlit as st
 import os
-from .common import get_icon_base64, apply_global_settings
-from .login_page import show_login_page
-from .home_page import show_home_page
-from .database_page import show_database_management
-from .settings_page import show_settings
+from ui.common import get_icon_base64, apply_global_settings
+from ui.login_page import show_login_page
+from ui.home_page import show_home_page
+from ui.database_page import show_database_management
+from ui.settings_page import show_settings
 
 
 def main():
@@ -114,12 +114,10 @@ def main():
     elif current_page == "🗄️ Database":
         show_database_management()
     elif current_page == "🔍 Process Records":
-        # Import here to avoid circular imports when other pages are ready
-        from hbpr_ui import show_process_records
+        from ui.process_records_page import show_process_records
         show_process_records()
     elif current_page == "📊 View Results":
-        # Import here to avoid circular imports when other pages are ready
-        from hbpr_ui import show_view_results
+        from ui.view_results_page import show_view_results
         show_view_results()
     elif current_page == "⚙️ Settings":
         show_settings()

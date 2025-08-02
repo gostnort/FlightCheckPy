@@ -9,7 +9,9 @@ import os
 import glob
 import sqlite3
 import traceback
-from .common import apply_global_settings, create_database_selectbox, HbprDatabase
+from ui.common import apply_global_settings, create_database_selectbox
+from scripts.hbpr_info_processor import HbprDatabase
+from scripts.hbpr_list_processor import HBPRProcessor
 
 
 def show_database_management():

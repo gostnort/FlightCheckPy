@@ -746,6 +746,8 @@ class HbprDatabase:
     
     def __init__(self, db_file: str = None):
         """初始化数据库连接"""
+        # Initialize cache before setting db_file
+        self._chbpr_fields_initialized = False  # Cache to avoid repeated field additions
         self.db_file = db_file
         if db_file and not os.path.exists(db_file):
             raise FileNotFoundError(f"Database file {db_file} not found!")
@@ -774,6 +776,9 @@ class HbprDatabase:
                 cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='hbpr_full_records'")
                 if cursor.fetchone():
                     conn.close()
+                    # Reset cache if database file changes
+                    if self.db_file != db_file:
+                        self._chbpr_fields_initialized = False
                     self.db_file = db_file
                     # 确保数据库有最新的字段结构
                     self._add_chbpr_fields()
@@ -817,6 +822,10 @@ class HbprDatabase:
         """向hbpr_full_records表添加CHbpr解析的字段"""
         if not self.db_file:
             self.find_database()
+        
+        # Skip if already initialized for this database instance
+        if self._chbpr_fields_initialized:
+            return
         
         try:
             conn = sqlite3.connect(self.db_file)
@@ -865,17 +874,25 @@ class HbprDatabase:
             ]
             
             # 添加不存在的字段
+            fields_added = 0
             for field_name, field_type in new_fields:
                 if field_name not in existing_columns:
                     try:
                         cursor.execute(f"ALTER TABLE hbpr_full_records ADD COLUMN {field_name} {field_type}")
                         print(f"Added field: {field_name}")
+                        fields_added += 1
                     except sqlite3.Error as e:
                         print(f"Warning: Could not add field {field_name}: {e}")
             
             conn.commit()
             conn.close()
-            print("CHbpr fields added to hbpr_full_records table")
+            
+            # Only print summary message if fields were actually added
+            if fields_added > 0:
+                print(f"CHbpr fields added to hbpr_full_records table ({fields_added} new fields)")
+            
+            # Mark as initialized for this instance
+            self._chbpr_fields_initialized = True
             
         except sqlite3.Error as e:
             raise Exception(f"Database error: {e}")
