@@ -12,20 +12,20 @@ from ui.database_page import show_database_management
 from ui.settings_page import show_settings  
 from ui.common import get_sorted_database_files
 from scripts.hbpr_info_processor import HbprDatabase
+from tkinter import filedialog
+import tkinter as tk
 
 def main():
-    """主UI函数"""
+    """Main UI function"""
     st.set_page_config(
         page_title="HBPR Processing System",
         page_icon="resources/fcp.ico",
         layout="wide",
         initial_sidebar_state="expanded"
     )
-    
     # Initialize session state
     if 'current_page' not in st.session_state:
         st.session_state.current_page = "🏠 Home"
-    
     # Initialize settings
     if 'settings' not in st.session_state:
         st.session_state.settings = {
@@ -33,49 +33,59 @@ def main():
             'font_size_percent': 100,
             'auto_refresh': True
         }
-    
     # Initialize file cleanup tracking
     if 'uploaded_file_path' not in st.session_state:
         st.session_state.uploaded_file_path = None
     if 'previous_page' not in st.session_state:
         st.session_state.previous_page = None
-    
     # Check authentication
     if 'authenticated' not in st.session_state:
         st.session_state.authenticated = False
-    
     # If not authenticated, show login page
     if not st.session_state.authenticated:
         show_login_page()
         return
-    
     # Apply global settings
     apply_global_settings()
-    
-    # 侧边栏导航
+    # Sidebar navigation
     st.sidebar.title("📋 Navigation")
-    
     # Show logged in user info
     if 'username' in st.session_state:
         st.sidebar.markdown(f"👤 **Logged in as:** {st.session_state.username}")
-    
     # Centralized database selection
     st.sidebar.markdown("---")
-    # Get database files
-    db_files = get_sorted_database_files(sort_by='creation_time', reverse=True)
+    # Get database files (including custom folder if set)
+    custom_folder = st.session_state.get('custom_db_folder', None)
+    db_files = get_sorted_database_files(sort_by='creation_time', reverse=True, custom_folder=custom_folder)
     if db_files:
-        # Create options with flight information
+        # Create options with flight information and location indicators
         db_options = []
         for db_file in db_files:
             try:
                 temp_db = HbprDatabase(db_file)
                 flight_info = temp_db.get_flight_info()
-                if flight_info:
-                    display_name = f"{os.path.basename(db_file)}"
+                base_name = os.path.basename(db_file)
+                # Determine location indicator
+                if custom_folder and db_file.startswith(custom_folder):
+                    location_indicator = "📁"  # Custom folder
+                elif db_file.startswith("databases/"):
+                    location_indicator = "🏠"  # Default databases folder
                 else:
-                    display_name = f"Unknown Flight - {os.path.basename(db_file)}"
-            except:
-                display_name = f"Database - {os.path.basename(db_file)}"
+                    location_indicator = "📄"  # Root directory 
+                if flight_info:
+                    display_name = f"{location_indicator} {base_name}"
+                else:
+                    display_name = f"{location_indicator} Unknown Flight - {base_name}"
+            except Exception:
+                base_name = os.path.basename(db_file)
+                # Determine location indicator for error case
+                if custom_folder and db_file.startswith(custom_folder):
+                    location_indicator = "📁"
+                elif db_file.startswith("databases/"):
+                    location_indicator = "🏠"
+                else:
+                    location_indicator = "📄"
+                display_name = f"{location_indicator} Database - {base_name}"
             
             db_options.append((display_name, db_file))
         # Sidebar selectbox
@@ -85,7 +95,6 @@ def main():
             index=0,
             key="global_db_select"
         )
-        
         # Get selected database file
         selected_db_file = None
         for display_name, db_file in db_options:
@@ -96,22 +105,48 @@ def main():
         selected_db_file = None
         st.sidebar.warning("⚠️ No databases found")
         st.sidebar.info("💡 Create a database first")
-    
     # Store selected database in session state for all pages to use
     st.session_state.selected_database = selected_db_file
     st.session_state.available_databases = db_files
+    # Native Windows folder picker button
+    if st.sidebar.button("🧾 Open Database", use_container_width=True):
+        try:
+            # Create a root window and hide it
+            root = tk.Tk()
+            root.withdraw()
+            root.wm_attributes('-topmost', 1)
+            # Open Windows folder selection dialog
+            folder_path = filedialog.askdirectory(
+                title="Select Database Folder",
+                initialdir=st.session_state.get('custom_db_folder', os.getcwd())
+            )
+            # Clean up the root window
+            root.destroy()
+            if folder_path:
+                st.session_state.custom_db_folder = folder_path
+                st.sidebar.success(f"📁 Selected: {os.path.basename(folder_path)}")
+                st.rerun()
+        except Exception as e:
+            st.sidebar.error(f"❌ Error opening folder dialog: {str(e)}")
+    # Show current custom folder if set
+    current_custom_folder = st.session_state.get('custom_db_folder', '')
+    if current_custom_folder:
+        st.sidebar.caption(f"📁 Custom: {os.path.basename(current_custom_folder)}")
+        if st.sidebar.button("🗑️ Clear Custom Folder", use_container_width=True):
+            st.session_state.custom_db_folder = ''
+            st.rerun()
+    st.sidebar.markdown("---")
     # Home page
     if st.sidebar.button("🏠 Home", use_container_width=True):
         st.session_state.current_page = "🏠 Home"    
-    st.sidebar.markdown("---")
-    # 导航链接
+    # Navigation links
     if st.sidebar.button("🗄️ Database", use_container_width=True):
         st.session_state.current_page = "🗄️ Database"
     if st.sidebar.button("🔍 Process Records", use_container_width=True):
         st.session_state.current_page = "🔍 Process Records"
     if st.sidebar.button("📊 View Results", use_container_width=True):
         st.session_state.current_page = "📊 View Results"
-    # 设置页
+    # Settings page
     st.sidebar.markdown("---")
     if st.sidebar.button("⚙️ Settings", use_container_width=True):
         st.session_state.current_page = "⚙️ Settings"
@@ -127,7 +162,6 @@ def main():
         st.session_state.username = None
         st.session_state.uploaded_file_path = None
         st.rerun()
-    
     # Clean up uploaded file when navigating away from database page
     if (st.session_state.previous_page == "🗄️ Database" and 
         st.session_state.current_page != "🗄️ Database" and 
@@ -138,14 +172,12 @@ def main():
             st.session_state.uploaded_file_path = None
         except Exception:
             pass
-    
     # Update previous page
     st.session_state.previous_page = st.session_state.current_page
-    
-    # 根据当前页面显示内容
+    # Display content based on current page
     current_page = st.session_state.current_page
     if current_page == "🏠 Home":
-        # 只在主页显示标题
+        # Only show title on homepage
         st.markdown("""
         <div style="display: flex; align-items: center; gap: 10px;">
             <img src="data:image/x-icon;base64,{}" width="128" height="128">

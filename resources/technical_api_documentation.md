@@ -2,7 +2,14 @@
 
 ## Project Overview
 
-The Flight Data Processing System is a comprehensive Python application designed to process and analyze passenger records from HBPR (Hotel Booking Passenger Record) format. The system provides data validation, structured parsing, database storage, and a modern web-based UI for data management and analysis.
+The Flight Data Processing System is a comprehensive Python application designed to process and analyze passenger records from HBPR (Hotel Booking Passenger Record) format. The system provides data validation, structured parsing, database storage, and a modern web-based UI for data management and analysis. 
+
+**Key Features:**
+- Multi-source database discovery with visual location indicators
+- Native Windows folder picker integration for custom database directories
+- Enhanced session state management for persistent user preferences
+- Centralized database selection with flight information display
+- Real-time database switching without application restart
 
 ## 🏗️ System Architecture
 
@@ -15,15 +22,29 @@ FlightCheckPy/
 │   ├── hbpr_list_processor.py  # Batch processing and database creation
 │   └── general_func.py         # Utility functions and configuration
 ├── ui/                         # Web UI components
-│   ├── main.py                 # Main UI coordinator
+│   ├── main.py                 # Main UI coordinator with Windows integration
 │   ├── login_page.py           # Authentication interface
 │   ├── home_page.py            # System overview
 │   ├── database_page.py        # Database management
 │   ├── settings_page.py        # System configuration
-│   └── common.py               # Shared utilities
+│   └── common.py               # Shared utilities with enhanced database discovery
 ├── hbpr_ui.py                  # Legacy UI functions (Process Records)
-└── databases/                  # Database storage directory
+└── databases/                  # Default database storage directory
 ```
+
+### Platform Requirements
+
+**Windows-Specific Features:**
+- Native folder picker dialogs using `tkinter.filedialog`
+- Windows path handling and directory operations
+- Topmost window management for dialog positioning
+
+**Dependencies:**
+- `streamlit` - Web UI framework
+- `tkinter` - Native Windows GUI toolkit (built-in with Python)
+- `sqlite3` - Database operations
+- `pandas` - Data manipulation
+- `glob` - File pattern matching
 
 ## 📋 Class Specifications
 
@@ -445,9 +466,64 @@ def ForeignGoldFlyerBagWeight(self) -> int:
 
 **Location**: `ui/main.py`
 
+**Purpose**: Coordinates the main application UI, handles navigation, authentication, database selection, and provides native Windows folder picker functionality.
+
+#### Dependencies
+```python
+import streamlit as st
+import os
+import tkinter as tk
+from tkinter import filedialog
+from ui.common import get_icon_base64, apply_global_settings, get_sorted_database_files
+from ui.login_page import show_login_page
+from ui.home_page import show_home_page
+from ui.database_page import show_database_management
+from ui.settings_page import show_settings
+from scripts.hbpr_info_processor import HbprDatabase
+```
+
+#### Methods
+
 ```python
 def main() -> None:
-    """Main UI function - Application entry point"""
+    """
+    Main UI function - Application entry point
+    
+    Features:
+    - Session state initialization
+    - User authentication management
+    - Centralized database selection with location indicators
+    - Native Windows folder picker for custom database directories
+    - Sidebar navigation with page routing
+    - File cleanup on logout and page navigation
+    - Visual database location indicators (📁 Custom, 🏠 Default, 📄 Root)
+    """
+```
+
+#### Key Features
+
+##### Database Selection Enhancement
+- **Multi-source discovery**: Searches custom folders, default `databases/` folder, and root directory
+- **Visual indicators**: Location-based icons distinguish database sources
+  - 📁 Custom folder databases
+  - 🏠 Default databases folder
+  - 📄 Root directory databases
+- **Session persistence**: Custom folder selection persists across navigation
+
+##### Native Windows Integration
+- **Folder picker**: Uses `tkinter.filedialog.askdirectory()` for native Windows folder selection
+- **Topmost dialog**: Ensures folder picker appears above Streamlit interface
+- **Path persistence**: Remembers last selected custom folder location
+
+##### Session State Management
+```python
+# Key session state variables
+st.session_state.current_page          # Current active page
+st.session_state.authenticated         # Authentication status
+st.session_state.selected_database     # Currently selected database file
+st.session_state.available_databases   # List of available database files
+st.session_state.custom_db_folder      # Custom database folder path
+st.session_state.settings             # Global application settings
 ```
 
 ### 2. Authentication System
@@ -558,31 +634,42 @@ def apply_global_settings() -> None:
 def create_database_selectbox(label: str = "Select database:", 
                             key: str = None, 
                             default_index: int = 0, 
-                            show_flight_info: bool = False) -> Tuple[str, List[str]]:
+                            show_flight_info: bool = False,
+                            custom_folder: str = None) -> Tuple[str, List[str]]:
     """
-    Create database selection widget
+    Create database selection widget with custom folder support
     
     Args:
         label (str): Widget label
         key (str): Widget key for session state
         default_index (int): Default selection index
         show_flight_info (bool): Whether to show flight information
+        custom_folder (str): Custom database folder path
         
     Returns:
         Tuple[str, List[str]]: Selected database file, all database files
     """
 
 def get_sorted_database_files(sort_by: str = 'creation_time', 
-                            reverse: bool = True) -> List[str]:
+                            reverse: bool = True,
+                            custom_folder: str = None) -> List[str]:
     """
-    Get sorted list of database files
+    Get sorted list of database files from multiple sources
     
     Args:
-        sort_by (str): Sort criteria ('creation_time' or 'name')
+        sort_by (str): Sort criteria ('creation_time', 'modification_time', 'name')
         reverse (bool): Whether to reverse sort order
+        custom_folder (str): Custom database folder path to include in search
         
     Returns:
-        List[str]: Sorted list of database file paths
+        List[str]: Sorted list of database file paths from all sources
+        
+    Features:
+        - Searches custom folder first (if provided)
+        - Searches default databases/ folder
+        - Searches root directory as fallback
+        - Removes duplicates automatically
+        - Supports multiple sort criteria
     """
 ```
 
@@ -616,15 +703,27 @@ HbprDatabase.build_from_hbpr_list()
 ### UI Processing Chain
 ```
 main()
+├── Session state initialization
 ├── authenticate_user()
-├── show_home_page()
-├── show_database_management()
-│   └── build_database_ui()
-├── process_manual_input()
-│   ├── parse_hbnb_input()
-│   ├── validate_full_hbpr_record()
-│   └── HbprDatabase operations
-└── show_settings()
+├── apply_global_settings()
+├── Database discovery and selection
+│   ├── get_sorted_database_files() (with custom_folder support)
+│   ├── Database location indicator assignment
+│   └── Session state database storage
+├── Native Windows folder picker
+│   ├── tk.Tk() initialization
+│   ├── filedialog.askdirectory()
+│   └── Custom folder path persistence
+├── Page navigation and routing
+│   ├── show_home_page()
+│   ├── show_database_management()
+│   │   └── build_database_ui()
+│   ├── process_manual_input()
+│   │   ├── parse_hbnb_input()
+│   │   ├── validate_full_hbpr_record()
+│   │   └── HbprDatabase operations
+│   └── show_settings()
+└── File cleanup and logout handling
 ```
 
 ## 📊 Data Flow and Processing Pipeline
@@ -642,6 +741,16 @@ UI Input → Validation → Database Storage → Missing Numbers Update → Stat
 ### 3. Authentication Flow
 ```
 Login Page → SHA256 Hash → Validation → Session State → Authenticated UI
+```
+
+### 4. Database Folder Selection Flow
+```
+Folder Picker Button → Native Windows Dialog → Path Selection → Session Storage → Database Discovery → UI Refresh
+```
+
+### 5. Enhanced Database Discovery Pipeline
+```
+Custom Folder Search → Default databases/ Search → Root Directory Search → Deduplication → Location Assignment → Visual Indicators
 ```
 
 ## 🗄️ Database Schema
@@ -753,6 +862,52 @@ processor.process()
 
 # Generate report
 report = processor.generate_report()
+```
+
+### Enhanced Database Discovery
+```python
+# Get databases from multiple sources
+from ui.common import get_sorted_database_files
+
+# Include custom folder in search
+custom_folder = "C:/MyDatabases"
+db_files = get_sorted_database_files(
+    sort_by='creation_time', 
+    reverse=True, 
+    custom_folder=custom_folder
+)
+
+# Create database selectbox with custom folder support
+selected_db, all_dbs = create_database_selectbox(
+    label="Select Database:",
+    show_flight_info=True,
+    custom_folder=custom_folder
+)
+```
+
+### Native Windows Folder Picker Integration
+```python
+# Example of folder picker functionality (from main.py)
+import tkinter as tk
+from tkinter import filedialog
+
+# Create hidden root window
+root = tk.Tk()
+root.withdraw()
+root.wm_attributes('-topmost', 1)
+
+# Open native Windows folder dialog
+folder_path = filedialog.askdirectory(
+    title="Select Database Folder",
+    initialdir=os.getcwd()
+)
+
+# Cleanup
+root.destroy()
+
+# Store in session state
+if folder_path:
+    st.session_state.custom_db_folder = folder_path
 ```
 
 ## 🔧 Error Handling

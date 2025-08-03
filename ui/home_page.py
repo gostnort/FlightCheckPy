@@ -81,9 +81,6 @@ def show_home_page():
             st.info("💡 Please build a database first using the Database Management page.")
     with col2:
         st.subheader("🚀 Quick Actions")
-        if st.button("🗄️ Build Database", use_container_width=True):
-            st.session_state.current_page = "🗄️ Database"
-            st.rerun()
         if st.button("🔍 Process HBPR Record", use_container_width=True):
             st.session_state.current_page = "🔍 Process Records"
             st.rerun()

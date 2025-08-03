@@ -114,25 +114,38 @@ def parse_hbnb_input(input_text: str) -> list:
     return sorted(list(hbnb_numbers))
 
 
-def get_sorted_database_files(sort_by='creation_time', reverse=True):
+def get_sorted_database_files(sort_by='creation_time', reverse=True, custom_folder=None):
     """
     获取排序后的数据库文件列表
     
     Args:
         sort_by (str): 排序方式 - 'creation_time', 'modification_time', 'name'
         reverse (bool): 是否反向排序（True为最新的在前）
+        custom_folder (str): 自定义数据库文件夹路径
     
     Returns:
         list: 排序后的数据库文件路径列表
     """
-    # 搜索数据库文件，优先查找databases文件夹
+    # 搜索数据库文件
     db_files = []
+    
+    # 首先添加自定义文件夹中的数据库（如果指定）
+    if custom_folder and os.path.exists(custom_folder) and os.path.isdir(custom_folder):
+        custom_db_files = glob.glob(os.path.join(custom_folder, "*.db"))
+        db_files.extend(custom_db_files)
+    
+    # 然后查找默认的databases文件夹
     if os.path.exists("databases"):
-        db_files = glob.glob("databases/*.db")
+        default_db_files = glob.glob("databases/*.db")
+        db_files.extend(default_db_files)
     
     # 如果databases文件夹中没有找到，则搜索根目录
-    if not db_files:
-        db_files = glob.glob("*.db")
+    if not any(f.startswith("databases/") for f in db_files):
+        root_db_files = glob.glob("*.db")
+        db_files.extend(root_db_files)
+    
+    # 去重（防止同一文件被添加多次）
+    db_files = list(set(db_files))
     
     if not db_files:
         return []
@@ -154,7 +167,7 @@ def get_sorted_database_files(sort_by='creation_time', reverse=True):
     return db_files
 
 
-def create_database_selectbox(label="Select database:", key=None, default_index=0, show_flight_info=False):
+def create_database_selectbox(label="Select database:", key=None, default_index=0, show_flight_info=False, custom_folder=None):
     """
     创建数据库选择下拉框
     
@@ -163,11 +176,12 @@ def create_database_selectbox(label="Select database:", key=None, default_index=
         key (str): Streamlit组件key
         default_index (int): 默认选中的索引（0为最新的数据库）
         show_flight_info (bool): 是否显示航班信息
+        custom_folder (str): 自定义数据库文件夹路径
     
     Returns:
         tuple: (selected_db_file, db_files_list) 或 (None, []) 如果没有数据库
     """
-    db_files = get_sorted_database_files(sort_by='creation_time', reverse=True)
+    db_files = get_sorted_database_files(sort_by='creation_time', reverse=True, custom_folder=custom_folder)
     
     if not db_files:
         return None, []
