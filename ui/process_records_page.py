@@ -82,6 +82,20 @@ def process_all_records(db):
 def view_single_record(db):
     """查看单个记录"""
     try:
+        # 获取当前选中的数据库
+        selected_db_file = get_current_database()
+        
+        if not selected_db_file:
+            st.error("❌ No database selected! Please select a database from the sidebar.")
+            return
+        
+        # 显示当前使用的数据库
+        st.info(f"Using database: `{os.path.basename(selected_db_file)}`")
+        
+        # 如果选择了不同的数据库，重新初始化
+        if selected_db_file != db.db_file:
+            db = HbprDatabase(selected_db_file)
+        
         conn = sqlite3.connect(db.db_file)
         cursor = conn.cursor()
         # 检查是否有已处理的记录
@@ -528,20 +542,50 @@ def validate_full_hbpr_record(hbpr_content):
             'is_valid': bool,
             'hbnb_number': int or None,
             'errors': list of error messages,
-            'chbpr_errors': dict of CHbpr error messages
+            'chbpr_errors': dict of CHbpr error messages,
+            'corrected_content': str - the content with any corrections applied
         }
     """
     result = {
         'is_valid': False,
         'hbnb_number': None,
         'errors': [],
-        'chbpr_errors': {}
+        'chbpr_errors': {},
+        'corrected_content': hbpr_content
     }
     
     # Check if content is not empty
     if not hbpr_content or not hbpr_content.strip():
         result['errors'].append("Input content is empty")
         return result
+    
+    # Handle special character replacement before "HBPR:" if ">HBPR:" is not found
+    if '>HBPR:' not in hbpr_content:
+        # Look for DLE character (ASCII 16, \x10) before "HBPR:" and replace with ">"
+        dle_pattern = r'\x10HBPR:'
+        if re.search(dle_pattern, hbpr_content):
+            hbpr_content = re.sub(dle_pattern, '>HBPR:', hbpr_content)
+            st.info("ℹ️ Detected DLE character before 'HBPR:' - automatically replaced with '>'")
+        # Look for del character (ASCII 127, \x7f) before "HBPR:" and replace with ">"
+        elif re.search(r'\x7fHBPR:', hbpr_content):
+            hbpr_content = re.sub(r'\x7fHBPR:', '>HBPR:', hbpr_content)
+            st.info("ℹ️ Detected DEL character before 'HBPR:' - automatically replaced with '>'")
+        # Check for other common control characters before "HBPR:"
+        elif re.search(r'[\x00-\x1f\x7f]HBPR:', hbpr_content):
+            hbpr_content = re.sub(r'[\x00-\x1f\x7f]HBPR:', '>HBPR:', hbpr_content)
+            st.info("ℹ️ Detected control character before 'HBPR:' - automatically replaced with '>'")
+        # Check for visible "del" text (in case it's displayed as text)
+        elif re.search(r'delHBPR:', hbpr_content, re.IGNORECASE):
+            hbpr_content = re.sub(r'delHBPR:', '>HBPR:', hbpr_content, flags=re.IGNORECASE)
+            st.info("ℹ️ Detected 'del' text before 'HBPR:' - automatically replaced with '>'")
+        # Handle case where HBPR: appears without any prefix character
+        elif re.search(r'^HBPR:', hbpr_content, re.MULTILINE):
+            hbpr_content = re.sub(r'^HBPR:', '>HBPR:', hbpr_content, flags=re.MULTILINE)
+            st.info("ℹ️ Detected 'HBPR:' without prefix - automatically added '>' prefix")
+    
+    # Store the corrected content for further processing
+    corrected_content = hbpr_content
+    result['corrected_content'] = corrected_content
     
     # Step 1: Check basic regex pattern for full HBPR record
     # Must start with >HBPR: and contain flight info and HBNB number
@@ -561,8 +605,8 @@ def validate_full_hbpr_record(hbpr_content):
     
     # Step 2: Use HBPRProcessor to parse and validate the record format
     try:
-        # Create a temporary file-like content for parsing
-        lines = hbpr_content.split('\n')
+        # Create a temporary file-like content for parsing (use corrected content)
+        lines = corrected_content.split('\n')
         
         # Find the line that starts with >HBPR:
         hbpr_line_index = -1
@@ -596,7 +640,7 @@ def validate_full_hbpr_record(hbpr_content):
     # Step 3: Use CHbpr to test the record and check for errors
     try:
         chbpr = CHbpr()
-        chbpr.run(hbpr_content)
+        chbpr.run(corrected_content)
         
         # Store CHbpr errors for reference
         result['chbpr_errors'] = chbpr.error_msg
@@ -810,9 +854,12 @@ def _process_replace_record(db, hbpr_content):
     st.success("✅ HBPR Record Format Validation Passed")
     
     try:
+        # Get the corrected content from validation result
+        corrected_content = validation_result['corrected_content']
+        
         # Create CHbpr instance for final processing (we know it's valid)
         chbpr = CHbpr()
-        chbpr.run(hbpr_content)
+        chbpr.run(corrected_content)
         
         # Verify no critical errors occurred during processing
         if chbpr.error_msg.get('Other'):
@@ -822,7 +869,7 @@ def _process_replace_record(db, hbpr_content):
             return
         
         # Process the record
-        _process_record_common(db, chbpr, hbpr_content, is_duplicate=False)
+        _process_record_common(db, chbpr, corrected_content, is_duplicate=False)
         
     except Exception as e:
         st.error(f"❌ Error processing full record: {str(e)}")
@@ -835,10 +882,22 @@ def _process_duplicate_record(db, hbpr_content):
         st.warning("⚠️ Please enter HBPR content first.")
         return
     
+    # First validate and get corrected content
+    validation_result = validate_full_hbpr_record(hbpr_content)
+    
+    if not validation_result['is_valid']:
+        st.error("❌ HBPR Record Validation Failed")
+        for error in validation_result['errors']:
+            st.error(f"• {error}")
+        return
+    
     try:
+        # Get the corrected content from validation result
+        corrected_content = validation_result['corrected_content']
+        
         # 处理HBPR记录
         chbpr = CHbpr()
-        chbpr.run(hbpr_content)
+        chbpr.run(corrected_content)
         
         # 获取HBNB的simple_record和full_record信息
         hbnb_exists = db.check_hbnb_exists(chbpr.HbnbNumber)
@@ -848,7 +907,7 @@ def _process_duplicate_record(db, hbpr_content):
         _show_processing_info(db, chbpr.HbnbNumber, hbnb_exists)
         
         # 验证航班信息匹配
-        if not _validate_flight_info(db, hbpr_content):
+        if not _validate_flight_info(db, corrected_content):
             return
         
         # 检查原始记录是否存在
@@ -858,7 +917,7 @@ def _process_duplicate_record(db, hbpr_content):
             return
         
         # 创建重复记录
-        db.create_duplicate_record(chbpr.HbnbNumber, chbpr.HbnbNumber, hbpr_content)
+        db.create_duplicate_record(chbpr.HbnbNumber, chbpr.HbnbNumber, corrected_content)
         st.success(f"✅ Created duplicate record for HBNB {chbpr.HbnbNumber}")
         
         # 更新验证结果

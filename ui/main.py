@@ -108,8 +108,14 @@ def main():
     # Store selected database in session state for all pages to use
     st.session_state.selected_database = selected_db_file
     st.session_state.available_databases = db_files
-    # Native Windows folder picker button
-    if st.sidebar.button("🧾 Open Database", use_container_width=True):
+    # Native Windows folder picker button and refresh button
+    col1, col2, col3 = st.sidebar.columns([3,1,1])
+    with col1:
+        open_db_clicked = st.button("🧾 Open DB", use_container_width=True)
+    with col3:
+        refresh_clicked = st.button("🔄", use_container_width=True, help="Refresh all content")
+    
+    if open_db_clicked:
         try:
             # Create a root window and hide it
             root = tk.Tk()
@@ -128,6 +134,11 @@ def main():
                 st.rerun()
         except Exception as e:
             st.sidebar.error(f"❌ Error opening folder dialog: {str(e)}")
+    
+    # Handle refresh button click
+    if refresh_clicked:
+        st.rerun()
+    
     # Show current custom folder if set
     current_custom_folder = st.session_state.get('custom_db_folder', '')
     if current_custom_folder:
