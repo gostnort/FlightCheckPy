@@ -5,15 +5,22 @@ Main UI coordinator for HBPR Processing System
 
 import streamlit as st
 import os
-from ui.common import get_icon_base64, apply_global_settings
+import sys
+import tkinter as tk
+from tkinter import filedialog
+
+# Add project root to Python path
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+# Project-specific imports (after path setup)
+from ui.common import get_icon_base64, apply_global_settings, get_sorted_database_files
 from ui.login_page import show_login_page
 from ui.home_page import show_home_page
 from ui.database_page import show_database_management
-from ui.settings_page import show_settings  
-from ui.common import get_sorted_database_files
+from ui.settings_page import show_settings
 from scripts.hbpr_info_processor import HbprDatabase
-from tkinter import filedialog
-import tkinter as tk
 
 def main():
     """Main UI function"""
@@ -49,11 +56,6 @@ def main():
     apply_global_settings()
     # Sidebar navigation
     st.sidebar.title("📋 Navigation")
-    # Show logged in user info
-    if 'username' in st.session_state:
-        st.sidebar.markdown(f"👤 **Logged in as:** {st.session_state.username}")
-    # Centralized database selection
-    st.sidebar.markdown("---")
     # Get database files (including custom folder if set)
     custom_folder = st.session_state.get('custom_db_folder', None)
     db_files = get_sorted_database_files(sort_by='creation_time', reverse=True, custom_folder=custom_folder)
@@ -157,6 +159,8 @@ def main():
         st.session_state.current_page = "🔍 Process Records"
     if st.sidebar.button("📊 View Results", use_container_width=True):
         st.session_state.current_page = "📊 View Results"
+    if st.sidebar.button("📋 Command Analysis", use_container_width=True):
+        st.session_state.current_page = "📋 Command Analysis"
     # Settings page
     st.sidebar.markdown("---")
     if st.sidebar.button("⚙️ Settings", use_container_width=True):
@@ -174,8 +178,9 @@ def main():
         st.session_state.uploaded_file_path = None
         st.rerun()
     # Clean up uploaded file when navigating away from database page
-    if (st.session_state.previous_page == "🗄️ Database" and 
-        st.session_state.current_page != "🗄️ Database" and 
+    pages_with_uploads = ["🗄️ Database"]
+    if (st.session_state.previous_page in pages_with_uploads and 
+        st.session_state.current_page not in pages_with_uploads and 
         st.session_state.uploaded_file_path and 
         os.path.exists(st.session_state.uploaded_file_path)):
         try:
@@ -205,6 +210,9 @@ def main():
     elif current_page == "📊 View Results":
         from ui.view_results_page import show_view_results
         show_view_results()
+    elif current_page == "📋 Command Analysis":
+        from ui.command_analysis_page import show_command_analysis
+        show_command_analysis()
     elif current_page == "⚙️ Settings":
         show_settings()
 
