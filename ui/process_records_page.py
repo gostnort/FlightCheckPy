@@ -211,20 +211,28 @@ def view_single_record(db):
         
         # 显示记录预览
         if selected_record:
-            st.subheader("📄 Raw HBPR Content")
-            # 显示警告信息（当选择BN或Seat时）
-            if selection_method in ["Boarding Number (BN)", "Seat"]:
-                # 使用自定义CSS来设置警告消息的样式
-                st.markdown("""
+            col1, col2 = st.columns(2)
+            st.markdown("""
                 <style>
-                .stAlert > div[data-testid="stAlert"] {
-                    font-size: 10px !important;
-                    margin: 5px !important;
-                    padding: 5px !important;
+                .fixed-height {
+                    height: 45px;
+                    overflow-y: auto;
+                    align-items: center;
+                    justify-content: center;
+                    padding: 0.5rem;
+                    border-radius: 0.5rem;
+                    text-align: left;
                 }
                 </style>
-                """, unsafe_allow_html=True)
-                st.warning("⚠️ 剔除部分没有 #️⃣ BN or 💺 Seat 的记录")
+            """, unsafe_allow_html=True)
+            with col1:
+                #st.subheader("📄 Raw HBPR Content", help="Raw HBPR Content")
+                st.markdown('<div class="fixed-height" style="font-size: 20px; font-weight: bold;"> 📄 Raw HBPR Content</div>', unsafe_allow_html=True)
+            with col2:
+                # 显示警告信息（当选择BN或Seat时）
+                if selection_method in ["Boarding Number (BN)", "Seat"]:
+                    # 使用自定义CSS来设置警告消息的样式
+                    st.markdown('<div class="fixed-height">⚠️ 剔除部分没有 #️⃣ BN or 💺 Seat 的记录</div>', unsafe_allow_html=True)
             
             try:
                 content = db.get_hbpr_record(selected_record)
