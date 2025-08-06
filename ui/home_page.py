@@ -33,10 +33,11 @@ def show_home_page():
             # 使用选中的数据库
             db = HbprDatabase(selected_db_file)
             st.success(f"DB connected: {os.path.basename(selected_db_file)}")
-            # 获取HBNB范围信息
-            range_info = db.get_hbnb_range_info()
-            missing_numbers = db.get_missing_hbnb_numbers()
-            record_summary = db.get_record_summary()
+            # 获取所有统计信息（使用新的统计管理系统）
+            all_stats = db.get_all_statistics()
+            range_info = all_stats['hbnb_range_info']
+            missing_numbers = all_stats['missing_numbers']
+            record_summary = all_stats['record_summary']
             # 显示HBNB范围信息
             metrics_col1, metrics_col2, metrics_col3, metrics_col4 = st.columns(4)
             with metrics_col1:
@@ -49,11 +50,13 @@ def show_home_page():
                 st.metric("Simple Records", record_summary['simple_records'])
             
             # 显示验证统计
-            validation_col1, validation_col2, validation_col3, validation_col4 = st.columns(4)
+            validation_col1, validation_col2, validation_col3 = st.columns(3)
             with validation_col1:
                 st.metric("Validated Records", record_summary['validated_records'])
             with validation_col2:
                 st.metric("Missing Numbers", len(missing_numbers))
+            with validation_col3:
+                st.metric("Accepted Pax", record_summary['accepted_pax'])
             # 显示缺失号码表格
             if missing_numbers:
                 st.subheader("🚫 Missing HBNB Numbers")
@@ -89,6 +92,14 @@ def show_home_page():
             st.rerun()
         if st.button("📊 View Results", use_container_width=True):
             st.session_state.current_page = "📊 View Results"
+            st.rerun()
+        if st.button("👥 View Accepted Passengers", use_container_width=True):
+            st.session_state.current_page = "📊 View Results"
+            st.session_state.view_results_tab = "👥 Accepted Passengers"
+            st.rerun()
+        if st.button("🔄 Refresh Statistics", use_container_width=True):
+            # 强制刷新所有统计信息
+            db.invalidate_statistics_cache()
             st.rerun()
         if st.button("🔄 Refresh Home Page", use_container_width=True):
             st.rerun()

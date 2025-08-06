@@ -9,8 +9,83 @@ import datetime
 import sqlite3
 import os
 import glob
+import time
+from typing import Dict, Any, Optional
 from .general_func import CArgs
 from .hbpr_list_processor import HBPRProcessor
+import pandas as pd
+
+
+class StatisticsManager:
+    """Manages statistics caching and automatic refresh when database changes"""
+    
+    def __init__(self, db_file: str):
+        self.db_file = db_file
+        self.cache = {}
+        self.cache_timestamps = {}
+        self.db_last_modified = 0
+        self.cache_duration = 300  # 5 minutes cache duration
+    
+    def _get_db_last_modified(self) -> float:
+        """Get the last modification time of the database file"""
+        try:
+            return os.path.getmtime(self.db_file)
+        except (OSError, FileNotFoundError):
+            return 0
+    
+    def _is_cache_valid(self, cache_key: str) -> bool:
+        """Check if cache is still valid"""
+        if cache_key not in self.cache or cache_key not in self.cache_timestamps:
+            return False
+        
+        current_time = time.time()
+        cache_time = self.cache_timestamps[cache_key]
+        
+        # Check if cache has expired
+        if current_time - cache_time > self.cache_duration:
+            return False
+        
+        # Check if database has been modified since cache was created
+        current_db_modified = self._get_db_last_modified()
+        if current_db_modified > self.db_last_modified:
+            return False
+        
+        return True
+    
+    def _update_db_timestamp(self):
+        """Update the database modification timestamp"""
+        self.db_last_modified = self._get_db_last_modified()
+    
+    def get_cached_or_fetch(self, cache_key: str, fetch_func, *args, **kwargs) -> Any:
+        """Get cached data or fetch fresh data if cache is invalid"""
+        if self._is_cache_valid(cache_key):
+            return self.cache[cache_key]
+        
+        # Fetch fresh data
+        result = fetch_func(*args, **kwargs)
+        
+        # Cache the result
+        self.cache[cache_key] = result
+        self.cache_timestamps[cache_key] = time.time()
+        self._update_db_timestamp()
+        
+        return result
+    
+    def invalidate_cache(self, cache_key: Optional[str] = None):
+        """Invalidate cache for specific key or all cache"""
+        if cache_key:
+            if cache_key in self.cache:
+                del self.cache[cache_key]
+            if cache_key in self.cache_timestamps:
+                del self.cache_timestamps[cache_key]
+        else:
+            self.cache.clear()
+            self.cache_timestamps.clear()
+    
+    def force_refresh(self, cache_key: str, fetch_func, *args, **kwargs) -> Any:
+        """Force refresh of cached data"""
+        self.invalidate_cache(cache_key)
+        return self.get_cached_or_fetch(cache_key, fetch_func, *args, **kwargs)
 
 
 class CHbpr:
@@ -776,6 +851,12 @@ class HbprDatabase:
         self.db_file = db_file
         if db_file and not os.path.exists(db_file):
             raise FileNotFoundError(f"Database file {db_file} not found!")
+        
+        # Initialize statistics manager for caching
+        if db_file:
+            self.stats_manager = StatisticsManager(db_file)
+        else:
+            self.stats_manager = None
     
     
     def find_database(self):
@@ -805,6 +886,10 @@ class HbprDatabase:
                     if self.db_file != db_file:
                         self._chbpr_fields_initialized = False
                     self.db_file = db_file
+                    
+                    # Initialize statistics manager with the found database
+                    self.stats_manager = StatisticsManager(db_file)
+                    
                     # 确保数据库有最新的字段结构
                     self._add_chbpr_fields()
                     return db_file
@@ -1046,6 +1131,10 @@ class HbprDatabase:
             
             conn.commit()
             conn.close()
+            
+            # Invalidate statistics cache after database update
+            if self.stats_manager:
+                self.stats_manager.invalidate_cache()
             
             print(f"Updated HBNB {hbnb_number} in hbpr_full_records table")
             return True
@@ -1354,6 +1443,10 @@ class HbprDatabase:
             conn.commit()
             conn.close()
             
+            # Invalidate statistics cache after database update
+            if self.stats_manager:
+                self.stats_manager.invalidate_cache()
+            
             print(f"Created simple record for HBNB {hbnb_number}")
             return True
             
@@ -1384,6 +1477,10 @@ class HbprDatabase:
             conn.commit()
             conn.close()
             
+            # Invalidate statistics cache after database update
+            if self.stats_manager:
+                self.stats_manager.invalidate_cache()
+            
             print(f"Created full record for HBNB {hbnb_number}")
             return True
             
@@ -1404,6 +1501,10 @@ class HbprDatabase:
             
             conn.commit()
             conn.close()
+            
+            # Invalidate statistics cache after database update
+            if self.stats_manager:
+                self.stats_manager.invalidate_cache()
             
             # 更新missing_numbers表
             try:
@@ -1537,6 +1638,17 @@ class HbprDatabase:
         if not self.db_file:
             self.find_database()
         
+        # Use statistics manager for caching
+        if self.stats_manager:
+            return self.stats_manager.get_cached_or_fetch(
+                "record_summary",
+                self._fetch_record_summary
+            )
+        else:
+            return self._fetch_record_summary()
+    
+    def _fetch_record_summary(self):
+        """Internal method to fetch record summary from database"""
         try:
             conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
@@ -1557,17 +1669,189 @@ class HbprDatabase:
             cursor.execute("SELECT COUNT(*) FROM hbpr_full_records WHERE is_validated = 1")
             validated_count = cursor.fetchone()[0]
             
+            # 获取已接受乘客数量（有登机号的记录）
+            cursor.execute("SELECT COUNT(*) FROM hbpr_full_records WHERE boarding_number IS NOT NULL AND boarding_number > 0")
+            accepted_pax_count = cursor.fetchone()[0]
+            
+            # 获取TKNE数量（检查列是否存在）
+            try:
+                cursor.execute("SELECT COUNT(*) FROM hbpr_full_records WHERE tkne IS NOT NULL AND tkne != ''")
+                tkne_count = cursor.fetchone()[0]
+            except sqlite3.OperationalError:
+                # 如果tkne列不存在，返回0
+                tkne_count = 0
+            
             conn.close()
             
             return {
                 'full_records': full_count,
                 'simple_records': simple_count,
                 'validated_records': validated_count,
+                'accepted_pax': accepted_pax_count,
+                'tkne_count': tkne_count,
                 'total_records': full_count + simple_count
             }
             
         except sqlite3.Error as e:
             raise Exception(f"Database error: {e}")
+
+    def get_accepted_passengers(self, sort_by='boarding_number', limit=None):
+        """获取已接受乘客列表（有登机号的记录）"""
+        if not self.db_file:
+            self.find_database()
+        
+        try:
+            conn = sqlite3.connect(self.db_file)
+            
+            # 构建查询语句
+            query = """
+                SELECT hbnb_number, boarding_number, name, seat, class, destination,
+                       bag_piece, bag_weight, ff, properties, ckin_msg, asvc_msg, error_count
+                FROM hbpr_full_records 
+                WHERE boarding_number IS NOT NULL AND boarding_number > 0
+            """
+            
+            # 添加排序
+            if sort_by == 'boarding_number':
+                query += " ORDER BY boarding_number"
+            elif sort_by == 'hbnb_number':
+                query += " ORDER BY hbnb_number"
+            elif sort_by == 'name':
+                query += " ORDER BY name"
+            else:
+                query += " ORDER BY boarding_number"
+            
+            # 添加限制
+            if limit:
+                query += f" LIMIT {limit}"
+            
+            df = pd.read_sql_query(query, conn)
+            conn.close()
+            
+            return df
+            
+        except sqlite3.Error as e:
+            raise Exception(f"Database error: {e}")
+
+    def get_accepted_passengers_count(self):
+        """获取已接受乘客数量"""
+        if not self.db_file:
+            self.find_database()
+        
+        try:
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            
+            cursor.execute("SELECT COUNT(*) FROM hbpr_full_records WHERE boarding_number IS NOT NULL AND boarding_number > 0")
+            count = cursor.fetchone()[0]
+            
+            conn.close()
+            return count
+            
+        except sqlite3.Error as e:
+            raise Exception(f"Database error: {e}")
+
+    def get_accepted_passengers_stats(self):
+        """获取已接受乘客统计信息"""
+        if not self.db_file:
+            self.find_database()
+        
+        # Use statistics manager for caching
+        if self.stats_manager:
+            return self.stats_manager.get_cached_or_fetch(
+                "accepted_passengers_stats",
+                self._fetch_accepted_passengers_stats
+            )
+        else:
+            return self._fetch_accepted_passengers_stats()
+    
+    def _fetch_accepted_passengers_stats(self):
+        """Internal method to fetch accepted passengers statistics from database"""
+        try:
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            
+            # 获取基本统计信息
+            cursor.execute("""
+                SELECT 
+                    COUNT(*) as total_accepted,
+                    MIN(boarding_number) as min_boarding,
+                    MAX(boarding_number) as max_boarding,
+                    AVG(bag_piece) as avg_bag_piece,
+                    AVG(bag_weight) as avg_bag_weight,
+                    SUM(bag_piece) as total_bag_pieces,
+                    SUM(bag_weight) as total_bag_weight
+                FROM hbpr_full_records 
+                WHERE boarding_number IS NOT NULL AND boarding_number > 0
+            """)
+            
+            result = cursor.fetchone()
+            conn.close()
+            
+            if result:
+                return {
+                    'total_accepted': result[0],
+                    'min_boarding': result[1],
+                    'max_boarding': result[2],
+                    'avg_bag_piece': result[3] if result[3] else 0,
+                    'avg_bag_weight': result[4] if result[4] else 0,
+                    'total_bag_pieces': result[5] if result[5] else 0,
+                    'total_bag_weight': result[6] if result[6] else 0
+                }
+            else:
+                return {
+                    'total_accepted': 0,
+                    'min_boarding': 0,
+                    'max_boarding': 0,
+                    'avg_bag_piece': 0,
+                    'avg_bag_weight': 0,
+                    'total_bag_pieces': 0,
+                    'total_bag_weight': 0
+                }
+            
+        except sqlite3.Error as e:
+            raise Exception(f"Database error: {e}")
+    
+    def invalidate_statistics_cache(self, cache_key: Optional[str] = None):
+        """Invalidate statistics cache manually"""
+        if self.stats_manager:
+            self.stats_manager.invalidate_cache(cache_key)
+    
+    def force_refresh_statistics(self, cache_key: str):
+        """Force refresh specific statistics"""
+        if not self.stats_manager:
+            return None
+        
+        if cache_key == "record_summary":
+            return self.stats_manager.force_refresh(cache_key, self._fetch_record_summary)
+        elif cache_key == "accepted_passengers_stats":
+            return self.stats_manager.force_refresh(cache_key, self._fetch_accepted_passengers_stats)
+        else:
+            raise ValueError(f"Unknown cache key: {cache_key}")
+    
+    def get_all_statistics(self):
+        """Get all statistics with automatic caching and fallback"""
+        if not self.db_file:
+            self.find_database()
+        
+        stats = {}
+        
+        # Get record summary
+        stats['record_summary'] = self.get_record_summary()
+        
+        # Get accepted passengers stats
+        stats['accepted_passengers_stats'] = self.get_accepted_passengers_stats()
+        
+        # Get validation stats
+        stats['validation_stats'] = self.get_validation_stats()
+        
+        # Get HBNB range info
+        stats['hbnb_range_info'] = self.get_hbnb_range_info()
+        
+        # Get missing numbers
+        stats['missing_numbers'] = self.get_missing_hbnb_numbers()
+        
+        return stats
 
 
     def create_duplicate_record_table(self):
@@ -1846,6 +2130,28 @@ class HbprDatabase:
             
             conn.close()
             return records
+            
+        except sqlite3.Error as e:
+            raise Exception(f"Database error: {e}")
+
+    def get_tkne_count(self):
+        """获取TKNE数量（有TKNE字段的记录数）"""
+        if not self.db_file:
+            self.find_database()
+        
+        try:
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            
+            try:
+                cursor.execute("SELECT COUNT(*) FROM hbpr_full_records WHERE tkne IS NOT NULL AND tkne != ''")
+                count = cursor.fetchone()[0]
+            except sqlite3.OperationalError:
+                # 如果tkne列不存在，返回0
+                count = 0
+            
+            conn.close()
+            return count
             
         except sqlite3.Error as e:
             raise Exception(f"Database error: {e}")

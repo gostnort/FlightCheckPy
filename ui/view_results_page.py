@@ -32,7 +32,19 @@ def show_view_results():
         
         db = HbprDatabase(selected_db_file)
         
-        tab1, tab2, tab3 = st.tabs(["📈 Statistics", "📋 Records Table", "📤 Export Data"])
+        # 检查是否需要跳转到特定标签页
+        default_tab = 0  # 默认显示Statistics标签页
+        if hasattr(st.session_state, 'view_results_tab'):
+            if st.session_state.view_results_tab == "👥 Accepted Passengers":
+                default_tab = 2  # Accepted Passengers标签页
+            elif st.session_state.view_results_tab == "📋 Records Table":
+                default_tab = 1  # Records Table标签页
+            elif st.session_state.view_results_tab == "📤 Export Data":
+                default_tab = 3  # Export Data标签页
+            # 清除session state中的标签页设置
+            del st.session_state.view_results_tab
+        
+        tab1, tab2, tab3, tab4 = st.tabs(["📈 Statistics", "📋 Records Table", "👥 Accepted Passengers", "📤 Export Data"])
         
         with tab1:
             show_statistics(db)
@@ -41,6 +53,9 @@ def show_view_results():
             show_records_table(db)
         
         with tab3:
+            show_accepted_passengers(db)
+        
+        with tab4:
             show_export_options(db)
     
     except Exception as e:
@@ -50,10 +65,21 @@ def show_view_results():
 
 def show_statistics(db):
     """显示统计信息"""
-    st.subheader("📈 HBNB Range Statistics")
     
-    range_info = db.get_hbnb_range_info()
-    missing_numbers = db.get_missing_hbnb_numbers()
+    # 添加刷新按钮
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.subheader("📈 HBNB Range Statistics")
+    with col2:
+        if st.button("🔄 Refresh Statistics", use_container_width=True):
+            # 强制刷新所有统计信息
+            db.invalidate_statistics_cache()
+            st.rerun()
+    
+    # 使用新的统计管理系统获取所有统计信息
+    all_stats = db.get_all_statistics()
+    range_info = all_stats['hbnb_range_info']
+    missing_numbers = all_stats['missing_numbers']
     
     # 主要指标
     col1, col2, col3, col4 = st.columns(4)
@@ -77,6 +103,56 @@ def show_statistics(db):
             st.metric("Completeness Rate", f"{completeness_rate:.1f}%")
         with col2:
             st.metric("Missing Rate", f"{missing_rate:.1f}%")
+    
+    # 已接受乘客统计
+    st.subheader("👥 Accepted Passenger Statistics")
+    
+    try:
+        accepted_stats = all_stats['accepted_passengers_stats']
+        record_summary = all_stats['record_summary']
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Accepted Passengers", accepted_stats['total_accepted'])
+        with col2:
+            st.metric("TKNE Count", record_summary['tkne_count'])
+        with col3:
+            if record_summary['tkne_count'] > 0:
+                acceptance_rate = (accepted_stats['total_accepted'] / record_summary['tkne_count']) * 100
+                st.metric("Acceptance Rate", f"{acceptance_rate:.1f}%")
+            else:
+                st.metric("Acceptance Rate", "0.0%")
+        with col4:
+            remaining_pax = record_summary['tkne_count'] - accepted_stats['total_accepted']
+            st.metric("Remaining Pax", remaining_pax)
+        
+        # 第二行统计信息
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            if accepted_stats['total_accepted'] > 0:
+                st.metric("Boarding Range", f"{accepted_stats['min_boarding']} - {accepted_stats['max_boarding']}")
+            else:
+                st.metric("Boarding Range", "N/A")
+        with col2:
+            if accepted_stats['total_accepted'] > 0:
+                st.metric("Avg Bag Pieces", f"{accepted_stats['avg_bag_piece']:.1f}")
+            else:
+                st.metric("Avg Bag Pieces", "N/A")
+        with col3:
+            if accepted_stats['total_accepted'] > 0:
+                st.metric("Avg Bag Weight", f"{accepted_stats['avg_bag_weight']:.1f} kg")
+            else:
+                st.metric("Avg Bag Weight", "N/A")
+        with col4:
+            if accepted_stats['total_accepted'] > 0:
+                st.metric("Total Bag Weight", f"{accepted_stats['total_bag_weight']:.0f} kg")
+            else:
+                st.metric("Total Bag Weight", "N/A")
+    
+    except Exception as e:
+        st.error(f"❌ Error loading accepted passenger statistics: {str(e)}")
     
     # 显示缺失号码表格
     if missing_numbers:
@@ -253,6 +329,121 @@ def show_records_table(db):
     
     except Exception as e:
         st.error(f"❌ Error loading records: {str(e)}")
+
+
+def show_accepted_passengers(db):
+    """显示已接受乘客列表"""
+    st.subheader("👥 Accepted Passengers")
+    
+    try:
+        # 排序选项
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            sort_by = st.selectbox(
+                "Sort by:",
+                ["boarding_number", "hbnb_number", "name"],
+                format_func=lambda x: {
+                    "boarding_number": "Boarding Number",
+                    "hbnb_number": "HBNB Number", 
+                    "name": "Name"
+                }[x],
+                key="accepted_sort"
+            )
+        
+        with col2:
+            # 分页选项
+            items_per_page = st.selectbox(
+                "Items per page:",
+                [20, 50, 100, 200],
+                key="accepted_items_per_page"
+            )
+        
+        with col3:
+            # 搜索功能
+            search_term = st.text_input(
+                "Search by name or HBNB:",
+                key="accepted_search"
+            )
+        
+        # 获取已接受乘客数据
+        accepted_df = db.get_accepted_passengers(sort_by=sort_by)
+        
+        if accepted_df.empty:
+            st.info("ℹ️ No accepted passengers found.")
+            return
+        
+        # 应用搜索过滤
+        if search_term:
+            search_mask = (
+                accepted_df['name'].str.contains(search_term, case=False, na=False) |
+                accepted_df['hbnb_number'].astype(str).str.contains(search_term, case=False, na=False) |
+                accepted_df['boarding_number'].astype(str).str.contains(search_term, case=False, na=False)
+            )
+            accepted_df = accepted_df[search_mask]
+        
+        # 分页显示
+        total_records = len(accepted_df)
+        total_pages = (total_records + items_per_page - 1) // items_per_page
+        
+        if total_pages > 1:
+            page = st.selectbox("Page:", range(1, total_pages + 1), key="accepted_page")
+            start_idx = (page - 1) * items_per_page
+            end_idx = min(start_idx + items_per_page, total_records)
+            page_df = accepted_df.iloc[start_idx:end_idx]
+        else:
+            page_df = accepted_df
+        
+        # 显示统计信息
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Total Accepted", total_records)
+        with col2:
+            if not accepted_df.empty:
+                st.metric("Boarding Range", f"{accepted_df['boarding_number'].min()} - {accepted_df['boarding_number'].max()}")
+            else:
+                st.metric("Boarding Range", "N/A")
+        with col3:
+            if not accepted_df.empty:
+                st.metric("Avg Bag Pieces", f"{accepted_df['bag_piece'].mean():.1f}")
+            else:
+                st.metric("Avg Bag Pieces", "N/A")
+        with col4:
+            if not accepted_df.empty:
+                st.metric("Avg Bag Weight", f"{accepted_df['bag_weight'].mean():.1f} kg")
+            else:
+                st.metric("Avg Bag Weight", "N/A")
+        
+        # 显示表格
+        st.dataframe(
+            page_df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "hbnb_number": st.column_config.NumberColumn("HBNB", format="%d"),
+                "boarding_number": st.column_config.NumberColumn("Boarding #", format="%d"),
+                "name": "Name",
+                "seat": "Seat",
+                "class": "Class",
+                "destination": "Destination",
+                "bag_piece": st.column_config.NumberColumn("Bag Pieces", format="%d"),
+                "bag_weight": st.column_config.NumberColumn("Bag Weight", format="%d kg"),
+                "ff": "FF Number",
+                "properties": "Properties",
+                "ckin_msg": st.column_config.TextColumn("CKIN Messages", max_chars=50),
+                "asvc_msg": st.column_config.TextColumn("ASVC Messages", max_chars=50),
+                "error_count": st.column_config.NumberColumn("Errors", format="%d")
+            }
+        )
+        
+        # 显示分页信息
+        if total_pages > 1:
+            st.info(f"Showing page {page} of {total_pages} ({len(page_df)} of {total_records} accepted passengers)")
+        else:
+            st.info(f"📊 Showing {len(page_df)} accepted passengers")
+    
+    except Exception as e:
+        st.error(f"❌ Error loading accepted passengers: {str(e)}")
 
 
 def show_export_options(db):

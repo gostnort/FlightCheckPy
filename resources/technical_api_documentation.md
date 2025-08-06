@@ -10,6 +10,9 @@ The Flight Data Processing System is a comprehensive Python application designed
 - Enhanced session state management for persistent user preferences
 - Centralized database selection with flight information display
 - Real-time database switching without application restart
+- Intelligent statistics caching with automatic refresh
+- Accepted passengers tracking and analysis
+- TKNE-based acceptance rate calculations
 
 ## 🏗️ System Architecture
 
@@ -18,18 +21,20 @@ The Flight Data Processing System is a comprehensive Python application designed
 ```
 FlightCheckPy/
 ├── scripts/                    # Core processing modules
-│   ├── hbpr_info_processor.py  # HBPR record processing and validation
+│   ├── hbpr_info_processor.py  # HBPR record processing, validation, and statistics
 │   ├── hbpr_list_processor.py  # Batch processing and database creation
 │   └── general_func.py         # Utility functions and configuration
 ├── ui/                         # Web UI components
 │   ├── main.py                 # Main UI coordinator with Windows integration
 │   ├── login_page.py           # Authentication interface
-│   ├── home_page.py            # System overview
+│   ├── home_page.py            # System overview (simplified metrics)
 │   ├── database_page.py        # Database management
+│   ├── process_records_page.py # Record processing interface
+│   ├── view_results_page.py    # Results viewing with statistics and accepted passengers
 │   ├── settings_page.py        # System configuration
 │   └── common.py               # Shared utilities with enhanced database discovery
-├── hbpr_ui.py                  # Legacy UI functions (Process Records)
-└── databases/                  # Default database storage directory
+├── databases/                  # Default database storage directory
+└── resources/                  # Documentation and resources
 ```
 
 ### Platform Requirements
@@ -45,10 +50,76 @@ FlightCheckPy/
 - `sqlite3` - Database operations
 - `pandas` - Data manipulation
 - `glob` - File pattern matching
+- `time` - Cache timing management
 
 ## 📋 Class Specifications
 
-### 1. CHbpr Class - HBPR Record Processing
+### 1. StatisticsManager Class - Statistics Caching
+
+**Location**: `scripts/hbpr_info_processor.py`
+
+**Purpose**: Manages caching of database statistics with automatic invalidation and refresh capabilities.
+
+#### Attributes
+- `_cache: Dict[str, Any]` - Internal cache storage
+- `_cache_timestamps: Dict[str, float]` - Cache entry timestamps
+- `_cache_duration: int` - Cache validity duration in seconds (default: 300)
+
+#### Methods
+
+```python
+def __init__(self, cache_duration: int = 300) -> None:
+    """
+    Initialize StatisticsManager with cache duration
+    
+    Args:
+        cache_duration (int): Cache validity duration in seconds
+    """
+
+def get_cached_data(self, key: str) -> Optional[Any]:
+    """
+    Retrieve cached data if valid
+    
+    Args:
+        key (str): Cache key
+        
+    Returns:
+        Optional[Any]: Cached data if valid, None otherwise
+    """
+
+def set_cached_data(self, key: str, data: Any) -> None:
+    """
+    Store data in cache with current timestamp
+    
+    Args:
+        key (str): Cache key
+        data (Any): Data to cache
+    """
+
+def is_cache_valid(self, key: str) -> bool:
+    """
+    Check if cached data is still valid
+    
+    Args:
+        key (str): Cache key
+        
+    Returns:
+        bool: True if cache is valid, False otherwise
+    """
+
+def clear_cache(self) -> None:
+    """Clear all cached data"""
+
+def invalidate_cache(self, key: str) -> None:
+    """
+    Invalidate specific cache entry
+    
+    Args:
+        key (str): Cache key to invalidate
+    """
+```
+
+### 2. CHbpr Class - HBPR Record Processing
 
 **Location**: `scripts/hbpr_info_processor.py`
 
@@ -82,6 +153,7 @@ FlightCheckPy/
 - `OUTBOUND_FLIGHT: str` - Outbound flight information
 - `PROPERTIES: List[str]` - Additional properties
 - `IS_CA_FLYER: bool` - Is CA frequent flyer
+- `TKNE: str` - TKNE field value
 
 #### Methods
 
@@ -127,7 +199,7 @@ def __GetPassengerInfo(self) -> bool:
     """Extract passenger name, boarding number, seat, class, destination"""
 
 def __ExtractStructuredData(self) -> None:
-    """Extract all structured data fields"""
+    """Extract all structured data fields including TKNE"""
 
 def __MatchingBag(self) -> None:
     """Validate baggage allowance and weight"""
@@ -148,18 +220,22 @@ def __GetConnectingFlights(self) -> None:
     """Extract connecting flight information"""
 ```
 
-### 2. HbprDatabase Class - Database Management
+### 3. HbprDatabase Class - Database Management
 
 **Location**: `scripts/hbpr_info_processor.py`
 
-**Purpose**: Manages all database operations for HBPR records including creation, querying, and maintenance.
+**Purpose**: Manages all database operations for HBPR records including creation, querying, maintenance, and statistics caching.
+
+#### Attributes
+- `db_file: str` - Database file path
+- `stats_manager: StatisticsManager` - Statistics caching manager
 
 #### Methods
 
 ```python
 def __init__(self, db_file: str = None) -> None:
     """
-    Initialize database connection
+    Initialize database connection with statistics manager
     
     Args:
         db_file (str, optional): Path to database file
@@ -210,7 +286,7 @@ def get_hbpr_record(self, hbnb_number: int) -> str:
 
 def update_with_chbpr_results(self, chbpr_instance: CHbpr) -> bool:
     """
-    Update database with CHbpr validation results
+    Update database with CHbpr validation results and invalidate cache
     
     Args:
         chbpr_instance (CHbpr): Processed CHbpr instance
@@ -225,7 +301,7 @@ def update_with_chbpr_results(self, chbpr_instance: CHbpr) -> bool:
 
 def get_validation_stats(self) -> Dict[str, int]:
     """
-    Get validation statistics
+    Get validation statistics (cached)
     
     Returns:
         Dict[str, int]: Statistics including total_records, validated_records, 
@@ -234,7 +310,7 @@ def get_validation_stats(self) -> Dict[str, int]:
 
 def get_missing_hbnb_numbers(self) -> List[int]:
     """
-    Get list of missing HBNB numbers
+    Get list of missing HBNB numbers (cached)
     
     Returns:
         List[int]: Sorted list of missing HBNB numbers
@@ -242,7 +318,7 @@ def get_missing_hbnb_numbers(self) -> List[int]:
 
 def get_hbnb_range_info(self) -> Dict[str, int]:
     """
-    Get HBNB number range information
+    Get HBNB number range information (cached)
     
     Returns:
         Dict[str, int]: Range info including min, max, total_expected, total_found
@@ -261,7 +337,7 @@ def check_hbnb_exists(self, hbnb_number: int) -> Dict[str, bool]:
 
 def create_simple_record(self, hbnb_number: int, record_line: str) -> bool:
     """
-    Create simple HBPR record
+    Create simple HBPR record and invalidate cache
     
     Args:
         hbnb_number (int): HBNB number
@@ -274,7 +350,7 @@ def create_simple_record(self, hbnb_number: int, record_line: str) -> bool:
 def create_full_record(self, hbnb_number: int, record_content: str, 
                       flight_info_match: bool = True) -> bool:
     """
-    Create full HBPR record
+    Create full HBPR record and invalidate cache
     
     Args:
         hbnb_number (int): HBNB number
@@ -287,7 +363,7 @@ def create_full_record(self, hbnb_number: int, record_content: str,
 
 def delete_simple_record(self, hbnb_number: int) -> bool:
     """
-    Delete simple HBPR record
+    Delete simple HBPR record and invalidate cache
     
     Args:
         hbnb_number (int): HBNB number to delete
@@ -322,9 +398,103 @@ def validate_flight_info_match(self, record_content: str) -> bool:
     Returns:
         bool: True if flight info matches
     """
+
+def get_record_summary(self) -> Dict[str, int]:
+    """
+    Get comprehensive record summary including TKNE count (cached)
+    
+    Returns:
+        Dict[str, int]: Summary including full_records, simple_records, 
+                       validated_records, accepted_pax, tkne_count, total_records
+    """
+
+def get_accepted_passengers(self, page: int = 1, page_size: int = 50, 
+                          sort_by: str = 'boarding_number', 
+                          sort_order: str = 'asc',
+                          search_term: str = None,
+                          class_filter: List[str] = None,
+                          ff_level_filter: List[str] = None,
+                          ckin_type_filter: List[str] = None,
+                          properties_filter: List[str] = None) -> Dict[str, Any]:
+    """
+    Get accepted passengers with pagination and filtering (cached)
+    
+    Args:
+        page (int): Page number (1-based)
+        page_size (int): Number of records per page
+        sort_by (str): Sort field ('boarding_number', 'name', 'class', etc.)
+        sort_order (str): Sort order ('asc' or 'desc')
+        search_term (str): Search term for name or PNR
+        class_filter (List[str]): Filter by travel class
+        ff_level_filter (List[str]): Filter by frequent flyer level
+        ckin_type_filter (List[str]): Filter by check-in type
+        properties_filter (List[str]): Filter by properties
+        
+    Returns:
+        Dict[str, Any]: Paginated results with metadata
+    """
+
+def get_accepted_passengers_count(self) -> int:
+    """
+    Get total count of accepted passengers (cached)
+    
+    Returns:
+        int: Total count of accepted passengers
+    """
+
+def get_accepted_passengers_stats(self) -> Dict[str, Any]:
+    """
+    Get accepted passengers statistics (cached)
+    
+    Returns:
+        Dict[str, Any]: Statistics including total_accepted, min_boarding, 
+                       max_boarding, avg_bag_piece, avg_bag_weight, total_bag_weight
+    """
+
+def get_tkne_count(self) -> int:
+    """
+    Get count of records with TKNE data
+    
+    Returns:
+        int: Count of records with non-null and non-empty TKNE values
+        
+    Note:
+        Returns 0 if TKNE column doesn't exist in database
+    """
+
+def get_all_statistics(self) -> Dict[str, Any]:
+    """
+    Get all statistics efficiently using caching
+    
+    Returns:
+        Dict[str, Any]: Complete statistics including hbnb_range_info, 
+                       missing_numbers, accepted_stats, record_summary
+    """
+
+def invalidate_statistics_cache(self) -> None:
+    """Invalidate all cached statistics"""
+
+def force_refresh_statistics(self) -> None:
+    """Force refresh all statistics by clearing cache"""
+
+def _fetch_record_summary(self) -> Dict[str, int]:
+    """
+    Fetch record summary from database (internal method)
+    
+    Returns:
+        Dict[str, int]: Raw record summary data
+    """
+
+def _fetch_accepted_passengers_stats(self) -> Dict[str, Any]:
+    """
+    Fetch accepted passengers statistics from database (internal method)
+    
+    Returns:
+        Dict[str, Any]: Raw accepted passengers statistics
+    """
 ```
 
-### 3. HBPRProcessor Class - Batch Processing
+### 4. HBPRProcessor Class - Batch Processing
 
 **Location**: `scripts/hbpr_list_processor.py`
 
@@ -412,7 +582,7 @@ def _parse_simple_record(self, line: str) -> Optional[int]:
     """Parse simple HBPR record to extract HBNB number"""
 ```
 
-### 4. CArgs Class - Configuration
+### 5. CArgs Class - Configuration
 
 **Location**: `scripts/general_func.py`
 
@@ -478,6 +648,8 @@ from ui.common import get_icon_base64, apply_global_settings, get_sorted_databas
 from ui.login_page import show_login_page
 from ui.home_page import show_home_page
 from ui.database_page import show_database_management
+from ui.process_records_page import show_process_records_page
+from ui.view_results_page import show_view_results_page
 from ui.settings_page import show_settings
 from scripts.hbpr_info_processor import HbprDatabase
 ```
@@ -524,6 +696,7 @@ st.session_state.selected_database     # Currently selected database file
 st.session_state.available_databases   # List of available database files
 st.session_state.custom_db_folder      # Custom database folder path
 st.session_state.settings             # Global application settings
+st.session_state.view_results_tab     # Current tab in view results page
 ```
 
 ### 2. Authentication System
@@ -550,9 +723,21 @@ def authenticate_user(username: str) -> bool:
 
 **Location**: `ui/home_page.py`
 
+**Purpose**: Displays system overview with simplified metrics (excluding acceptance rate, TKNE count, and remaining pax).
+
 ```python
 def show_home_page() -> None:
-    """Display system overview and quick actions"""
+    """
+    Display system overview and quick actions
+    
+    Features:
+    - Database connection status
+    - HBNB range information
+    - Record counts (total, full, simple, validated)
+    - Missing numbers display with pagination
+    - Quick action buttons for navigation
+    - Statistics refresh functionality
+    """
 ```
 
 ### 4. Database Management
@@ -578,41 +763,103 @@ def show_database_maintenance() -> None:
     """Show database maintenance operations"""
 ```
 
-### 5. Manual Input Processing
+### 5. Process Records Page
 
-**Location**: `hbpr_ui.py`
+**Location**: `ui/process_records_page.py`
+
+**Purpose**: Provides interface for processing individual HBPR records and manual input.
 
 ```python
-def process_manual_input() -> None:
-    """Manual HBPR input processing interface"""
-
-def validate_full_hbpr_record(hbpr_content: str) -> Dict[str, Any]:
+def show_process_records_page() -> None:
     """
-    Validate full HBPR record content
+    Display record processing interface
     
-    Args:
-        hbpr_content (str): HBPR record content to validate
-        
-    Returns:
-        Dict[str, Any]: Validation results and extracted data
-    """
-
-def parse_hbnb_input(hbnb_input: str) -> List[int]:
-    """
-    Parse HBNB number input (ranges, lists, single numbers)
-    
-    Args:
-        hbnb_input (str): HBNB input string (e.g., "400-410,412,415-420")
-        
-    Returns:
-        List[int]: List of parsed HBNB numbers
-        
-    Raises:
-        ValueError: If input format is invalid
+    Features:
+    - Database selection
+    - HBPR record processing
+    - Manual input for full and simple records
+    - Validation results display
+    - Error handling and user feedback
     """
 ```
 
-### 6. Common Utilities
+### 6. View Results Page
+
+**Location**: `ui/view_results_page.py`
+
+**Purpose**: Displays comprehensive results with statistics, records table, accepted passengers, and export functionality.
+
+```python
+def show_view_results_page() -> None:
+    """
+    Display comprehensive results interface
+    
+    Features:
+    - Statistics tab with detailed metrics
+    - Records table with filtering and pagination
+    - Accepted passengers tab with advanced filtering
+    - Export data functionality
+    - Statistics refresh capability
+    """
+
+def show_statistics() -> None:
+    """
+    Display comprehensive statistics
+    
+    Features:
+    - HBNB range information
+    - Record counts and validation stats
+    - Accepted passengers statistics
+    - TKNE count and acceptance rate
+    - Missing numbers display
+    - Statistics refresh button
+    """
+
+def show_records_table() -> None:
+    """
+    Display records table with filtering
+    
+    Features:
+    - Paginated records display
+    - Multi-column filtering
+    - Search functionality
+    - Export capabilities
+    """
+
+def show_accepted_passengers() -> None:
+    """
+    Display accepted passengers with advanced filtering
+    
+    Features:
+    - Paginated accepted passengers display
+    - Multi-criteria filtering (class, FF level, check-in type, properties)
+    - Search by name or PNR
+    - Sorting by various fields
+    - Statistics display
+    """
+
+def show_export_data() -> None:
+    """
+    Display export functionality
+    
+    Features:
+    - Export all records
+    - Export accepted passengers only
+    - CSV format export
+    - Download links
+    """
+```
+
+### 7. Settings Page
+
+**Location**: `ui/settings_page.py`
+
+```python
+def show_settings() -> None:
+    """Display system settings and configuration"""
+```
+
+### 8. Common Utilities
 
 **Location**: `ui/common.py`
 
@@ -671,9 +918,38 @@ def get_sorted_database_files(sort_by: str = 'creation_time',
         - Removes duplicates automatically
         - Supports multiple sort criteria
     """
+
+def get_current_database() -> Optional[str]:
+    """
+    Get currently selected database from session state
+    
+    Returns:
+        Optional[str]: Path to selected database file or None
+    """
 ```
 
 ## 🔗 Function Dependencies and Call Hierarchy
+
+### Statistics Management Chain
+```
+StatisticsManager
+├── get_cached_data() → Check cache validity
+├── set_cached_data() → Store with timestamp
+├── is_cache_valid() → Time-based validation
+└── clear_cache() → Invalidate all data
+
+HbprDatabase Statistics Integration
+├── get_all_statistics() → Orchestrate all cached stats
+├── get_record_summary() → Cached record summary
+├── get_accepted_passengers_stats() → Cached accepted stats
+├── get_hbnb_range_info() → Cached range info
+├── get_missing_hbnb_numbers() → Cached missing numbers
+└── Cache invalidation on database modifications
+    ├── update_with_chbpr_results()
+    ├── create_full_record()
+    ├── create_simple_record()
+    └── delete_simple_record()
+```
 
 ### CHbpr Processing Chain
 ```
@@ -685,7 +961,8 @@ CHbpr.run()
     ├── __RegularBags()
     ├── __GetChkBag()
     ├── __FlyerBenifit()
-    └── __CaptureCkin()
+    ├── __CaptureCkin()
+    └── TKNE extraction
 ```
 
 ### Database Operations Chain
@@ -697,6 +974,7 @@ HbprDatabase.build_from_hbpr_list()
 │   └── create_database()
 ├── find_database()
 ├── _add_chbpr_fields()
+├── StatisticsManager initialization
 └── update_missing_numbers_table()
 ```
 
@@ -715,13 +993,18 @@ main()
 │   ├── filedialog.askdirectory()
 │   └── Custom folder path persistence
 ├── Page navigation and routing
-│   ├── show_home_page()
+│   ├── show_home_page() (simplified metrics)
 │   ├── show_database_management()
 │   │   └── build_database_ui()
-│   ├── process_manual_input()
-│   │   ├── parse_hbnb_input()
-│   │   ├── validate_full_hbpr_record()
-│   │   └── HbprDatabase operations
+│   ├── show_process_records_page()
+│   │   ├── Database selection
+│   │   ├── HBPR processing
+│   │   └── Manual input handling
+│   ├── show_view_results_page()
+│   │   ├── show_statistics() (with TKNE metrics)
+│   │   ├── show_records_table()
+│   │   ├── show_accepted_passengers()
+│   │   └── show_export_data()
 │   └── show_settings()
 └── File cleanup and logout handling
 ```
@@ -730,27 +1013,37 @@ main()
 
 ### 1. File Processing Pipeline
 ```
-Input File → HBPRProcessor → Database Creation → CHbpr Validation → UI Display
+Input File → HBPRProcessor → Database Creation → CHbpr Validation → Statistics Caching → UI Display
 ```
 
 ### 2. Manual Input Pipeline
 ```
-UI Input → Validation → Database Storage → Missing Numbers Update → Statistics Refresh
+UI Input → Validation → Database Storage → Cache Invalidation → Statistics Refresh → UI Update
 ```
 
-### 3. Authentication Flow
+### 3. Statistics Caching Pipeline
+```
+Database Query → StatisticsManager Cache Check → Return Cached Data or Fetch Fresh → Store in Cache → Return to UI
+```
+
+### 4. Authentication Flow
 ```
 Login Page → SHA256 Hash → Validation → Session State → Authenticated UI
 ```
 
-### 4. Database Folder Selection Flow
+### 5. Database Folder Selection Flow
 ```
 Folder Picker Button → Native Windows Dialog → Path Selection → Session Storage → Database Discovery → UI Refresh
 ```
 
-### 5. Enhanced Database Discovery Pipeline
+### 6. Accepted Passengers Processing Pipeline
 ```
-Custom Folder Search → Default databases/ Search → Root Directory Search → Deduplication → Location Assignment → Visual Indicators
+Database Query → Filter by boarding_number IS NOT NULL → Apply Filters → Pagination → Statistics Calculation → UI Display
+```
+
+### 7. TKNE-Based Acceptance Rate Calculation
+```
+Database Query → Count records with TKNE IS NOT NULL AND TKNE != '' → Count accepted passengers → Calculate rate → UI Display
 ```
 
 ## 🗄️ Database Schema
@@ -797,7 +1090,8 @@ CREATE TABLE hbpr_full_records (
     error_name TEXT,
     error_visa TEXT,
     error_other TEXT,
-    validated_at TIMESTAMP
+    validated_at TIMESTAMP,
+    tkne TEXT
 );
 ```
 
@@ -828,6 +1122,23 @@ CREATE TABLE flight_info (
 
 ## 🚀 Usage Examples
 
+### Statistics Management
+```python
+# Initialize database with statistics manager
+db = HbprDatabase("my_database.db")
+
+# Get all statistics efficiently (cached)
+all_stats = db.get_all_statistics()
+record_summary = all_stats['record_summary']
+accepted_stats = all_stats['accepted_stats']
+
+# Force refresh statistics
+db.force_refresh_statistics()
+
+# Invalidate specific cache
+db.invalidate_statistics_cache()
+```
+
 ### Processing HBPR Records
 ```python
 # Create CHbpr instance
@@ -838,9 +1149,12 @@ chbpr.run(hbpr_content)
 if chbpr.is_valid():
     print(f"Record {chbpr.HbnbNumber} is valid")
     structured_data = chbpr.get_structured_data()
+    
+# Update database (automatically invalidates cache)
+db.update_with_chbpr_results(chbpr)
 ```
 
-### Database Operations
+### Database Operations with Caching
 ```python
 # Initialize database
 db = HbprDatabase()
@@ -849,9 +1163,34 @@ db.find_database()
 # Build from file
 processor = db.build_from_hbpr_list("sample_hbpr_list.txt")
 
-# Get statistics
+# Get cached statistics
 stats = db.get_validation_stats()
 missing = db.get_missing_hbnb_numbers()
+record_summary = db.get_record_summary()
+
+# Get TKNE count
+tkne_count = db.get_tkne_count()
+```
+
+### Accepted Passengers Operations
+```python
+# Get accepted passengers with filtering
+accepted_data = db.get_accepted_passengers(
+    page=1,
+    page_size=50,
+    sort_by='boarding_number',
+    sort_order='asc',
+    search_term='John',
+    class_filter=['F', 'C'],
+    ff_level_filter=['GOLD'],
+    ckin_type_filter=['ONLINE'],
+    properties_filter=['VIP']
+)
+
+# Get accepted passengers statistics
+accepted_stats = db.get_accepted_passengers_stats()
+print(f"Total accepted: {accepted_stats['total_accepted']}")
+print(f"Boarding range: {accepted_stats['min_boarding']} - {accepted_stats['max_boarding']}")
 ```
 
 ### Batch Processing
@@ -910,12 +1249,37 @@ if folder_path:
     st.session_state.custom_db_folder = folder_path
 ```
 
+### UI Statistics Display
+```python
+# In Streamlit UI components
+all_stats = db.get_all_statistics()
+record_summary = all_stats['record_summary']
+accepted_stats = all_stats['accepted_stats']
+
+# Display metrics
+st.metric("Total Records", record_summary['total_records'])
+st.metric("Accepted Pax", record_summary['accepted_pax'])
+
+# Calculate and display acceptance rate (TKNE-based)
+if record_summary['tkne_count'] > 0:
+    acceptance_rate = (record_summary['accepted_pax'] / record_summary['tkne_count']) * 100
+    st.metric("Acceptance Rate", f"{acceptance_rate:.1f}%")
+else:
+    st.metric("Acceptance Rate", "0.0%")
+
+# Refresh statistics button
+if st.button("🔄 Refresh Statistics"):
+    db.invalidate_statistics_cache()
+    st.rerun()
+```
+
 ## 🔧 Error Handling
 
 ### Exception Types
 - `FileNotFoundError`: Database or input file not found
 - `ValueError`: Invalid HBNB number or data format
 - `sqlite3.Error`: Database operation errors
+- `sqlite3.OperationalError`: Column not found (for TKNE compatibility)
 - `Exception`: General processing errors
 
 ### Error Categories
@@ -924,6 +1288,17 @@ if folder_path:
 - **Name**: Name matching inconsistencies  
 - **Visa**: Visa information problems
 - **Other**: General processing errors
+
+### TKNE Compatibility Handling
+```python
+# Example of TKNE column existence check
+try:
+    cursor.execute("SELECT COUNT(*) FROM hbpr_full_records WHERE tkne IS NOT NULL AND tkne != ''")
+    tkne_count = cursor.fetchone()[0]
+except sqlite3.OperationalError:
+    # TKNE column doesn't exist in this database
+    tkne_count = 0
+```
 
 ## 🔐 Security Features
 
@@ -937,4 +1312,22 @@ if folder_path:
 - Secure session handling
 - File cleanup on navigation/logout
 
-This technical documentation provides comprehensive information about the system's functions, their parameters, return types, and relationships for developers working with the HBPR Processing System.
+## 📈 Performance Optimizations
+
+### Statistics Caching
+- **Time-based cache**: 5-minute cache duration for statistics
+- **Automatic invalidation**: Cache cleared on database modifications
+- **Efficient queries**: Optimized SQL queries for statistics
+- **Memory management**: Cache size controlled by time expiration
+
+### Database Operations
+- **Connection pooling**: Efficient database connection management
+- **Indexed queries**: Proper indexing for performance
+- **Batch operations**: Bulk operations where possible
+
+### UI Responsiveness
+- **Lazy loading**: Statistics loaded on demand
+- **Pagination**: Large datasets displayed in manageable chunks
+- **Background processing**: Heavy operations don't block UI
+
+This technical documentation provides comprehensive information about the system's functions, their parameters, return types, and relationships for developers working with the HBPR Processing System, including all recent enhancements for statistics management, accepted passengers tracking, and TKNE-based calculations.
