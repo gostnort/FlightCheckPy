@@ -100,9 +100,9 @@ def view_single_record(db):
         cursor = conn.cursor()
         # 检查是否有已处理的记录
         cursor.execute("""
-            SELECT hbnb_number, boarding_number, name, seat 
+            SELECT hbnb_number, boarding_number, name, seat, tkne 
             FROM hbpr_full_records 
-            WHERE is_validated = 1 AND (boarding_number IS NOT NULL OR name IS NOT NULL OR seat IS NOT NULL)
+            WHERE is_validated = 1 AND (boarding_number IS NOT NULL OR name IS NOT NULL OR seat IS NOT NULL OR tkne IS NOT NULL)
             ORDER BY hbnb_number
         """)
         processed_records = cursor.fetchall()
@@ -118,7 +118,7 @@ def view_single_record(db):
         # 选择记录的方式
         selection_method = st.radio(
             "👀 View Record 🧺🧺🧺🧺 Sorting by:",
-            ["HBNB Number", "Boarding Number (BN)", "Seat", "Name"],
+            ["HBNB Number", "Boarding Number (BN)", "Seat", "Name", "TKNE"],
             horizontal=True
         )
         
@@ -140,14 +140,18 @@ def view_single_record(db):
                 bn_records.sort(key=lambda x: x[1])  
                 # 按BN号码排序
                 if bn_records:
-                    bn_options = [f"BN {record[1]} (HBNB {record[0]})" for record in bn_records]
+                    bn_options = [f"{record[1]}" for record in bn_records]
                     selected_bn = st.selectbox(
                         "Select Boarding Number:",
                         bn_options,
                         help="Choose a boarding number to view"
                     )
-                    # 提取HBNB号码
-                    selected_record = int(selected_bn.split("(HBNB ")[1].split(")")[0])
+                    # 提取HBNB号码 - find the record with matching boarding number
+                    selected_record = None
+                    for record in bn_records:
+                        if str(record[1]) == selected_bn:
+                            selected_record = record[0]
+                            break
                 else:
                     st.warning("⚠️ No boarding numbers found in processed records.")
                     return
@@ -172,14 +176,18 @@ def view_single_record(db):
                         return (999, 'Z')  # 无效座位排在最后
                     
                     seat_records.sort(key=seat_sort_key)
-                    seat_options = [f"{record[1]} (HBNB {record[0]})" for record in seat_records]
+                    seat_options = [f"{record[1]}" for record in seat_records]
                     selected_seat = st.selectbox(
                         "Select Seat:",
                         seat_options,
                         help="Choose a seat to view"
                     )
-                    # 提取HBNB号码
-                    selected_record = int(selected_seat.split("(HBNB ")[1].split(")")[0])
+                    # 提取HBNB号码 - find the record with matching seat
+                    selected_record = None
+                    for record in seat_records:
+                        if record[1] == selected_seat:
+                            selected_record = record[0]
+                            break
                 else:
                     st.warning("⚠️ No seats found in processed records.")
                     return
@@ -194,14 +202,18 @@ def view_single_record(db):
                 if name_records:
                     # 按姓名排序
                     name_records.sort(key=lambda x: x[1].upper())
-                    name_options = [f"{record[1]} (HBNB {record[0]})" for record in name_records]
+                    name_options = [f"{record[1]}" for record in name_records]
                     selected_name = st.selectbox(
                         "Select Name:",
                         name_options,
                         help="Choose a passenger name to view"
                     )
-                    # 提取HBNB号码
-                    selected_record = int(selected_name.split("(HBNB ")[1].split(")")[0])
+                    # 提取HBNB号码 - find the record with matching name
+                    selected_record = None
+                    for record in name_records:
+                        if record[1] == selected_name:
+                            selected_record = record[0]
+                            break
                 else:
                     st.warning("⚠️ No names found in processed records.")
                     return
@@ -209,9 +221,46 @@ def view_single_record(db):
                 st.warning("⚠️ No processed records found. Please process records first.")
                 return
         
+        # TKNE选择
+        elif selection_method == "TKNE":
+            if processed_records:
+                # 获取TKNE数据
+                conn = sqlite3.connect(db.db_file)
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT hbnb_number, tkne 
+                    FROM hbpr_full_records 
+                    WHERE is_validated = 1 AND tkne IS NOT NULL AND tkne != ''
+                    ORDER BY tkne
+                """)
+                tkne_records = cursor.fetchall()
+                conn.close()
+                
+                if tkne_records:
+                    # 按TKNE排序
+                    tkne_records.sort(key=lambda x: x[1])
+                    tkne_options = [f"{record[1]}" for record in tkne_records]
+                    selected_tkne = st.selectbox(
+                        "Select TKNE:",
+                        tkne_options,
+                        help="Choose a TKNE to view"
+                    )
+                    # 提取HBNB号码 - find the record with matching TKNE
+                    selected_record = None
+                    for record in tkne_records:
+                        if record[1] == selected_tkne:
+                            selected_record = record[0]
+                            break
+                else:
+                    st.warning("⚠️ No TKNE found in processed records.")
+                    return
+            else:
+                st.warning("⚠️ No processed records found. Please process records first.")
+                return
+        
         # 显示记录预览
         if selected_record:
-            col1, col2 = st.columns(2)
+            col1, col2 = st.columns([1,2])
             st.markdown("""
                 <style>
                 .fixed-height {
@@ -230,10 +279,9 @@ def view_single_record(db):
                 st.markdown('<div class="fixed-height" style="font-size: 20px; font-weight: bold;"> 📄 Raw HBPR Content</div>', unsafe_allow_html=True)
             with col2:
                 # 显示警告信息（当选择BN或Seat时）
-                if selection_method in ["Boarding Number (BN)", "Seat"]:
+                if selection_method in ["Boarding Number (BN)", "Seat", "TKNE"]:
                     # 使用自定义CSS来设置警告消息的样式
-                    st.markdown('<div class="fixed-height">⚠️ 剔除部分没有 #️⃣ BN or 💺 Seat 的记录</div>', unsafe_allow_html=True)
-            
+                    st.markdown('<div class="fixed-height">⚠️ 剔除部分没有 #️⃣ BN or 💺 Seat or 🎫 TKNE 的记录</div>', unsafe_allow_html=True)
             try:
                 content = db.get_hbpr_record(selected_record)
                 # Apply dynamic font settings

@@ -43,6 +43,7 @@ class CHbpr:
     OUTBOUND_FLIGHT = ""
     PROPERTIES = []
     IS_CA_FLYER = False
+    TKNE = ""  # Add TKNE field
     # 私有变量
     __ChkBagAverageWeight = 0
     __ERROR_NUMBER = 65535
@@ -88,6 +89,7 @@ class CHbpr:
             self.PROPERTIES = []
             self.INBOUND_FLIGHT = ""
             self.OUTBOUND_FLIGHT = ""
+            self.TKNE = ""  # Initialize TKNE field
             # 调用处理方法
             bolRun = True
             # 首先获取HBNB号码（用于错误消息）
@@ -641,6 +643,7 @@ class CHbpr:
             'INBOUND_FLIGHT': self.INBOUND_FLIGHT,
             'OUTBOUND_FLIGHT': self.OUTBOUND_FLIGHT,
             'PROPERTIES': ','.join(self.PROPERTIES) if self.PROPERTIES else '',
+            'TKNE': self.TKNE,  # Add TKNE to structured data
             'has_error': any(self.error_msg.values()),
             'error_baggage': '\n'.join(self.error_msg["Baggage"]) if self.error_msg["Baggage"] else '',
             'error_passport': '\n'.join(self.error_msg["Passport"]) if self.error_msg["Passport"] else '',
@@ -696,6 +699,9 @@ class CHbpr:
             current_property = line.split(" ")
             properties.extend(current_property)
         
+        # 提取TKNE数据
+        self.__ExtractTKNE(properties)
+        
         #删除没用的属性
         properties_to_remove = []
         for property in properties:
@@ -704,7 +710,7 @@ class CHbpr:
                 property.startswith("R"),  # 删除座位
                 property.startswith("ESTA"),  # 删除ESTA
                 property in ['PEK', 'LAX'],  # 删除目的地
-                property.startswith("TKNE"),  # 删除TKNE
+                property.startswith("TKNE"),  # 删除TKNE (already extracted)
                 property.startswith("FF/"),  # 删除FF属性
                 property.startswith("FBA"),  # 删除FBA的变化
                 property.startswith("IFBA"),  # 删除IFBA的变化
@@ -732,6 +738,25 @@ class CHbpr:
                     properties.remove(property)
         self.PROPERTIES = properties
         return 
+
+
+    def __ExtractTKNE(self, properties):
+        """提取TKNE数据"""
+        for i, property in enumerate(properties):
+            if property.startswith("TKNE/"):
+                # Extract the numbers following TKNE/
+                tkne_part = property[5:]  # Remove "TKNE/" prefix
+                # Split by '/' and take the first part (13+ digits) and second part (1 digit)
+                parts = tkne_part.split('/')
+                if len(parts) >= 2:
+                    # Combine the parts: first part + '/' + second part
+                    self.TKNE = f"{parts[0]}/{parts[1]}"
+                    self.debug_msg.append(f"TKNE extracted: {self.TKNE}")
+                else:
+                    # If format is different, store as is
+                    self.TKNE = tkne_part
+                    self.debug_msg.append(f"TKNE extracted (alternative format): {self.TKNE}")
+                break
 
 
     def is_valid(self):
@@ -863,6 +888,7 @@ class HbprDatabase:
                 ('inbound_flight', 'TEXT'),
                 ('outbound_flight', 'TEXT'),
                 ('properties', 'TEXT'),
+                ('tkne', 'TEXT'),  # Add TKNE field
                 ('error_count', 'INTEGER'),
                 ('error_baggage', 'TEXT'),
                 ('error_passport', 'TEXT'),
@@ -973,6 +999,7 @@ class HbprDatabase:
                     inbound_flight = ?,
                     outbound_flight = ?,
                     properties = ?,
+                    tkne = ?,
                     error_count = ?,
                     error_baggage = ?,
                     error_passport = ?,
@@ -1007,6 +1034,7 @@ class HbprDatabase:
                 data['INBOUND_FLIGHT'],
                 data['OUTBOUND_FLIGHT'],
                 data['PROPERTIES'],
+                data['TKNE'],
                 data['error_count'],
                 data['error_baggage'],
                 data['error_passport'],
