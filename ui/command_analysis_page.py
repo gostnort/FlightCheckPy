@@ -32,16 +32,12 @@ def show_command_analysis():
     # 页面加载时清理文件
     cleanup_command_files()
     
-    st.header("📋 Command Analysis")
-    
     # Initialize command processor
     selected_db = st.session_state.get('selected_database', None)
     
-    # Debug: Show the database path being used
-    if selected_db:
-        st.info(f"🔍 Using database: {selected_db}")
-    else:
+    if not selected_db:
         st.error("❌ No database selected")
+        return
     
     processor = CommandProcessor(selected_db)
     
@@ -65,10 +61,7 @@ def show_import_commands(processor: CommandProcessor):
     """Show command import interface"""
     st.subheader("📥 Import Commands from Text File")
     # Show current flight info if available
-    if processor.flight_info:
-        flight_info = processor.flight_info
-        st.info(f"🛫 Current Database Flight: {flight_info['flight_number']}/{flight_info['flight_date']}")
-    else:
+    if not processor.flight_info:
         st.warning("⚠️ No flight information found in selected database")
     
     # 清理之前的文件
@@ -101,10 +94,10 @@ def show_import_commands(processor: CommandProcessor):
     not_match_dataframe = None
     with col_1:
         # Process commands button
-        if st.button("🔄 Parse and Analyze Commands", use_container_width=True):
+        if st.button("🔄 Parse and Analyze", use_container_width=True):
             not_match_dataframe = parse_commands_from_file(processor, file_path)
     with col_2:
-        if st.button("💾 Store Commands in Database", use_container_width=True, type="primary"):
+        if st.button("💾 Store Commands", use_container_width=True, type="primary"):
             stats = processor.store_commands(st.session_state.matching_commands)
             st.success(f"✅ Stored {stats['new']} new, {stats['updated']} updated, {stats['skipped']} skipped")
             # 存储完成后清理文件

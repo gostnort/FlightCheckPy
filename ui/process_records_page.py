@@ -11,6 +11,7 @@ import re
 from datetime import datetime
 from scripts.hbpr_info_processor import CHbpr, HbprDatabase
 from scripts.hbpr_list_processor import HBPRProcessor
+from scripts.command_processor import CommandProcessor
 from ui.common import apply_global_settings, parse_hbnb_input, get_current_database
 import traceback
 
@@ -20,13 +21,25 @@ def show_process_records():
     # Apply settings
     apply_global_settings()
     
-    st.header("🔍 Process HBPR Records")
-    
     try:
         db = HbprDatabase()
         db.find_database()
         
-        tab1, tab2, tab3 = st.tabs(["🚀 Process All Records", "👀 View Record", "📄 Manual Input"])
+        # 检查是否需要跳转到特定标签页
+        default_tab = 0  # 默认显示Process All Records标签页
+        if hasattr(st.session_state, 'process_records_tab'):
+            if st.session_state.process_records_tab == "👀 View Record":
+                default_tab = 1  # View Record标签页
+            elif st.session_state.process_records_tab == "📄 Manual Input":
+                default_tab = 2  # Manual Input标签页
+            elif st.session_state.process_records_tab == "📋 Sort Records":
+                default_tab = 3  # Sort Records标签页
+            elif st.session_state.process_records_tab == "📤 Export Data":
+                default_tab = 4  # Export Data标签页
+            # 清除session state中的标签页设置
+            del st.session_state.process_records_tab
+        
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(["🚀 Process All Records", "👀 View Record", "📄 Manual Input", "📋 Sort Records", "📤 Export Data"])
         
         with tab1:
             process_all_records(db)
@@ -36,6 +49,14 @@ def show_process_records():
         
         with tab3:
             process_manual_input()
+        
+        with tab4:
+            from ui.view_results_page import show_records_table
+            show_records_table(db)
+        
+        with tab5:
+            from ui.view_results_page import show_export_options
+            show_export_options(db)
         
     except Exception as e:
         st.error(f"❌ Database not available: {str(e)}")
@@ -48,15 +69,11 @@ def process_all_records(db):
     
     try:
         # 获取当前选中的数据库
-        selected_db_file = get_current_database()
-        
+        selected_db_file = get_current_database()    
         if not selected_db_file:
             st.error("❌ No database selected! Please select a database from the sidebar.")
             return
-        
-        # 显示当前使用的数据库
-        st.info(f"Using database: `{os.path.basename(selected_db_file)}`")
-        
+  
         # 如果选择了不同的数据库，重新初始化
         if selected_db_file != db.db_file:
             db = HbprDatabase(selected_db_file)

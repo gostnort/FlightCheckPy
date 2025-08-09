@@ -199,8 +199,7 @@ def main():
     # Navigation links
     create_navigation_button("🗄️ Database", st.session_state.current_page, "🗄️ Database")
     create_navigation_button("🔍 Process Records", st.session_state.current_page, "🔍 Process Records")
-    create_navigation_button("📊 View Results", st.session_state.current_page, "📊 View Results")
-    create_navigation_button("📋 Command Analysis", st.session_state.current_page, "📋 Command Analysis")
+    create_navigation_button("📋 Other Commands", st.session_state.current_page, "📋 Other Commands")
     # Settings page
     st.sidebar.markdown("---")
     create_navigation_button("⚙️ Settings", st.session_state.current_page, "⚙️ Settings")
@@ -247,10 +246,7 @@ def main():
     elif current_page == "🔍 Process Records":
         from ui.process_records_page import show_process_records
         show_process_records()
-    elif current_page == "📊 View Results":
-        from ui.view_results_page import show_view_results
-        show_view_results()
-    elif current_page == "📋 Command Analysis":
+    elif current_page == "📋 Other Commands":
         from ui.command_analysis_page import show_command_analysis
         show_command_analysis()
     elif current_page == "⚙️ Settings":

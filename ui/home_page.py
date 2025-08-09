@@ -91,11 +91,12 @@ def show_home_page():
             st.session_state.current_page = "🔍 Process Records"
             st.rerun()
         if st.button("📊 View Results", use_container_width=True):
-            st.session_state.current_page = "📊 View Results"
+            st.session_state.current_page = "🔍 Process Records"
+            st.session_state.process_records_tab = "📋 Sort Records"
             st.rerun()
         if st.button("👥 View Accepted Passengers", use_container_width=True):
-            st.session_state.current_page = "📊 View Results"
-            st.session_state.view_results_tab = "👥 Accepted Passengers"
+            st.session_state.current_page = "🔍 Process Records"
+            st.session_state.process_records_tab = "📋 Sort Records"
             st.rerun()
         if st.button("🔄 Refresh Statistics", use_container_width=True):
             # 强制刷新所有统计信息

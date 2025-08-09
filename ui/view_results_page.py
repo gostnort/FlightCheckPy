@@ -11,6 +11,7 @@ import re
 from datetime import datetime
 from io import BytesIO
 from scripts.hbpr_info_processor import HbprDatabase
+from scripts.command_processor import CommandProcessor
 from ui.common import apply_global_settings, get_current_database
 
 
@@ -32,102 +33,25 @@ def show_view_results():
         # 检查是否需要跳转到特定标签页
         default_tab = 0  # 默认显示Statistics标签页
         if hasattr(st.session_state, 'view_results_tab'):
-            if st.session_state.view_results_tab == "📋 Records Table":
-                default_tab = 1  # Records Table标签页
+            if st.session_state.view_results_tab == "📋 Sort Records":
+                default_tab = 1  # Sort Records标签页
             elif st.session_state.view_results_tab == "📤 Export Data":
                 default_tab = 2  # Export Data标签页
             # 清除session state中的标签页设置
             del st.session_state.view_results_tab
         
-        tab1, tab2, tab3 = st.tabs(["📈 Statistics", "📋 Records Table", "📤 Export Data"])
+        tab1, tab2 = st.tabs(["📋 Sort Records", "📤 Export Data"])
         
         with tab1:
-            show_statistics(db)
-        
-        with tab2:
             show_records_table(db)
         
-        with tab3:
+        with tab2:
             show_export_options(db)
     
     except Exception as e:
         st.error(f"❌ Database not available: {str(e)}")
         st.info("💡 Please select a database from the sidebar or build one first in the Database Management page.")
 
-
-def show_statistics(db):
-    """显示统计信息"""
-    
-    # 添加刷新按钮
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        st.subheader("📈 HBNB Range Statistics")
-    with col2:
-        if st.button("🔄 Refresh Statistics", use_container_width=True):
-            # 强制刷新所有统计信息
-            db.invalidate_statistics_cache()
-            st.rerun()
-    
-    # 使用新的统计管理系统获取所有统计信息
-    all_stats = db.get_all_statistics()
-    range_info = all_stats['hbnb_range_info']
-    missing_numbers = all_stats['missing_numbers']
-    
-    # 主要指标
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.metric("HBNB Range", f"{range_info['min']} - {range_info['max']}")
-    with col2:
-        st.metric("Total Expected", range_info['total_expected'])
-    with col3:
-        st.metric("Total Found", range_info['total_found'])
-    with col4:
-        st.metric("Missing Numbers", len(missing_numbers))
-    
-    # 已接受乘客和登机范围指标
-    try:
-        accepted_stats = all_stats['accepted_passengers_stats']
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("Accepted Passengers", accepted_stats['total_accepted'])
-        with col2:
-            if accepted_stats['total_accepted'] > 0:
-                st.metric("Boarding Range", f"{accepted_stats['min_boarding']} - {accepted_stats['max_boarding']}")
-            else:
-                st.metric("Boarding Range", "N/A")
-    except Exception as e:
-        st.error(f"❌ Error loading accepted passenger data: {str(e)}")
-    
-
-    
-    # 显示缺失号码表格
-    if missing_numbers:
-        st.subheader("🚫 Missing HBNB Numbers")
-        # 分页显示缺失号码
-        items_per_page = 30
-        total_pages = (len(missing_numbers) + items_per_page - 1) // items_per_page
-        
-        if total_pages > 1:
-            page = st.selectbox("Page:", range(1, total_pages + 1), key="stats_missing_page")
-            start_idx = (page - 1) * items_per_page
-            end_idx = min(start_idx + items_per_page, len(missing_numbers))
-            page_missing = missing_numbers[start_idx:end_idx]
-        else:
-            page_missing = missing_numbers
-        
-        # 创建缺失号码的DataFrame
-        missing_df = pd.DataFrame({
-            'Missing HBNB Numbers': page_missing
-        })
-        
-        st.dataframe(missing_df, use_container_width=True)
-        
-        if total_pages > 1:
-            st.info(f"Showing page {page} of {total_pages} ({len(page_missing)} of {len(missing_numbers)} missing numbers)")
-    else:
-        st.success("✅ No missing HBNB numbers found!")
 
 
 def show_records_table(db):
@@ -279,6 +203,50 @@ def show_records_table(db):
         st.error(f"❌ Error loading records: {str(e)}")
 
 
+def export_as_origin_txt(db_file: str) -> str:
+    """
+    导出原始文本格式，包含full_record表的record_content和commands表的command_type、command_full
+    Args:
+        db_file (str): 数据库文件路径   
+    Returns:
+        str: 格式化的原始文本内容
+    """
+    content_parts = []
+    try:
+        conn = sqlite3.connect(db_file)
+        
+        # 导出full_record表的record_content
+        cursor = conn.execute("""
+            SELECT hbnb_number, record_content 
+            FROM hbpr_full_records 
+            ORDER BY hbnb_number
+        """)
+        full_records = cursor.fetchall()
+        if full_records:
+            for hbnb_number, record_content in full_records:
+                content_parts.append(record_content)
+                content_parts.append("")
+        # 导出commands表的command_type和command_full
+        cursor = conn.execute("""
+            SELECT command_full, content
+            FROM commands 
+            ORDER BY command_full, content
+        """)
+        
+        commands = cursor.fetchall()
+        if commands:
+            for command_full, content in commands:
+                content_parts.append(f">{command_full}\n{content}")
+                content_parts.append("")
+        
+        conn.close()
+        
+        return "\n".join(content_parts)
+        
+    except Exception as e:
+        return f"Error exporting data: {str(e)}"
+
+
 def show_export_options(db):
     """显示导出选项"""
     st.subheader("📤 Export Data")
@@ -299,7 +267,7 @@ def show_export_options(db):
             st.info("ℹ️ No processed records to export.")
             return
         
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns(3)
         
         with col1:
             # CSV导出
@@ -325,10 +293,20 @@ def show_export_options(db):
                 use_container_width=True
             )
         
+        with col3:
+            # 原始文本导出
+            origin_txt_data = export_as_origin_txt(db.db_file)
+            st.download_button(
+                label="📄 Download as Orig Txt",
+                data=origin_txt_data,
+                file_name=f"origin_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                mime="text/plain",
+                use_container_width=True
+            )
+        
         # 显示导出预览
         st.subheader("👀 Export Preview")
         st.dataframe(df.head(10), use_container_width=True)
         st.info(f"📊 Total records ready for export: {len(df)}")
-    
     except Exception as e:
         st.error(f"❌ Error preparing export: {str(e)}")

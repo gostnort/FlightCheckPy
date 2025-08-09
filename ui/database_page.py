@@ -18,9 +18,7 @@ def show_database_management():
     """显示数据库管理页面"""
     # Apply settings
     apply_global_settings()
-    
-    st.header("🗄️ Database Management")
-    tab1, tab2, tab3 = st.tabs(["📥 Build Database", "🔍 Database Info", "🧹 Maintenance"])   
+    tab1, tab2, tab3, tab4 = st.tabs(["📥 Build Database", "📈 Statistics", "🔍 Database Info", "🧹 Maintenance"])   
     with tab1:
         st.subheader("📥 Build Database from HBPR List")
         # 文件选择
@@ -41,9 +39,11 @@ def show_database_management():
         if uploaded_file and st.button("🔨 Build from Uploaded File", use_container_width=True):
             build_database_ui("uploaded_hbpr_list.txt")
     with tab2:
+        show_statistics()
+    with tab3:
         st.subheader("🔍 Database Information")
         show_database_info()
-    with tab3:
+    with tab4:
         st.subheader("🧹 Database Maintenance")
         show_database_maintenance()
 
@@ -225,3 +225,90 @@ def show_database_maintenance():
                     st.error(f"❌ Error updating missing numbers table: {str(e)}")
     else:
         st.info("ℹ️ No database selected. Please select a database from the sidebar or create one first.")
+
+
+def show_statistics():
+    """显示统计信息"""
+    # 获取当前选中的数据库
+    selected_db_file = get_current_database()
+    
+    if not selected_db_file:
+        st.error("❌ No database selected.")
+        st.info("💡 Please select a database from the sidebar or build one first.")
+        return
+    
+    try:
+        db = HbprDatabase(selected_db_file)
+        
+        # 添加刷新按钮
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.subheader("📈 HBNB Range Statistics")
+        with col2:
+            if st.button("🔄 Refresh Statistics", use_container_width=True):
+                # 强制刷新所有统计信息
+                db.invalidate_statistics_cache()
+                st.rerun()
+        
+        # 使用新的统计管理系统获取所有统计信息
+        all_stats = db.get_all_statistics()
+        range_info = all_stats['hbnb_range_info']
+        missing_numbers = all_stats['missing_numbers']
+        
+        # 主要指标
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("HBNB Range", f"{range_info['min']} - {range_info['max']}")
+        with col2:
+            st.metric("Total Expected", range_info['total_expected'])
+        with col3:
+            st.metric("Total Found", range_info['total_found'])
+        with col4:
+            st.metric("Missing Numbers", len(missing_numbers))
+        
+        # 已接受乘客和登机范围指标
+        try:
+            accepted_stats = all_stats['accepted_passengers_stats']
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Accepted Passengers", accepted_stats['total_accepted'])
+            with col2:
+                if accepted_stats['total_accepted'] > 0:
+                    st.metric("Boarding Range", f"{accepted_stats['min_boarding']} - {accepted_stats['max_boarding']}")
+                else:
+                    st.metric("Boarding Range", "N/A")
+        except Exception as e:
+            st.error(f"❌ Error loading accepted passenger data: {str(e)}")
+        
+        # 显示缺失号码表格
+        if missing_numbers:
+            st.subheader("🚫 Missing HBNB Numbers")
+            # 分页显示缺失号码
+            items_per_page = 30
+            total_pages = (len(missing_numbers) + items_per_page - 1) // items_per_page
+            
+            if total_pages > 1:
+                page = st.selectbox("Page:", range(1, total_pages + 1), key="stats_missing_page")
+                start_idx = (page - 1) * items_per_page
+                end_idx = min(start_idx + items_per_page, len(missing_numbers))
+                page_missing = missing_numbers[start_idx:end_idx]
+            else:
+                page_missing = missing_numbers
+            
+            # 创建缺失号码的DataFrame
+            missing_df = pd.DataFrame({
+                'Missing HBNB Numbers': page_missing
+            })
+            
+            st.dataframe(missing_df, use_container_width=True)
+            
+            if total_pages > 1:
+                st.info(f"Showing page {page} of {total_pages} ({len(page_missing)} of {len(missing_numbers)} missing numbers)")
+        else:
+            st.success("✅ No missing HBNB numbers found!")
+    
+    except Exception as e:
+        st.error(f"❌ Database not available: {str(e)}")
+        st.info("💡 Please select a database from the sidebar or build one first.")
