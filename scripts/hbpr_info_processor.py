@@ -1836,14 +1836,8 @@ class HbprDatabase:
         
         stats = {}
         
-        # Get record summary
-        stats['record_summary'] = self.get_record_summary()
-        
         # Get accepted passengers stats
         stats['accepted_passengers_stats'] = self.get_accepted_passengers_stats()
-        
-        # Get validation stats
-        stats['validation_stats'] = self.get_validation_stats()
         
         # Get HBNB range info
         stats['hbnb_range_info'] = self.get_hbnb_range_info()

@@ -22,6 +22,47 @@ from ui.database_page import show_database_management
 from ui.settings_page import show_settings
 from scripts.hbpr_info_processor import HbprDatabase
 
+
+def setup_navigation_highlighting():
+    """设置导航高亮样式"""
+    st.markdown("""
+    <style>
+    /* Target Streamlit's primary buttons in the sidebar */
+    section[data-testid="stSidebar"] button[kind="primary"] {
+        background-color: #e6ffe6 !important;
+        color: #000000 !important;
+        border: 2px solid #e6ffe6 !important;
+        font-weight: bold !important;
+    }
+    section[data-testid="stSidebar"] button[kind="primary"]:hover {
+        background-color: #98FB98 !important;
+        border-color:    !important;
+        color: #000000 !important;
+    }
+    /* Also target buttons with the primary class */
+    section[data-testid="stSidebar"] .stButton > button[data-testid="baseButton-primary"] {
+        background-color: #90EE90 !important;
+        color: #000000 !important;
+        border: 2px solid #32CD32 !important;
+        font-weight: bold !important;
+    }
+    section[data-testid="stSidebar"] .stButton > button[data-testid="baseButton-primary"]:hover {
+        background-color: #98FB98 !important;
+        border-color: #228B22 !important;
+        color: #000000 !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+
+def create_navigation_button(page_name, current_page, button_text):
+    """创建导航按钮并处理高亮"""
+    button_type = "primary" if current_page == page_name else "secondary"
+    if st.sidebar.button(button_text, use_container_width=True, type=button_type):
+        st.session_state.current_page = page_name
+        st.rerun()
+
+
 def main():
     """Main UI function"""
     st.set_page_config(
@@ -54,6 +95,10 @@ def main():
         return
     # Apply global settings
     apply_global_settings()
+    
+    # Add CSS for navigation highlighting
+    setup_navigation_highlighting()
+    
     # Sidebar navigation
     st.sidebar.title("📋 Navigation")
     # Get database files (including custom folder if set)
@@ -150,21 +195,15 @@ def main():
             st.rerun()
     st.sidebar.markdown("---")
     # Home page
-    if st.sidebar.button("🏠 Home", use_container_width=True):
-        st.session_state.current_page = "🏠 Home"    
+    create_navigation_button("🏠 Home", st.session_state.current_page, "🏠 Home")
     # Navigation links
-    if st.sidebar.button("🗄️ Database", use_container_width=True):
-        st.session_state.current_page = "🗄️ Database"
-    if st.sidebar.button("🔍 Process Records", use_container_width=True):
-        st.session_state.current_page = "🔍 Process Records"
-    if st.sidebar.button("📊 View Results", use_container_width=True):
-        st.session_state.current_page = "📊 View Results"
-    if st.sidebar.button("📋 Command Analysis", use_container_width=True):
-        st.session_state.current_page = "📋 Command Analysis"
+    create_navigation_button("🗄️ Database", st.session_state.current_page, "🗄️ Database")
+    create_navigation_button("🔍 Process Records", st.session_state.current_page, "🔍 Process Records")
+    create_navigation_button("📊 View Results", st.session_state.current_page, "📊 View Results")
+    create_navigation_button("📋 Command Analysis", st.session_state.current_page, "📋 Command Analysis")
     # Settings page
     st.sidebar.markdown("---")
-    if st.sidebar.button("⚙️ Settings", use_container_width=True):
-        st.session_state.current_page = "⚙️ Settings"
+    create_navigation_button("⚙️ Settings", st.session_state.current_page, "⚙️ Settings")
     # Logout button
     if st.sidebar.button("🚪 Logout", use_container_width=True, type="secondary"):
         # Clean up any uploaded files before logout
@@ -177,6 +216,9 @@ def main():
         st.session_state.username = None
         st.session_state.uploaded_file_path = None
         st.rerun()
+    # Update previous page before creating navigation
+    st.session_state.previous_page = st.session_state.current_page
+    
     # Clean up uploaded file when navigating away from database page
     pages_with_uploads = ["🗄️ Database"]
     if (st.session_state.previous_page in pages_with_uploads and 
@@ -188,8 +230,6 @@ def main():
             st.session_state.uploaded_file_path = None
         except Exception:
             pass
-    # Update previous page
-    st.session_state.previous_page = st.session_state.current_page
     # Display content based on current page
     current_page = st.session_state.current_page
     if current_page == "🏠 Home":
