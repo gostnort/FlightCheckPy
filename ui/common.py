@@ -50,6 +50,9 @@ def apply_global_settings():
         
         # Apply font settings globally
         apply_font_settings()
+    
+    # Remove the purple vertical block spacing
+    remove_vertical_block_spacing()
 
 
 def apply_font_settings():
@@ -76,6 +79,76 @@ def apply_font_settings():
         }}
         </style>
         """, unsafe_allow_html=True)
+
+
+def remove_vertical_block_spacing():
+    """Remove the purple vertical block spacing from stMainBlockContainer while preserving button spacing"""
+    st.markdown("""
+    <style>
+    /* Remove spacing from stMainBlockContainer but keep element gaps */
+    [data-testid="stMainBlockContainer"] {
+        padding-top: 0 !important;
+        padding-bottom: 1rem !important;
+        margin-top: 0 !important;
+    }
+    
+    /* Target the main block container more specifically */
+    .stMainBlockContainer {
+        padding-top: 0 !important;
+        margin-top: 0 !important;
+    }
+    
+    /* Remove the top vertical spacing but keep small gaps between elements */
+    .stVerticalBlock {
+        gap: 0.5rem !important;
+        padding-top: 0 !important;
+        padding-bottom: 0.5rem !important;
+        margin-top: 0 !important;
+    }
+    
+    /* Target the stVerticalBlock inside stMainBlockContainer - keep minimal spacing */
+    [data-testid="stVerticalBlock"] {
+        gap: 0.5rem !important;
+        padding-top: 0 !important;
+        padding-bottom: 0.5rem !important;
+        margin-top: 0 !important;
+    }
+    
+    /* Remove any additional top spacing from the main content area */
+    .main .block-container {
+        padding-top: 0 !important;
+        margin-top: 0 !important;
+    }
+    
+    /* Hide/minimize the header area completely */
+    header[data-testid="stHeader"] {
+        display: none !important;
+        height: 0 !important;
+    }
+    
+    /* Remove top padding from the app container */
+    .stApp {
+        padding-top: 0 !important;
+        margin-top: 0 !important;
+    }
+    
+    /* Ensure buttons have proper spacing */
+    .stButton {
+        margin-bottom: 5px !important;
+    }
+    
+    /* Add spacing between form elements */
+    .stSelectbox, .stSlider, .stTextInput, .stNumberInput {
+        margin-bottom: 5px !important;
+    }
+    
+    /* Add minimal spacing between tabs and other elements */
+    .stTabs {
+        margin-top: 5px !important;
+        margin-bottom: 5px !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
 
 def parse_hbnb_input(input_text: str) -> list:

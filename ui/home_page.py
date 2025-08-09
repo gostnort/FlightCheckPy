@@ -90,14 +90,6 @@ def show_home_page():
         if st.button("📄 Manual Input", use_container_width=True):
             st.session_state.current_page = "🔍 Process Records"
             st.rerun()
-        if st.button("📊 View Results", use_container_width=True):
-            st.session_state.current_page = "🔍 Process Records"
-            st.session_state.process_records_tab = "📋 Sort Records"
-            st.rerun()
-        if st.button("👥 View Accepted Passengers", use_container_width=True):
-            st.session_state.current_page = "🔍 Process Records"
-            st.session_state.process_records_tab = "📋 Sort Records"
-            st.rerun()
         if st.button("🔄 Refresh Statistics", use_container_width=True):
             # 强制刷新所有统计信息
             db.invalidate_statistics_cache()

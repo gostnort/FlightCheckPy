@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Main UI coordinator for HBPR Processing System
+Main UI coordinator for Flight Check python
 """
 
 import streamlit as st
@@ -66,7 +66,7 @@ def create_navigation_button(page_name, current_page, button_text):
 def main():
     """Main UI function"""
     st.set_page_config(
-        page_title="HBPR Processing System",
+        page_title="Flight Check Py-0.61",
         page_icon="resources/fcp.ico",
         layout="wide",
         initial_sidebar_state="expanded"
