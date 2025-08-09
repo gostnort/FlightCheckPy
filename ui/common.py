@@ -120,15 +120,30 @@ def remove_vertical_block_spacing():
         margin-top: 0 !important;
     }
     
-    /* Hide/minimize the header area completely */
+    /* Properly positioned header without overlap */
     header[data-testid="stHeader"] {
-        display: none !important;
-        height: 0 !important;
+        height: 2.5rem !important;
+        min-height: 2.5rem !important;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.1) !important;
+        z-index: 999 !important;
+        position: relative !important;
     }
     
-    /* Remove top padding from the app container */
+    /* Ensure header toolbar is properly sized */
+    header[data-testid="stHeader"] [data-testid="stToolbar"] {
+        height: 2.5rem !important;
+        min-height: 2.5rem !important;
+    }
+    
+    /* Proper spacing for main content */
     .stApp {
         padding-top: 0 !important;
+        margin-top: 0 !important;
+    }
+    
+    /* Ensure main content doesn't overlap */
+    .stApp > .main {
+        padding-top: 1rem !important;
         margin-top: 0 !important;
     }
     

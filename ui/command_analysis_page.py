@@ -8,7 +8,7 @@ import pandas as pd
 import os
 import traceback
 import io
-from datetime import datetime
+import re
 from ui.common import apply_global_settings
 from scripts.command_processor import CommandProcessor
 import sqlite3
@@ -42,18 +42,34 @@ def show_command_analysis():
     processor = CommandProcessor(selected_db)
     
     # Create tabs
-    tab1, tab2, tab3, tab4 = st.tabs(["📥 Import Commands", "📊 View Data", "✏️ Edit Data", "🗃️ Statistics"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📥 Import Commands",  "✏️ Add/Edit Data", "📊 View Data","🗃️ Statistics"])
     
     with tab1:
+        # 切换到此标签页时重置通用确认标志
+        if st.session_state.get('current_command_tab') != 'import':
+            st.session_state.confirm_clear = False
+            st.session_state.current_command_tab = 'import'
         show_import_commands(processor)
     
     with tab2:
-        show_view_data(processor)
-    
-    with tab3:
+        # 切换到此标签页时重置通用确认标志
+        if st.session_state.get('current_command_tab') != 'edit':
+            st.session_state.confirm_clear = False
+            st.session_state.current_command_tab = 'edit'
         show_edit_data(processor)
     
+    with tab3:
+        # 切换到此标签页时重置通用确认标志
+        if st.session_state.get('current_command_tab') != 'view':
+            st.session_state.confirm_clear = False
+            st.session_state.current_command_tab = 'view'
+        show_view_data(processor)
+    
     with tab4:
+        # 切换到此标签页时重置通用确认标志（不影响专用的commands确认）
+        if st.session_state.get('current_command_tab') != 'statistics':
+            st.session_state.confirm_clear = False
+            st.session_state.current_command_tab = 'statistics'
         show_command_settings(processor)
 
 
@@ -253,25 +269,37 @@ def show_edit_data(processor: CommandProcessor):
         record = df[df['command_full'] == selected_command]
         
         if not record.empty:
-            record = record.iloc[0]
-            
-            st.write(f"**Editing command:** {selected_command}")
-            
+            record = record.iloc[0]   
             # Edit form
             with st.form("edit_command_form"):
-                st.write("**Command Content:**")
-                
+                # 编辑完整的原始输入（包括命令行和内容）
+                # 直接使用数据库中存储的原始内容
                 current_content = record.get('content', '')
-                edited_content = st.text_area(
-                    "Content:",
-                    value=current_content,
-                    height=400,
-                    key="edit_content"
+                
+                # 直接使用存储的内容，如果为空则回退到重构
+                if current_content:
+                    full_raw_input = current_content
+                else:
+                    # 回退：从command_full重构（用于向后兼容旧数据）
+                    current_command_full = record.get('command_full', '')
+                    full_raw_input = f">{current_command_full}"
+                
+                edited_raw_input = st.text_area(
+                    "完整原始输入（包括命令行和内容）:",
+                    value=full_raw_input,
+                    height=375,
+                    key="edit_raw_input",
+                    help="包括命令行（以>开头）和后续内容。如果修改命令行，将创建新记录。"
                 )
                 
-                # Submit button
-                if st.form_submit_button("💾 Save Changes", use_container_width=True):
-                    save_edited_data(processor, selected_command, edited_content)
+                # 提交按钮
+                col1, col2 = st.columns([1, 1])
+                with col1:
+                    if st.form_submit_button("💾 保存更改", use_container_width=True):
+                        save_edited_data(processor, selected_command, edited_raw_input)
+                with col2:
+                    if st.form_submit_button("🗑️ 删除记录", use_container_width=True, type="secondary"):
+                        delete_command_record(processor, selected_command)
         else:
             st.warning("⚠️ No record found for selected command")
     
@@ -280,27 +308,154 @@ def show_edit_data(processor: CommandProcessor):
         st.text(traceback.format_exc())
 
 
-def save_edited_data(processor: CommandProcessor, command_full: str, edited_content: str):
-    """Save edited command data"""
+def save_edited_data(processor: CommandProcessor, original_command_full: str, edited_raw_input: str):
+    """Save edited command data with special character handling"""
     try:
         if not processor.db_file:
             st.error("❌ No database file specified")
             return
         
-        # Update database with edited data
+        # Step 1: 处理特殊字符替换（类似于 validate_full_hbpr_record）
+        corrected_input = apply_character_corrections(edited_raw_input)
+        
+        # Step 2: 解析编辑后的输入以提取命令行和内容
+        lines = corrected_input.split('\n')
+        if not lines:
+            st.error("❌ 输入为空")
+            return
+        
+        # 找到命令行（包含命令模式的行，如 SY:, PD:, SE: 等）
+        command_line = None
+        
+        for line in lines:
+            stripped_line = line.strip()
+            # 使用与 _parse_command_line 相同的逻辑检测命令
+            # 检查是否包含命令模式 [A-Z]{2,4}:
+            if re.search(r'[A-Z]{2,4}:', stripped_line):
+                command_line = stripped_line
+                break
+        
+        if not command_line:
+            st.error("❌ 未找到有效的命令行（应包含命令模式如 SY:, PD:, SE: 等）")
+            return
+        
+        # Step 3: 解析新的命令行
+        new_command_info = processor._parse_command_line(command_line)
+        if not new_command_info:
+            st.error("❌ 无法解析命令行格式")
+            return
+        
+        new_command_full = new_command_info['command_full']
+        
+        # Step 4: 验证航班信息
+        if not processor.validate_flight_info(new_command_info['flight_number'], new_command_info['flight_date']):
+            st.warning("⚠️ 警告：新命令的航班信息与数据库不匹配")
+        
+        # Step 5: 确定是更新还是创建新记录
         conn = sqlite3.connect(processor.db_file)
-        conn.execute(
-            "UPDATE commands SET content = ?, updated_at = CURRENT_TIMESTAMP WHERE command_full = ?",
-            (edited_content, command_full)
-        )
+        
+        if new_command_full == original_command_full:
+            # 命令行未更改，更新现有记录
+            conn.execute(
+                "UPDATE commands SET content = ?, updated_at = CURRENT_TIMESTAMP WHERE command_full = ?",
+                (corrected_input, original_command_full)  # 存储完整的原始输入（经过字符修正）
+            )
+            st.success("✅ 记录已更新！")
+        else:
+            # 命令行已更改，创建新记录并可选删除旧记录
+            # 检查新命令是否已存在
+            cursor = conn.execute("SELECT id FROM commands WHERE command_full = ?", (new_command_full,))
+            existing = cursor.fetchone()
+            
+            if existing:
+                st.error(f"❌ 命令 '{new_command_full}' 已存在。请选择不同的命令。")
+                conn.close()
+                return
+            
+            # 创建新记录
+            conn.execute("""
+                INSERT INTO commands (command_full, command_type, flight_number, flight_date, content, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """, (
+                new_command_full,
+                new_command_info['command_type'],
+                new_command_info['flight_number'], 
+                new_command_info['flight_date'],
+                corrected_input  # 存储完整的原始输入（经过字符修正）
+            ))
+            
+            # 询问是否删除旧记录
+            st.success(f"✅ 已创建新记录: {new_command_full}")
+            st.info(f"💡 原记录 '{original_command_full}' 仍然存在。如需删除，请使用删除按钮。")
+        
         conn.commit()
         conn.close()
-        
-        st.success("✅ Changes saved successfully!")
         st.rerun()
     
     except Exception as e:
         st.error(f"❌ Error saving changes: {e}")
+        import traceback
+        st.text(traceback.format_exc())
+
+
+def delete_command_record(processor: CommandProcessor, command_full: str):
+    """Delete a command record"""
+    try:
+        if not processor.db_file:
+            st.error("❌ No database file specified")
+            return
+        
+        conn = sqlite3.connect(processor.db_file)
+        cursor = conn.execute("DELETE FROM commands WHERE command_full = ?", (command_full,))
+        
+        if cursor.rowcount > 0:
+            st.success(f"✅ 已删除记录: {command_full}")
+        else:
+            st.warning(f"⚠️ 未找到记录: {command_full}")
+        
+        conn.commit()
+        conn.close()
+        st.rerun()
+    
+    except Exception as e:
+        st.error(f"❌ Error deleting record: {e}")
+
+
+def apply_character_corrections(raw_input: str) -> str:
+    """
+    Apply character corrections similar to validate_full_hbpr_record
+    Handles special characters before command prefixes
+    """
+    corrected_input = raw_input
+    
+    # 处理命令行开头的特殊字符（类似于HBPR记录处理）
+    # 查找并替换DLE字符(ASCII 16, \x10)
+    if re.search(r'\x10[A-Z]{2,4}:', corrected_input):
+        corrected_input = re.sub(r'\x10([A-Z]{2,4}:)', r'>\1', corrected_input)
+        st.info("ℹ️ 检测到DLE字符 - 已自动替换为'>'")
+    
+    # 查找并替换DEL字符(ASCII 127, \x7f)  
+    elif re.search(r'\x7f[A-Z]{2,4}:', corrected_input):
+        corrected_input = re.sub(r'\x7f([A-Z]{2,4}:)', r'>\1', corrected_input)
+        st.info("ℹ️ 检测到DEL字符 - 已自动替换为'>'")
+    
+    # 处理其他控制字符
+    elif re.search(r'[\x00-\x1f\x7f][A-Z]{2,4}:', corrected_input):
+        corrected_input = re.sub(r'[\x00-\x1f\x7f]([A-Z]{2,4}:)', r'>\1', corrected_input)
+        st.info("ℹ️ 检测到控制字符 - 已自动替换为'>'")
+    
+    # 处理可见的"del"文本
+    elif re.search(r'del[A-Z]{2,4}:', corrected_input, re.IGNORECASE):
+        corrected_input = re.sub(r'del([A-Z]{2,4}:)', r'>\1', corrected_input, flags=re.IGNORECASE)
+        st.info("ℹ️ 检测到'del'文本 - 已自动替换为'>'")
+    
+    # 处理没有前缀的命令行（只在明确需要时添加>前缀）
+    # 只有当行严格以命令模式开始且没有其他前缀字符时才添加>
+    elif re.search(r'^[A-Z]{2,4}:\s*[A-Z0-9]', corrected_input, re.MULTILINE):
+        corrected_input = re.sub(r'^([A-Z]{2,4}:)', r'>\1', corrected_input, flags=re.MULTILINE)
+        st.info("ℹ️ 检测到无前缀命令 - 已自动添加'>'前缀")
+    
+    return corrected_input
 
 
 def show_command_settings(processor: CommandProcessor):
@@ -350,7 +505,7 @@ def show_command_settings(processor: CommandProcessor):
     
     with col1:
         if st.button("🗑️ Clear All Command Data", use_container_width=True):
-            if st.session_state.get('confirm_clear', False):
+            if st.session_state.get('confirm_clear_commands', False):
                 try:
                     if processor.db_file:
                         conn = sqlite3.connect(processor.db_file)
@@ -358,7 +513,7 @@ def show_command_settings(processor: CommandProcessor):
                         conn.commit()
                         conn.close()
                         st.success("✅ All command data cleared!")
-                        st.session_state.confirm_clear = False
+                        st.session_state.confirm_clear_commands = False
                         # 清除数据后清理文件
                         cleanup_command_files()
                         st.rerun()
@@ -366,14 +521,20 @@ def show_command_settings(processor: CommandProcessor):
                         st.error("❌ No database file specified")
                 except Exception as e:
                     st.error(f"❌ Error clearing data: {e}")
+                    st.session_state.confirm_clear_commands = False
             else:
-                st.session_state.confirm_clear = True
+                st.session_state.confirm_clear_commands = True
                 st.warning("⚠️ Click again to confirm deletion of all command data")
+                st.rerun()
+    
+    # 显示确认状态和取消选项
+    if st.session_state.get('confirm_clear_commands', False):
+        st.error("🚨 Deletion confirmation pending - click 'Clear All Command Data' again to proceed")
+        if st.button("❌ Cancel Deletion", use_container_width=True, key="cancel_clear"):
+            st.session_state.confirm_clear_commands = False
+            st.info("✅ Deletion cancelled")
+            st.rerun()
     
     with col2:
         if st.button("📊 Refresh Statistics", use_container_width=True):
             st.rerun()
-    
-    # Reset confirmation flag if user clicks elsewhere
-    if st.session_state.get('confirm_clear', False):
-        st.warning("⚠️ Confirmation pending for data deletion")

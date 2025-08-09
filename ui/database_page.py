@@ -245,7 +245,7 @@ def show_statistics():
         with col1:
             st.subheader("📈 HBNB Range Statistics")
         with col2:
-            if st.button("🔄 Refresh Statistics", use_container_width=True):
+            if st.button("🔄 Refresh", use_container_width=True):
                 # 强制刷新所有统计信息
                 db.invalidate_statistics_cache()
                 st.rerun()
