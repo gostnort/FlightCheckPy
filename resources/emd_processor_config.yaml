@@ -1,0 +1,64 @@
+# EMD Processor Configuration
+# Configuration file for the EMD Excel processor
+
+# File naming settings
+file_settings:
+  prefix: "EMD CA"
+  separator: "-"
+  date_format: "%d%b%Y"
+  file_extension: ".xlsx"
+
+# Sheet names
+sheets:
+  emd: "EMD"
+  sum: "SUM"
+  receipt: "RECEIPT"
+
+# Column mappings for EMD sheet
+emd_columns:
+  emd_number: 1      # Column A - EMD Number
+  ticket_number: 2   # Column B - Ticket Number (with quote prefix)
+  origin_dest: 3     # Column C - Origin/Destination (leg)
+  quantity: 4        # Column D - Quantity (emd_count)
+  operator: 5        # Column E - Operation
+  account: 6         # Column F - Job Number
+  issue_date: 7      # Column G - Issue Date
+  product: 8         # Column H - Product
+  id: 9              # Column I - ID
+  flight_number: 10  # Column J - Flight Number
+  price: 11          # Column K - Total Price
+  cash_amount: 12    # Column L - Cash Amount
+  amex_amount: 13    # Column M - American Express Amount (ax)
+  other_credit_amount: 14   # Column N - Other Credit Card Amount (other)
+  last_four_digits: 15  # Column O - Last 4 Digits for Credit
+
+# Payment types
+payment_types:
+  cash: "Cash"
+  amex: "American Express"
+  other_credit: "Other Credit Cards"
+
+# Validation settings
+validation:
+  require_last_four_digits: true
+  check_duplicate_emds: true
+
+# Number to text conversion settings
+number_to_text:
+  currency: "DOLLARS"
+  cents: "CENTS"
+  exact: "EXACTLY"
+  no_dollars: "NO DOLLARS"
+  no_cents: "AND NO CENTS EXACTLY"
+  one_dollar: "ONE DOLLAR"
+  one_cent: "AND ONE CENT EXACTLY"
+
+# Error messages
+messages:
+  duplicate_emd: "One of the EMD tickets are the same. Input is cancelled."
+  missing_last_four: "Credit payment requires last 4 digits of the card."
+  file_saved: "File saved successfully as: {filename}"
+
+# Default values
+defaults:
+  quantity: 1 
