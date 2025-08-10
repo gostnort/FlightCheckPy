@@ -50,6 +50,9 @@ def apply_global_settings():
         
         # Apply font settings globally
         apply_font_settings()
+    
+    # Remove the purple vertical block spacing
+    remove_vertical_block_spacing()
 
 
 def apply_font_settings():
@@ -76,6 +79,91 @@ def apply_font_settings():
         }}
         </style>
         """, unsafe_allow_html=True)
+
+
+def remove_vertical_block_spacing():
+    """Remove the purple vertical block spacing from stMainBlockContainer while preserving button spacing"""
+    st.markdown("""
+    <style>
+    /* Remove spacing from stMainBlockContainer but keep element gaps */
+    [data-testid="stMainBlockContainer"] {
+        padding-top: 0 !important;
+        padding-bottom: 1rem !important;
+        margin-top: 0 !important;
+    }
+    
+    /* Target the main block container more specifically */
+    .stMainBlockContainer {
+        padding-top: 0 !important;
+        margin-top: 0 !important;
+    }
+    
+    /* Remove the top vertical spacing but keep small gaps between elements */
+    .stVerticalBlock {
+        gap: 0.5rem !important;
+        padding-top: 0 !important;
+        padding-bottom: 0.5rem !important;
+        margin-top: 0 !important;
+    }
+    
+    /* Target the stVerticalBlock inside stMainBlockContainer - keep minimal spacing */
+    [data-testid="stVerticalBlock"] {
+        gap: 0.5rem !important;
+        padding-top: 0 !important;
+        padding-bottom: 0.5rem !important;
+        margin-top: 0 !important;
+    }
+    
+    /* Remove any additional top spacing from the main content area */
+    .main .block-container {
+        padding-top: 0 !important;
+        margin-top: 0 !important;
+    }
+    
+    /* Properly positioned header without overlap */
+    header[data-testid="stHeader"] {
+        height: 2.5rem !important;
+        min-height: 2.5rem !important;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.1) !important;
+        z-index: 999 !important;
+        position: relative !important;
+    }
+    
+    /* Ensure header toolbar is properly sized */
+    header[data-testid="stHeader"] [data-testid="stToolbar"] {
+        height: 2.5rem !important;
+        min-height: 2.5rem !important;
+    }
+    
+    /* Proper spacing for main content */
+    .stApp {
+        padding-top: 0 !important;
+        margin-top: 0 !important;
+    }
+    
+    /* Ensure main content doesn't overlap */
+    .stApp > .main {
+        padding-top: 1rem !important;
+        margin-top: 0 !important;
+    }
+    
+    /* Ensure buttons have proper spacing */
+    .stButton {
+        margin-bottom: 5px !important;
+    }
+    
+    /* Add spacing between form elements */
+    .stSelectbox, .stSlider, .stTextInput, .stNumberInput {
+        margin-bottom: 5px !important;
+    }
+    
+    /* Add minimal spacing between tabs and other elements */
+    .stTabs {
+        margin-top: 5px !important;
+        margin-bottom: 5px !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
 
 def parse_hbnb_input(input_text: str) -> list:

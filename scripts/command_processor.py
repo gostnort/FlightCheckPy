@@ -87,9 +87,17 @@ class CommandProcessor:
                         content_lines.append(content_line)
                         j += 1
                     # 合并命令信息和内容
+                    # 存储完整的原始输入（包括命令行和后续内容）
+                    raw_command_line = lines[i]  # 保留原始命令行（完全原样）
+                    if content_lines:
+                        # 保留原始格式，包括所有空格和格式
+                        full_raw_content = raw_command_line + '\n' + '\n'.join(content_lines)
+                    else:
+                        full_raw_content = raw_command_line
+                    
                     command_data = {
                         **command_info,
-                        'content': '\n'.join(content_lines).strip(),
+                        'content': full_raw_content,  # 存储完整的原始输入，不使用strip()以保留格式
                         'line_number': i + 1
                     }
                     commands.append(command_data)
@@ -111,15 +119,16 @@ class CommandProcessor:
         Returns:
             Optional[Dict[str, str]]: Parsed command info or None
         """
+        # 应用特殊字符处理
+        corrected_line = self._apply_character_corrections(line)
+        
         # 移除前导'>'如果存在
-        line = line.lstrip('>')
-        # 移除前导''如果存在（仅特定字符）
-        if line.startswith('\x10'):
-            line = line[1:]
+        corrected_line = corrected_line.lstrip('>')
+        
         # 使用正则表达式提取命令：r"[A-Z]{2,4}:\s?.+?(?=\s{2})"
         # 修改后可以兼容毫无空格的指令
         pattern = r"([A-Z]{2,4}):\s?(.+?)(?=\s{2,}|\s*$)"
-        match = re.search(pattern, line)
+        match = re.search(pattern, corrected_line)
         if match:
             command_prefix = match.group(1).strip()
             command_part = match.group(2).strip()
@@ -134,6 +143,42 @@ class CommandProcessor:
                 'flight_date': flight_info.get('flight_date', '')
             }
         return None
+
+
+    def _apply_character_corrections(self, line: str) -> str:
+        """
+        Apply character corrections to command line
+        Similar to validate_full_hbpr_record logic for special characters
+        
+        Args:
+            line (str): Command line to correct
+            
+        Returns:
+            str: Corrected command line
+        """
+        corrected_line = line
+        
+        # 处理DLE字符(ASCII 16, \x10)
+        if '\x10' in corrected_line:
+            corrected_line = corrected_line.replace('\x10', '>')
+        
+        # 处理DEL字符(ASCII 127, \x7f)
+        elif '\x7f' in corrected_line:
+            corrected_line = corrected_line.replace('\x7f', '>')
+        
+        # 处理其他控制字符
+        elif re.search(r'[\x00-\x1f\x7f]', corrected_line):
+            corrected_line = re.sub(r'[\x00-\x1f\x7f]', '>', corrected_line)
+        
+        # 处理可见的"del"文本(不区分大小写)
+        elif re.search(r'del[A-Z]{2,4}:', corrected_line, re.IGNORECASE):
+            corrected_line = re.sub(r'del([A-Z]{2,4}:)', r'>\1', corrected_line, flags=re.IGNORECASE)
+        
+        # 如果命令行没有>前缀且严格符合命令模式，添加它
+        elif re.match(r'^[A-Z]{2,4}:\s*[A-Z0-9]', corrected_line):
+            corrected_line = '>' + corrected_line
+        
+        return corrected_line
 
 
     def _extract_flight_info(self, command: str) -> Dict[str, str]:

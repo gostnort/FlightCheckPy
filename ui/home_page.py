@@ -37,26 +37,31 @@ def show_home_page():
             all_stats = db.get_all_statistics()
             range_info = all_stats['hbnb_range_info']
             missing_numbers = all_stats['missing_numbers']
-            record_summary = all_stats['record_summary']
+            
             # 显示HBNB范围信息
             metrics_col1, metrics_col2, metrics_col3, metrics_col4 = st.columns(4)
             with metrics_col1:
                 st.metric("HBNB Range", f"{range_info['min']} - {range_info['max']}")
             with metrics_col2:
-                st.metric("Total Records", record_summary['total_records'])
+                st.metric("Total Expected", range_info['total_expected'])
             with metrics_col3:
-                st.metric("Full Records", record_summary['full_records'])
+                st.metric("Total Found", range_info['total_found'])
             with metrics_col4:
-                st.metric("Simple Records", record_summary['simple_records'])
-            
-            # 显示验证统计
-            validation_col1, validation_col2, validation_col3 = st.columns(3)
-            with validation_col1:
-                st.metric("Validated Records", record_summary['validated_records'])
-            with validation_col2:
                 st.metric("Missing Numbers", len(missing_numbers))
-            with validation_col3:
-                st.metric("Accepted Pax", record_summary['accepted_pax'])
+            
+            # 显示已接受乘客统计
+            try:
+                accepted_stats = all_stats['accepted_passengers_stats']
+                validation_col1, validation_col2 = st.columns(2)
+                with validation_col1:
+                    st.metric("Accepted Passengers", accepted_stats['total_accepted'])
+                with validation_col2:
+                    if accepted_stats['total_accepted'] > 0:
+                        st.metric("Boarding Range", f"{accepted_stats['min_boarding']} - {accepted_stats['max_boarding']}")
+                    else:
+                        st.metric("Boarding Range", "N/A")
+            except Exception as e:
+                st.warning(f"⚠️ Accepted passenger data not available: {str(e)}")
             # 显示缺失号码表格
             if missing_numbers:
                 st.subheader("🚫 Missing HBNB Numbers")
@@ -89,13 +94,6 @@ def show_home_page():
             st.rerun()
         if st.button("📄 Manual Input", use_container_width=True):
             st.session_state.current_page = "🔍 Process Records"
-            st.rerun()
-        if st.button("📊 View Results", use_container_width=True):
-            st.session_state.current_page = "📊 View Results"
-            st.rerun()
-        if st.button("👥 View Accepted Passengers", use_container_width=True):
-            st.session_state.current_page = "📊 View Results"
-            st.session_state.view_results_tab = "👥 Accepted Passengers"
             st.rerun()
         if st.button("🔄 Refresh Statistics", use_container_width=True):
             # 强制刷新所有统计信息

@@ -199,7 +199,7 @@ class CHbpr:
 
     def __GetHbnbNumber(self):
         """单独获取HBNB号码"""
-        hbnbPat = re.compile(r">HBPR:\s*[^,]+,(\d+)")
+        hbnbPat = re.compile(r">?HBPR:\s*[^,]+,(\d+)")
         hbnbMatch = hbnbPat.search(self.__Hbpr)
         if hbnbMatch:
             try:
@@ -414,7 +414,7 @@ class CHbpr:
     def __FlyerBenifit(self):
         """获取常旅客权益"""
         # 查找FF模式并提取FF号码 - 修复正则表达式以正确提取FF信息
-        ff_pat = re.compile(r"FF/([A-Z]{2}\s[A-Z0-9]+/[A-Z](?:/\*[GS])?)")
+        ff_pat = re.compile(r"FF/([A-Z]{2}\s?[A-Z0-9]+(?:/[A-Z])?(?:/\*[GS])?)")
         ff_match = ff_pat.search(self.__Hbpr)
         # 默认没有会员，也不是国航常旅客
         result = {"piece": 0, "bol_ca": False}
@@ -775,7 +775,7 @@ class CHbpr:
             properties.extend(current_property)
         
         # 提取TKNE数据
-        self.__ExtractTKNE(properties)
+        self.ExtractTKNE(properties)
         
         #删除没用的属性
         properties_to_remove = []
@@ -815,7 +815,7 @@ class CHbpr:
         return 
 
 
-    def __ExtractTKNE(self, properties):
+    def ExtractTKNE(self, properties):
         """提取TKNE数据"""
         for i, property in enumerate(properties):
             if property.startswith("TKNE/"):
@@ -1836,14 +1836,8 @@ class HbprDatabase:
         
         stats = {}
         
-        # Get record summary
-        stats['record_summary'] = self.get_record_summary()
-        
         # Get accepted passengers stats
         stats['accepted_passengers_stats'] = self.get_accepted_passengers_stats()
-        
-        # Get validation stats
-        stats['validation_stats'] = self.get_validation_stats()
         
         # Get HBNB range info
         stats['hbnb_range_info'] = self.get_hbnb_range_info()
