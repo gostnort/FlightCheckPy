@@ -41,31 +41,50 @@ def show_command_analysis():
     
     processor = CommandProcessor(selected_db)
     
-    # Create tabs
-    tab1, tab2, tab3, tab4 = st.tabs(["📥 Import Commands",  "✏️ Add/Edit Data", "📊 View Data","🗃️ Statistics"])
+    # 定义标签页选项
+    tab_options = ["📥 Import Commands", "✒️ Add/Edit Data", "📊 View Data", "🗃️ Statistics"]
     
-    with tab1:
+    # 初始化默认选择（如果还没有设置）
+    if "command_tab_selector" not in st.session_state:
+        st.session_state.command_tab_selector = tab_options[0]
+    
+    # 处理程序化标签页切换
+    if hasattr(st.session_state, 'command_analysis_tab'):
+        target_tab = st.session_state.command_analysis_tab
+        if target_tab in tab_options:
+            st.session_state.command_tab_selector = target_tab
+        del st.session_state.command_analysis_tab
+    
+    # 使用radio按钮来控制标签页
+    selected_tab = st.radio(
+        label="Navigation tabs",
+        options=tab_options,
+        horizontal=True,
+        key="command_tab_selector",
+        label_visibility="collapsed"
+    )
+    st.markdown("---")
+    
+    # 根据选择的标签页显示相应内容
+    if selected_tab == "📥 Import Commands":
         # 切换到此标签页时重置通用确认标志
         if st.session_state.get('current_command_tab') != 'import':
             st.session_state.confirm_clear = False
             st.session_state.current_command_tab = 'import'
         show_import_commands(processor)
-    
-    with tab2:
+    elif selected_tab == "✏️ Add/Edit Data":
         # 切换到此标签页时重置通用确认标志
         if st.session_state.get('current_command_tab') != 'edit':
             st.session_state.confirm_clear = False
             st.session_state.current_command_tab = 'edit'
         show_edit_data(processor)
-    
-    with tab3:
+    elif selected_tab == "📊 View Data":
         # 切换到此标签页时重置通用确认标志
         if st.session_state.get('current_command_tab') != 'view':
             st.session_state.confirm_clear = False
             st.session_state.current_command_tab = 'view'
         show_view_data(processor)
-    
-    with tab4:
+    elif selected_tab == "🗃️ Statistics":
         # 切换到此标签页时重置通用确认标志（不影响专用的commands确认）
         if st.session_state.get('current_command_tab') != 'statistics':
             st.session_state.confirm_clear = False

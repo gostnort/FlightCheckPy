@@ -66,7 +66,7 @@ def create_navigation_button(page_name, current_page, button_text):
 def main():
     """Main UI function"""
     st.set_page_config(
-        page_title="Flight Check Py-0.61",
+        page_title="Flight Check Py-0.62",
         page_icon="resources/fcp.ico",
         layout="wide",
         initial_sidebar_state="expanded"
@@ -200,6 +200,7 @@ def main():
     create_navigation_button("🗄️ Database", st.session_state.current_page, "🗄️ Database")
     create_navigation_button("🔍 Process Records", st.session_state.current_page, "🔍 Process Records")
     create_navigation_button("📋 Other Commands", st.session_state.current_page, "📋 Other Commands")
+    create_navigation_button("📊 Excel Processor", st.session_state.current_page, "📊 Excel Processor")
     # Settings page
     st.sidebar.markdown("---")
     create_navigation_button("⚙️ Settings", st.session_state.current_page, "⚙️ Settings")
@@ -236,7 +237,7 @@ def main():
         st.markdown("""
         <div style="display: flex; align-items: center; gap: 10px;">
             <img src="data:image/x-icon;base64,{}" width="128" height="128">
-            <h3 style="margin: 0;">Flight Check 0.61 --- Python</h3>
+            <h3 style="margin: 0;">Flight Check 0.62 --- Python</h3>
         </div>
         """.format(get_icon_base64("resources/fcp.ico")), unsafe_allow_html=True)
         st.markdown("---")
@@ -249,6 +250,9 @@ def main():
     elif current_page == "📋 Other Commands":
         from ui.command_analysis_page import show_command_analysis
         show_command_analysis()
+    elif current_page == "📊 Excel Processor":
+        from ui.excel_processor_page import show_excel_processor
+        show_excel_processor()
     elif current_page == "⚙️ Settings":
         show_settings()
 

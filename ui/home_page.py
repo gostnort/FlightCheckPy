@@ -89,11 +89,13 @@ def show_home_page():
             st.info("💡 Please build a database first using the Database Management page.")
     with col2:
         st.subheader("🚀 Quick Actions")
-        if st.button("🔍 Process HBPR Record", use_container_width=True):
+        if st.button("✏️ Add/Edit HBPR Record", use_container_width=True):
             st.session_state.current_page = "🔍 Process Records"
+            st.session_state.process_records_tab = "✏️ Add/Edit Record"
             st.rerun()
-        if st.button("📄 Manual Input", use_container_width=True):
-            st.session_state.current_page = "🔍 Process Records"
+        if st.button("✒️ Add/Edit Command", use_container_width=True):
+            st.session_state.current_page = "📋 Other Commands"
+            st.session_state.command_analysis_tab = "✒️ Add/Edit Data"
             st.rerun()
         if st.button("🔄 Refresh Statistics", use_container_width=True):
             # 强制刷新所有统计信息
