@@ -1,4 +1,4 @@
-# Flight Check --- Python 版本 0.6
+# Flight Check --- Python 版本 0.61
 
 ## 项目简介
 
@@ -29,14 +29,17 @@
 
 #### Web 界面
 ```bash
-streamlit run hbpr_ui.py
+streamlit run ui/main.py
 ```
+纯命令行会带有console messages。
+  - 可以运行``start_ui.bat`` 这个是带有内网服务的启动命令。
+  - 可以运行``start_ui.py`` 这个是没有console，提供了内网服务和任务托盘图标的启动程序。
 
 **注意**: 首次运行时会显示登录界面，需要管理员提供的有效凭据。
 
 ## 版本更新
 
-### v0.6 新特性
+### v0.61 新特性
 - 🔐 **新增安全登录系统**: SHA256 加密的用户认证
 - 🌐 Streamlit Web 界面
 - 🗄️ 改进的数据库管理系统
