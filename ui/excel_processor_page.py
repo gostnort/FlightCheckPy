@@ -64,9 +64,19 @@ def show_excel_processor():
             
             st.success(f"✅ 成功读取文件: {uploaded_file.name}")
             
-            # 检查必要的列是否存在
-            required_columns = ['EMD', '关联ET', '旅客姓名', '航班号', '航程', '操作', '实收金额', '工作号', '操作时间', '产品类型']
-            missing_columns = [col for col in required_columns if col not in df_input.columns]
+            # 检查必要的列是否存在 (支持中英文列名)
+            available_columns = list(df_input.columns)
+            missing_essential = []
+            
+            # 检查EMD列
+            if not any(col in available_columns for col in ['EMD', 'EMD 票号']):
+                missing_essential.append('EMD/EMD 票号')
+            
+            # 检查关联ET列
+            if not any(col in available_columns for col in ['关联ET', 'ET No.', '客票号码']):
+                missing_essential.append('关联ET/ET No./客票号码')
+            
+            missing_columns = missing_essential
             
             if missing_columns:
                 st.error(f"❌ 缺少必要的列: {missing_columns}")
@@ -287,28 +297,56 @@ def has_ckin_ccrd(record: Dict) -> bool:
 
 
 
+def convert_to_string_no_decimal(value) -> str:
+    """将数字转换为字符串，去掉小数点"""
+    try:
+        if not value or str(value).strip() == '' or str(value) == 'nan':
+            return ""
+        
+        # 尝试转换为浮点数，然后转为整数字符串
+        float_val = float(str(value))
+        int_val = int(float_val)
+        return str(int_val)
+    except (ValueError, TypeError):
+        # 如果转换失败，直接返回字符串
+        return str(value) if value else ""
+
+
 def create_base_output_row(input_row: pd.Series) -> Dict:
     """创建基础输出行，包含列映射和固定值"""
-    # 根据实际EMD销售日报的列映射关系
+    # 根据用户截图的正确映射关系
     output_row = {}
     
     try:
-        # 根据request.md的映射关系，使用实际的列名
-        # 原mapping: B->A, C->B, F->C, J->E, R->F, S->G, T->H, E->J, K->K
+        # 正确的映射关系：
+        # 输入第2列EMD -> 输出第1列(A)
+        # 输入第3列关联ET -> 输出第2列(B) 
         
-        output_row['A'] = str(input_row.get('EMD', ''))                    # EMD -> A列 (原B列)
-        output_row['B'] = str(input_row.get('旅客姓名', ''))               # 旅客姓名 -> B列 (原C列)
-        output_row['C'] = str(input_row.get('航程', ''))                   # 航程 -> C列 (原F列)
-        # 操作 -> E列的翻译处理 (原J列)
-        operation_value = str(input_row.get('操作', ''))
+        # 第1列(A) - EMD票号，去掉小数
+        emd_value = input_row.get('EMD', '') or input_row.get('EMD 票号', '')
+        output_row['A'] = convert_to_string_no_decimal(emd_value)
+        
+        # 第2列(B) - 客票号码，去掉小数
+        et_value = input_row.get('关联ET', '') or input_row.get('客票号码', '') or input_row.get('ET No.', '')
+        output_row['B'] = convert_to_string_no_decimal(et_value)
+        
+        # 其他列映射
+        output_row['C'] = str(input_row.get('航程', '') or input_row.get('O-D', ''))
+        
+        # 操作 -> E列的翻译处理
+        operation_value = str(input_row.get('操作', '') or input_row.get('Operation', ''))
         output_row['E'] = translate_operation_to_english(operation_value)
-        output_row['F'] = str(input_row.get('工作号', ''))                 # 工作号 -> F列 (原R列)
-        output_row['G'] = str(input_row.get('操作时间', ''))               # 操作时间 -> G列 (原S列)
-        output_row['J'] = str(input_row.get('航班号', ''))                 # 航班号 -> J列 (原E列)
-        output_row['K'] = str(input_row.get('实收金额', ''))               # 实收金额 -> K列 (原K列)
         
-        # 产品类型 -> H列的翻译处理 (原T列)
-        product_type = str(input_row.get('产品类型', ''))
+        # 第6列(F) - 工作号，去掉小数
+        job_no_value = input_row.get('工作号', '') or input_row.get('Job No.', '')
+        output_row['F'] = convert_to_string_no_decimal(job_no_value)
+        
+        output_row['G'] = str(input_row.get('操作时间', '') or input_row.get('Time', ''))
+        output_row['J'] = str(input_row.get('航班号', '') or input_row.get('Flight', ''))
+        output_row['K'] = str(input_row.get('实收金额', '') or input_row.get('Amount', ''))
+        
+        # 产品类型 -> H列的翻译处理
+        product_type = str(input_row.get('产品类型', '') or input_row.get('Product Type', ''))
         output_row['H'] = translate_column_t_to_h(product_type)
         
         # 固定值
