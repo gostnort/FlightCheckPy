@@ -33,7 +33,7 @@ streamlit run ui/main.py
 ```
 纯命令行会带有console messages。
   - 可以运行``start_ui.bat`` 这个是带有内网服务的启动命令。
-  - 可以运行``start_ui.py`` 这个是没有console，提供了任务托盘图标的启动程序。
+  - 可以运行``start_ui.py`` 这个是没有console，提供了内网服务和任务托盘图标的启动程序。
 
 **注意**: 首次运行时会显示登录界面，需要管理员提供的有效凭据。
 
