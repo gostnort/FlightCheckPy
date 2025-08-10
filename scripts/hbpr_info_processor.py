@@ -775,7 +775,7 @@ class CHbpr:
             properties.extend(current_property)
         
         # 提取TKNE数据
-        self.__ExtractTKNE(properties)
+        self.ExtractTKNE(properties)
         
         #删除没用的属性
         properties_to_remove = []
@@ -815,7 +815,7 @@ class CHbpr:
         return 
 
 
-    def __ExtractTKNE(self, properties):
+    def ExtractTKNE(self, properties):
         """提取TKNE数据"""
         for i, property in enumerate(properties):
             if property.startswith("TKNE/"):

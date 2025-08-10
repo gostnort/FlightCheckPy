@@ -385,14 +385,339 @@ def validate_full_hbpr_record(hbpr_content):
     return result
 
 
+def validate_pr_record(pr_content):
+    """
+    验证PR命令记录格式并提取TKNE信息用于匹配现有HBNB记录
+    使用CHbpr的TKNE提取逻辑来确保一致性
+    
+    PR命令格式示例:
+    >PR: CA984/25JUL25*LAX,1    PNR RL  NCQTDD
+    ...passenger details...
+    FBA/1PC ET TKNE/9992753059942/1
+    
+    Args:
+        pr_content: String content to validate (PR command)
+        
+    Returns:
+        dict: {
+            'is_valid': bool,
+            'tkne_numbers': list of TKNE numbers found,
+            'errors': list of error messages,
+            'corrected_content': str - the content with any corrections applied,
+            'is_pr_command': bool - True if this is a PR command
+        }
+    """
+    result = {
+        'is_valid': False,
+        'tkne_numbers': [],
+        'errors': [],
+        'corrected_content': pr_content,
+        'is_pr_command': False
+    }
+    
+    # 检查内容是否为空
+    if not pr_content or not pr_content.strip():
+        result['errors'].append("Input content is empty")
+        return result
+    
+    # 处理特殊字符替换，类似HBPR处理但针对PR命令
+    corrected_content = pr_content
+    
+    # 处理PR命令开头的特殊字符
+    if '>PR:' not in corrected_content:
+        # 查找DLE字符(\x10)在"PR:"前并替换为">"
+        dle_pattern = r'\x10PR:'
+        if re.search(dle_pattern, corrected_content):
+            corrected_content = re.sub(dle_pattern, '>PR:', corrected_content)
+            st.info("ℹ️ Detected DLE character before 'PR:' - automatically replaced with '>'")
+        # 查找DEL字符(\x7f)在"PR:"前并替换为">"
+        elif re.search(r'\x7fPR:', corrected_content):
+            corrected_content = re.sub(r'\x7fPR:', '>PR:', corrected_content)
+            st.info("ℹ️ Detected DEL character before 'PR:' - automatically replaced with '>'")
+        # 检查其他控制字符在"PR:"前
+        elif re.search(r'[\x00-\x1f\x7f]PR:', corrected_content):
+            corrected_content = re.sub(r'[\x00-\x1f\x7f]PR:', '>PR:', corrected_content)
+            st.info("ℹ️ Detected control character before 'PR:' - automatically replaced with '>'")
+        # 处理PR:没有前缀字符的情况
+        elif re.search(r'^PR:', corrected_content, re.MULTILINE):
+            corrected_content = re.sub(r'^PR:', '>PR:', corrected_content, flags=re.MULTILINE)
+            st.info("ℹ️ Detected 'PR:' without prefix - automatically added '>' prefix")
+    
+    # 处理结尾的\x10字符（用户提到PR命令可能以\x10结尾代替>）
+    if corrected_content.endswith('\x10'):
+        corrected_content = corrected_content[:-1] + '>'
+        st.info("ℹ️ Detected DLE character at end - automatically replaced with '>'")
+    
+    result['corrected_content'] = corrected_content
+    
+    # 检查是否包含PR命令格式
+    pr_pattern = r'>PR:\s*[^,\n]*'
+    pr_match = re.search(pr_pattern, corrected_content)
+    
+    if not pr_match:
+        result['errors'].append("Input does not contain valid PR command format (>PR: flight_info)")
+        return result
+    
+    result['is_pr_command'] = True
+    
+    # 使用CHbpr的TKNE提取逻辑
+    tkne_numbers = extract_tkne_using_chbpr_logic(corrected_content)
+    
+    if not tkne_numbers:
+        result['errors'].append("No TKNE numbers found in PR command content using CHbpr extraction logic")
+        return result
+    
+    result['tkne_numbers'] = tkne_numbers
+    result['is_valid'] = True
+    
+    return result
+
+
+def extract_tkne_using_chbpr_logic(content):
+    """
+    从PR内容中直接提取TKNE号码
+    适配PR内容格式，同时保持与CHbpr逻辑的一致性
+    
+    Args:
+        content: PR command content
+        
+    Returns:
+        list: List of TKNE numbers found
+    """
+    tkne_numbers = []
+    
+    try:
+        # 直接使用正则表达式搜索TKNE模式
+        # 匹配格式: ET TKNE/数字/数字 或 TKNE/数字/数字
+        tkne_pattern = r'(?:ET\s+)?TKNE/(\d+)(?:/\d+)?'
+        matches = re.findall(tkne_pattern, content)
+        
+        for match in matches:
+            tkne_numbers.append(match)  # 只返回主要的TKNE号码用于搜索
+        
+        # 如果没有找到，尝试分解内容行来查找TKNE
+        if not tkne_numbers:
+            lines = content.split('\n')
+            for line in lines:
+                # 分割每行的单词来查找TKNE属性
+                words = line.split()
+                for i, word in enumerate(words):
+                    if word.startswith('TKNE/'):
+                        # 使用与CHbpr.ExtractTKNE相同的逻辑
+                        tkne_part = word[5:]  # Remove "TKNE/" prefix
+                        parts = tkne_part.split('/')
+                        if len(parts) >= 2:
+                            tkne_numbers.append(parts[0])  # 只返回主要的TKNE号码
+                        else:
+                            tkne_numbers.append(tkne_part)
+                        break
+        
+        return list(set(tkne_numbers))  # 去重
+        
+    except Exception as e:
+        st.warning(f"Error extracting TKNE from PR content: {str(e)}")
+        return []
+
+
+def find_hbnb_by_tkne(db, tkne_number):
+    """
+    根据TKNE号码查找对应的HBNB记录
+    在tkne字段中搜索匹配的TKNE号码
+    
+    Args:
+        db: HbprDatabase instance
+        tkne_number: TKNE number to search for
+        
+    Returns:
+        dict: {
+            'found': bool,
+            'hbnb_number': int or None,
+            'record_content': str or None
+        }
+    """
+    try:
+        conn = sqlite3.connect(db.db_file)
+        cursor = conn.cursor()
+        
+        # 在tkne字段中查找匹配的TKNE号码
+        # TKNE格式可能是 "9992753059942/1" 或只是 "9992753059942"
+        cursor.execute("""
+            SELECT hbnb_number 
+            FROM hbpr_full_records 
+            WHERE tkne LIKE ? OR tkne = ?
+        """, (f'{tkne_number}/%', tkne_number))
+        
+        results = cursor.fetchall()
+        conn.close()
+        
+        if results:
+            # 如果找到多个，返回第一个
+            hbnb_number = results[0][0]
+            # 通过数据库方法获取记录内容
+            record_content = db.get_hbpr_record(hbnb_number)
+            return {
+                'found': True,
+                'hbnb_number': hbnb_number,
+                'record_content': record_content
+            }
+        else:
+            return {
+                'found': False,
+                'hbnb_number': None,
+                'record_content': None
+            }
+            
+    except Exception as e:
+        st.error(f"Error searching for TKNE {tkne_number}: {str(e)}")
+        return {
+            'found': False,
+            'hbnb_number': None,
+            'record_content': None
+        }
+
+
+def convert_pr_to_hbpr(pr_content, hbnb_number):
+    """
+    将PR命令转换为HBPR命令格式
+    正确处理间距和号码替换，包括控制字符处理
+    
+    Args:
+        pr_content: PR command content 
+        hbnb_number: Target HBNB number to insert
+        
+    Returns:
+        str: Converted HBPR content
+    """
+    lines = pr_content.split('\n')
+    if not lines:
+        return pr_content
+    
+    first_line = lines[0]
+    
+    # 首先：在做任何替换之前，计算原始的逗号到PNR的距离
+    original_comma_pos = first_line.find(',')
+    original_pnr_pos = first_line.find('PNR')
+    original_comma_to_pnr_count = 0
+    
+    if original_comma_pos != -1 and original_pnr_pos != -1:
+        original_comma_to_pnr_count = original_pnr_pos - original_comma_pos
+    
+    # 第一步：处理控制字符并将 PR: 替换为 HBPR:
+    # 检查是否有控制字符开头（如\x10PR:）
+    if '\x10PR:' in first_line:
+        first_line = first_line.replace('\x10PR:', '>HBPR:', 1)
+    elif '>PR:' in first_line:
+        first_line = first_line.replace('>PR:', '>HBPR:', 1)
+    else:
+        # 处理其他可能的格式
+        first_line = re.sub(r'[\x00-\x1f\x7f]PR:', '>HBPR:', first_line)
+    
+    # 第二步：动态计算从逗号到PNR的间距，保持与原始相同的字符数
+    if original_comma_to_pnr_count > 0:
+        # 找到并替换数字部分
+        number_pattern = r',(\d+\w*)'
+        match = re.search(number_pattern, first_line)
+        
+        if match:
+            # 替换数字部分
+            first_line = re.sub(number_pattern, f',{hbnb_number}', first_line, count=1)
+            
+            # 重新找到逗号和PNR位置
+            new_comma_pos = first_line.find(',')
+            new_pnr_pos = first_line.find('PNR')
+            
+            if new_comma_pos != -1 and new_pnr_pos != -1:
+                # 计算需要多少个空格来保持原始的逗号到PNR距离
+                required_spaces = original_comma_to_pnr_count - len(f',{hbnb_number}')
+                required_spaces = max(1, required_spaces)  # 至少1个空格
+                
+                # 构造新的从逗号到PNR的部分
+                new_comma_to_pnr_section = f',{hbnb_number}' + ' ' * required_spaces
+                
+                # 替换原来从逗号到PNR的整个部分
+                before_comma = first_line[:new_comma_pos]
+                after_pnr = first_line[new_pnr_pos:]  # 保留PNR及其后面的内容
+                
+                first_line = before_comma + new_comma_to_pnr_section + after_pnr
+    
+    lines[0] = first_line
+    return '\n'.join(lines)
+
+
+def _process_converted_pr_as_hbpr(db, hbpr_content, target_hbnb):
+    """
+    处理从PR转换的HBPR内容
+    使用CHbpr进行完整的验证和处理
+    
+    Args:
+        db: HbprDatabase instance
+        hbpr_content: Converted HBPR content
+        target_hbnb: Target HBNB number for the record
+    """
+    try:
+        st.info(f"🔄 Converting PR command to HBPR format for HBNB {target_hbnb}")
+        
+        # 使用CHbpr处理转换后的内容
+        chbpr = CHbpr()
+        chbpr.run(hbpr_content)
+        
+        # 验证CHbpr处理结果
+        if chbpr.error_msg.get('Other'):
+            st.error("❌ Critical errors occurred during CHbpr processing:")
+            for error in chbpr.error_msg['Other']:
+                st.error(f"• {error}")
+            return
+        
+        # 验证HBNB号码匹配
+        if chbpr.HbnbNumber != target_hbnb:
+            st.warning(f"⚠️ HBNB number mismatch: target={target_hbnb}, extracted={chbpr.HbnbNumber}")
+            st.info("Proceeding with target HBNB number...")
+        
+        # 备份原有记录
+        backup_success = db.auto_backup_before_replace(target_hbnb)
+        if backup_success:
+            st.info(f"📦 Auto-backed up original record for HBNB {target_hbnb}")
+        
+        # 更新记录内容
+        db.create_full_record(target_hbnb, hbpr_content)
+        st.success(f"✅ Updated HBNB {target_hbnb} with converted HBPR content")
+        
+        # 更新验证结果
+        db.update_with_chbpr_results(chbpr)
+        
+        # 更新missing_numbers表
+        _update_missing_numbers(db)
+        
+        # 设置刷新标志
+        st.session_state.refresh_home = True
+        
+        # 显示处理结果
+        st.subheader("📋 PR → HBPR Conversion Results")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.write("**Target HBNB:**")
+            st.write(f"Number: {target_hbnb}")
+        with col2:
+            st.write("**Conversion:**")
+            st.write("PR Command → HBPR Record")
+        
+        # 显示CHbpr处理结果
+        display_processing_results(chbpr)
+        
+        # 显示转换后的内容预览
+        with st.expander("📄 Converted HBPR Content"):
+            st.text_area("HBPR Content:", hbpr_content, height=200, disabled=True)
+            
+    except Exception as e:
+        st.error(f"❌ Error processing converted PR as HBPR: {str(e)}")
+        raise
+
+
+
 def display_processing_results(chbpr):
     """显示处理结果"""
-    data = chbpr.get_structured_data()
-    
     # 验证状态
-    if chbpr.is_valid():
-        st.success("✅ **Validation: PASSED**")
-    else:
+    if not chbpr.is_valid():
         st.error("❌ **Validation: FAILED**")
     
     # 错误信息
@@ -411,121 +736,228 @@ def display_processing_results(chbpr):
 
 
 def _process_replace_record(db, hbpr_content):
-    """处理记录替换"""
+    """处理记录替换 - 支持HBPR和PR命令"""
     if not hbpr_content.strip():
-        st.warning("⚠️ Please enter HBPR content first.")
+        st.warning("⚠️ Please enter content first.")
         return
     
-    # Step 1: Validate the full HBPR record format
-    st.subheader("🔍 Validating HBPR Record")
-    validation_result = validate_full_hbpr_record(hbpr_content)
+    # 首先检查是否为PR命令
+    pr_validation = validate_pr_record(hbpr_content)
     
-    if not validation_result['is_valid']:
-        st.error("❌ HBPR Record Validation Failed")
-        for error in validation_result['errors']:
-            st.error(f"• {error}")
-        
-        # Show CHbpr errors if available for debugging
-        if validation_result['chbpr_errors']:
-            with st.expander("🔧 Debug Information"):
-                st.write("CHbpr Error Categories:")
-                for category, errors in validation_result['chbpr_errors'].items():
-                    if errors:
-                        st.write(f"**{category}:** {'; '.join(errors)}")
-        return
-    
-    # Validation passed - proceed with processing
-    st.success("✅ HBPR Record Format Validation Passed")
-    
-    try:
-        # Get the corrected content from validation result
-        corrected_content = validation_result['corrected_content']
-        
-        # Create CHbpr instance for final processing (we know it's valid)
-        chbpr = CHbpr()
-        chbpr.run(corrected_content)
-        
-        # Verify no critical errors occurred during processing
-        if chbpr.error_msg.get('Other'):
-            st.error("❌ Critical errors occurred during CHbpr processing:")
-            for error in chbpr.error_msg['Other']:
+    if pr_validation['is_pr_command']:
+        if not pr_validation['is_valid']:
+            st.error("❌ PR Command Validation Failed")
+            for error in pr_validation['errors']:
                 st.error(f"• {error}")
             return
+        # 使用TKNE查找对应的HBNB记录
+        tkne_numbers = pr_validation['tkne_numbers']
+        st.info(f"🔍 Found TKNE numbers: {', '.join(tkne_numbers)}")
+        # 尝试找到匹配的HBNB记录
+        matched_hbnb = None
+        for tkne in tkne_numbers:
+            match_result = find_hbnb_by_tkne(db, tkne)
+            if match_result['found']:
+                matched_hbnb = match_result['hbnb_number']
+                break
+        if not matched_hbnb:
+            st.error("❌ No existing HBNB record found with matching TKNE numbers")
+            st.info("💡 PR commands can only update existing HBNB records. Please create the HBNB record first.")
+            return
         
-        # Process the record
-        _process_record_common(db, chbpr, corrected_content, is_duplicate=False)
+        # 转换PR命令为HBPR格式并处理
+        try:
+            corrected_content = pr_validation['corrected_content']
+            # 将PR命令转换为HBPR命令格式
+            hbpr_content = convert_pr_to_hbpr(corrected_content, matched_hbnb)
+            
+            # 验证航班信息匹配（PR转换后也需要验证）
+            if not _validate_flight_info(db, hbpr_content):
+                return
+            
+            # 使用CHbpr处理转换后的内容
+            _process_converted_pr_as_hbpr(db, hbpr_content, matched_hbnb)
+            
+        except Exception as e:
+            st.error(f"❌ Error processing PR record: {str(e)}")
+            st.error(traceback.format_exc())
+    
+    else:
+        # 处理HBPR命令（原有逻辑）
+        validation_result = validate_full_hbpr_record(hbpr_content)
         
-    except Exception as e:
-        st.error(f"❌ Error processing full record: {str(e)}")
-        st.error(traceback.format_exc())
+        if not validation_result['is_valid']:
+            st.error("❌ HBPR Record Validation Failed")
+            for error in validation_result['errors']:
+                st.error(f"• {error}")
+            
+            # Show CHbpr errors if available for debugging
+            if validation_result['chbpr_errors']:
+                with st.expander("🔧 Debug Information"):
+                    st.write("CHbpr Error Categories:")
+                    for category, errors in validation_result['chbpr_errors'].items():
+                        if errors:
+                            st.write(f"**{category}:** {'; '.join(errors)}")
+            return
+        try:
+            # Get the corrected content from validation result
+            corrected_content = validation_result['corrected_content']
+            # Create CHbpr instance for final processing (we know it's valid)
+            chbpr = CHbpr()
+            chbpr.run(corrected_content)
+            # Verify no critical errors occurred during processing
+            if chbpr.error_msg.get('Other'):
+                st.error("❌ Critical errors occurred during CHbpr processing:")
+                for error in chbpr.error_msg['Other']:
+                    st.error(f"• {error}")
+                return
+            # Process the record
+            _process_record_common(db, chbpr, corrected_content, is_duplicate=False)
+        except Exception as e:
+            st.error(f"❌ Error processing full record: {str(e)}")
+            st.error(traceback.format_exc())
 
 
 def _process_duplicate_record(db, hbpr_content):
-    """处理重复记录创建"""
+    """处理重复记录创建 - 支持HBPR和PR命令"""
     if not hbpr_content.strip():
-        st.warning("⚠️ Please enter HBPR content first.")
+        st.warning("⚠️ Please enter content first.")
         return
     
-    # First validate and get corrected content
-    validation_result = validate_full_hbpr_record(hbpr_content)
+    # 首先检查是否为PR命令
+    pr_validation = validate_pr_record(hbpr_content)
     
-    if not validation_result['is_valid']:
-        st.error("❌ HBPR Record Validation Failed")
-        for error in validation_result['errors']:
-            st.error(f"• {error}")
-        return
-    
-    try:
-        # Get the corrected content from validation result
-        corrected_content = validation_result['corrected_content']
+    if pr_validation['is_pr_command']:
+        # 处理PR命令创建重复记录
+        st.subheader("🔍 Validating PR Command for Duplicate")
+        if not pr_validation['is_valid']:
+            st.error("❌ PR Command Validation Failed")
+            for error in pr_validation['errors']:
+                st.error(f"• {error}")
+            return
+        # 使用TKNE查找对应的HBNB记录
+        tkne_numbers = pr_validation['tkne_numbers']
+        st.info(f"🔍 Found TKNE numbers: {', '.join(tkne_numbers)}")  
+        # 尝试找到匹配的HBNB记录
+        matched_hbnb = None
+        for tkne in tkne_numbers:
+            match_result = find_hbnb_by_tkne(db, tkne)
+            if match_result['found']:
+                matched_hbnb = match_result['hbnb_number']
+                break
         
-        # 处理HBPR记录
-        chbpr = CHbpr()
-        chbpr.run(corrected_content)
-        
-        # 获取HBNB的simple_record和full_record信息
-        hbnb_exists = db.check_hbnb_exists(chbpr.HbnbNumber)
-        
-        # 显示处理前的状态信息
-        st.subheader("📋 Duplicate Record Processing Information")
-        _show_processing_info(db, chbpr.HbnbNumber, hbnb_exists)
-        
-        # 验证航班信息匹配
-        if not _validate_flight_info(db, corrected_content):
+        if not matched_hbnb:
+            st.error("❌ No existing HBNB record found with matching TKNE numbers")
+            st.info("💡 PR commands can only update/duplicate existing HBNB records. Please create the HBNB record first.")
             return
         
-        # 检查原始记录是否存在
-        if not hbnb_exists['full_record']:
-            st.error(f"❌ Cannot create duplicate: No full record exists for HBNB {chbpr.HbnbNumber}")
-            st.info("💡 Please create the original full record first using 'Replace the Record' button.")
+        # 转换PR命令为HBPR格式并创建重复记录
+        try:
+            corrected_content = pr_validation['corrected_content']
+            
+            # 检查原始记录是否存在
+            hbnb_exists = db.check_hbnb_exists(matched_hbnb)
+            if not hbnb_exists['full_record']:
+                st.error(f"❌ Cannot create duplicate: No full record exists for HBNB {matched_hbnb}")
+                st.info("💡 Please create the original full record first using 'Replace the Record' button.")
+                return
+            
+            # 将PR命令转换为HBPR命令格式
+            hbpr_content = convert_pr_to_hbpr(corrected_content, matched_hbnb)
+            
+            # 验证航班信息匹配（PR转换后也需要验证）
+            if not _validate_flight_info(db, hbpr_content):
+                return
+            
+            # 使用CHbpr处理转换后的内容
+            chbpr = CHbpr()
+            chbpr.run(hbpr_content)
+            
+            # 创建重复记录
+            db.create_duplicate_record(matched_hbnb, matched_hbnb, hbpr_content)
+            st.success(f"✅ Created duplicate record for HBNB {matched_hbnb} (converted from PR)")
+            
+            # 更新验证结果
+            db.update_with_chbpr_results(chbpr)
+            
+            # 设置刷新标志
+            st.session_state.refresh_home = True
+            
+            # 显示创建信息和处理结果
+            st.subheader("📋 Duplicate Creation Information")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.write("**Original HBNB:**")
+                st.write(f"Number: {matched_hbnb}")
+            with col2:
+                st.write("**Source Type:**")
+                st.write("PR Command → HBPR Record")
+            
+            # 显示CHbpr处理结果
+            display_processing_results(chbpr)
+            
+        except Exception as e:
+            st.error(f"❌ Error creating PR duplicate record: {str(e)}")
+            st.error(traceback.format_exc())
+    
+    else:
+        # 处理HBPR命令（原有逻辑）
+        validation_result = validate_full_hbpr_record(hbpr_content)
+        
+        if not validation_result['is_valid']:
+            st.error("❌ HBPR Record Validation Failed")
+            for error in validation_result['errors']:
+                st.error(f"• {error}")
             return
         
-        # 创建重复记录
-        db.create_duplicate_record(chbpr.HbnbNumber, chbpr.HbnbNumber, corrected_content)
-        st.success(f"✅ Created duplicate record for HBNB {chbpr.HbnbNumber}")
-        
-        # 更新验证结果
-        db.update_with_chbpr_results(chbpr)
-        
-        # 更新missing_numbers表
-        _update_missing_numbers(db)
-        
-        st.success("✅ Duplicate record processed and stored!")
-        display_processing_results(chbpr)
-        
-        # 设置刷新标志
-        st.session_state.refresh_home = True
-        
-    except Exception as e:
-        st.error(f"❌ Error processing duplicate record: {str(e)}")
-        st.error(traceback.format_exc())
+        try:
+            # Get the corrected content from validation result
+            corrected_content = validation_result['corrected_content']
+            
+            # 处理HBPR记录
+            chbpr = CHbpr()
+            chbpr.run(corrected_content)
+            
+            # 获取HBNB的simple_record和full_record信息
+            hbnb_exists = db.check_hbnb_exists(chbpr.HbnbNumber)
+            
+            # 显示处理前的状态信息
+            st.subheader("📋 Duplicate Record Processing Information")
+            _show_processing_info(db, chbpr.HbnbNumber, hbnb_exists)
+            
+            # 验证航班信息匹配
+            if not _validate_flight_info(db, corrected_content):
+                return
+            
+            # 检查原始记录是否存在
+            if not hbnb_exists['full_record']:
+                st.error(f"❌ Cannot create duplicate: No full record exists for HBNB {chbpr.HbnbNumber}")
+                st.info("💡 Please create the original full record first using 'Replace the Record' button.")
+                return
+            
+            # 创建重复记录
+            db.create_duplicate_record(chbpr.HbnbNumber, chbpr.HbnbNumber, corrected_content)
+            st.success(f"✅ Created duplicate record for HBNB {chbpr.HbnbNumber}")
+            
+            # 更新验证结果
+            db.update_with_chbpr_results(chbpr)
+            
+            # 更新missing_numbers表
+            _update_missing_numbers(db)
+            
+            st.success("✅ Duplicate record processed and stored!")
+            display_processing_results(chbpr)
+            
+            # 设置刷新标志
+            st.session_state.refresh_home = True
+            
+        except Exception as e:
+            st.error(f"❌ Error processing duplicate record: {str(e)}")
+            st.error(traceback.format_exc())
 
 
 def _process_record_common(db, chbpr, hbpr_content, is_duplicate=False):
     """通用记录处理逻辑"""
-    # 获取当前数据库的flight_info
-    flight_info = db.get_flight_info()
-    
     # 获取HBNB的simple_record和full_record信息
     hbnb_exists = db.check_hbnb_exists(chbpr.HbnbNumber)
     
