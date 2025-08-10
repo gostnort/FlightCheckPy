@@ -39,8 +39,29 @@ def show_excel_processor():
     
     if uploaded_file is not None:
         try:
-            # 正确读取Excel文件，跳过标题行
-            df_input = pd.read_excel(uploaded_file, skiprows=1)
+            # 正确读取Excel文件，跳过标题行，支持XLS和XLSX格式
+            file_ext = uploaded_file.name.lower().split('.')[-1]
+            
+            if file_ext == 'xls':
+                # 对于XLS格式，明确指定引擎
+                try:
+                    df_input = pd.read_excel(uploaded_file, skiprows=1, engine='xlrd')
+                    st.info("📊 检测到XLS格式文件，使用xlrd引擎读取")
+                except ImportError:
+                    st.error("❌ 缺少xlrd包，无法读取XLS文件。请安装：pip install xlrd")
+                    return
+                except Exception as e:
+                    st.error(f"❌ 读取XLS文件失败: {str(e)}")
+                    return
+            else:
+                # 对于XLSX格式，使用默认引擎
+                try:
+                    df_input = pd.read_excel(uploaded_file, skiprows=1, engine='openpyxl')
+                    st.info("📊 检测到XLSX格式文件，使用openpyxl引擎读取")
+                except Exception as e:
+                    st.error(f"❌ 读取XLSX文件失败: {str(e)}")
+                    return
+            
             st.success(f"✅ 成功读取文件: {uploaded_file.name}")
             
             # 检查必要的列是否存在
@@ -133,14 +154,12 @@ def process_excel_file(df_input: pd.DataFrame, db: HbprDatabase) -> Tuple[Option
                 output_row = create_base_output_row(row)
                 
                 # 处理CKIN CCRD信息
-                ckin_processed = False
                 for hbnb_record in hbnb_records:
                     if has_ckin_ccrd(hbnb_record):
                         ckin_data = parse_ckin_ccrd(hbnb_record['ckin_msg'])
                         if ckin_data['success']:
                             # 成功解析CKIN CCRD，添加到输出行
                             output_row.update(ckin_data['data'])
-                            ckin_processed = True
                             
                             # 从hbnb_list中移除已处理的记录
                             hbnb_list = [h for h in hbnb_list if h['hbnb_number'] != hbnb_record['hbnb_number']]
@@ -413,7 +432,7 @@ def parse_ckin_ccrd(ckin_msg: str) -> Dict:
         # 如果没有找到符合格式的CCRD，但有CCRD内容，返回失败以便记录
         return {'success': False, 'data': {}}
         
-    except Exception as e:
+    except Exception:
         return {'success': False, 'data': {}}
 
 
@@ -627,16 +646,23 @@ def generate_output_excel(result_df: pd.DataFrame, unprocessed_records: List[Dic
         if 'RECEIPT' in wb.sheetnames:
             ws_receipt = wb['RECEIPT']
             
-            # 从SUM表G11获取现金金额并转换为英文
-            if 'SUM' in wb.sheetnames:
-                ws_sum_ref = wb['SUM']
-                cash_amount = ws_sum_ref.cell(row=11, column=7).value  # G11
-                
-                if cash_amount and isinstance(cash_amount, (int, float)) and cash_amount > 0:
-                    # 转换数字为英文
-                    english_amount = number_to_english(cash_amount)
-                    # 写入Receipt表的C8位置
-                    ws_receipt.cell(row=8, column=3, value=english_amount)  # C8位置
+            # 计算现金总额(L列是第12列，现金数据)
+            cash_total = 0.0
+            for _, row in result_df.iterrows():
+                l_value = row.get('L', '')
+                if l_value and str(l_value).strip() and str(l_value).strip() != 'nan':
+                    try:
+                        cash_amount = float(str(l_value).strip())
+                        cash_total += cash_amount
+                    except ValueError:
+                        continue
+            
+            if cash_total > 0:
+                # 转换数字为英文
+                english_amount = number_to_english(cash_total)
+                # 写入Receipt表的C8位置
+                ws_receipt.cell(row=8, column=3, value=english_amount)  # C8位置
+                st.info(f"💰 已将现金总额 ${cash_total:.2f} 转换为英文写入Receipt表C8")
         
         # 保存到新文件
         wb.save(output_file)
