@@ -27,12 +27,18 @@ FlightCheckPy/
 ├── ui/                         # Web UI components
 │   ├── main.py                 # Main UI coordinator with Windows integration
 │   ├── login_page.py           # Authentication interface
-│   ├── home_page.py            # System overview (simplified metrics)
-│   ├── database_page.py        # Database management
-│   ├── process_records_page.py # Record processing interface
-│   ├── view_results_page.py    # Results viewing with statistics and accepted passengers
-│   ├── settings_page.py        # System configuration
-│   └── common.py               # Shared utilities with enhanced database discovery
+│   ├── home_page.py            # System overview with real-time statistics
+│   ├── database_page.py        # Database management and construction
+│   ├── process_records_page.py # Record processing interface with sub-tabs
+│   ├── command_analysis_page.py # Command processing and analysis
+│   ├── settings_page.py        # System configuration and about info
+│   ├── common.py               # Shared utilities with enhanced database discovery
+│   └── process_records/        # Sub-modules for record processing
+│       ├── process_all.py      # Batch processing functionality
+│       ├── add_edit_record.py  # Single record editing
+│       ├── simple_record.py    # Simple record creation
+│       ├── sort_records.py     # Record viewing and filtering
+│       └── export_data.py      # Data export functionality
 ├── databases/                  # Default database storage directory
 └── resources/                  # Documentation and resources
 ```
@@ -649,7 +655,7 @@ from ui.login_page import show_login_page
 from ui.home_page import show_home_page
 from ui.database_page import show_database_management
 from ui.process_records_page import show_process_records_page
-from ui.view_results_page import show_view_results_page
+from ui.command_analysis_page import show_command_analysis
 from ui.settings_page import show_settings
 from scripts.hbpr_info_processor import HbprDatabase
 ```
@@ -993,18 +999,20 @@ main()
 │   ├── filedialog.askdirectory()
 │   └── Custom folder path persistence
 ├── Page navigation and routing
-│   ├── show_home_page() (simplified metrics)
+│   ├── show_home_page() (real-time system overview)
 │   ├── show_database_management()
 │   │   └── build_database_ui()
 │   ├── show_process_records_page()
-│   │   ├── Database selection
-│   │   ├── HBPR processing
-│   │   └── Manual input handling
-│   ├── show_view_results_page()
-│   │   ├── show_statistics() (with TKNE metrics)
-│   │   ├── show_records_table()
-│   │   ├── show_accepted_passengers()
-│   │   └── show_export_data()
+│   │   ├── show_process_all_records() (batch processing)
+│   │   ├── show_add_edit_record() (single record editing)
+│   │   ├── show_simple_record() (simple record creation)
+│   │   ├── show_sort_records() (record viewing and filtering)
+│   │   └── show_export_data() (data export)
+│   ├── show_command_analysis_page()
+│   │   ├── import_commands() (command file processing)
+│   │   ├── add_edit_command_data() (manual command entry)
+│   │   ├── view_command_data() (command viewing)
+│   │   └── command_statistics() (command stats)
 │   └── show_settings()
 └── File cleanup and logout handling
 ```
