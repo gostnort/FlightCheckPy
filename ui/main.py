@@ -36,7 +36,7 @@ def setup_navigation_highlighting():
     }
     section[data-testid="stSidebar"] button[kind="primary"]:hover {
         background-color: #98FB98 !important;
-        border-color:    !important;
+        border-color: #32CD32 !important;
         color: #000000 !important;
     }
     /* Also target buttons with the primary class */
@@ -50,6 +50,27 @@ def setup_navigation_highlighting():
         background-color: #98FB98 !important;
         border-color: #228B22 !important;
         color: #000000 !important;
+    }
+    
+    /* Ensure main content area can scroll properly and show all content */
+    .main .block-container {
+        padding-bottom: 5rem !important;
+        max-width: none !important;
+    }
+    
+    /* Ensure proper height for main content */
+    section[data-testid="stAppViewContainer"] > .main {
+        min-height: 100vh !important;
+        padding-bottom: 5rem !important;
+    }
+    
+    /* Fix any potential height constraints */
+    .stApp > header {
+        background: transparent;
+    }
+    
+    .stApp {
+        overflow-y: auto !important;
     }
     </style>
     """, unsafe_allow_html=True)

@@ -88,7 +88,7 @@ def remove_vertical_block_spacing():
     /* Remove spacing from stMainBlockContainer but keep element gaps */
     [data-testid="stMainBlockContainer"] {
         padding-top: 0 !important;
-        padding-bottom: 1rem !important;
+        padding-bottom: 5rem !important;
         margin-top: 0 !important;
     }
     
@@ -139,12 +139,34 @@ def remove_vertical_block_spacing():
     .stApp {
         padding-top: 0 !important;
         margin-top: 0 !important;
+        min-height: 100vh !important;
+        height: auto !important;
+        overflow-y: visible !important;
     }
     
-    /* Ensure main content doesn't overlap */
+    /* Ensure main content doesn't overlap and can scroll properly */
     .stApp > .main {
         padding-top: 1rem !important;
         margin-top: 0 !important;
+        padding-bottom: 5rem !important;
+        min-height: calc(100vh - 3rem) !important;
+        height: auto !important;
+        overflow-y: visible !important;
+    }
+    
+    /* Ensure the app view container allows full content display */
+    section[data-testid="stAppViewContainer"] {
+        height: auto !important;
+        min-height: 100vh !important;
+        overflow-y: visible !important;
+    }
+    
+    /* Make sure the main content area is not height constrained */
+    section[data-testid="stAppViewContainer"] > .main {
+        height: auto !important;
+        min-height: calc(100vh - 4rem) !important;
+        overflow-y: visible !important;
+        padding-bottom: 5rem !important;
     }
     
     /* Ensure buttons have proper spacing */

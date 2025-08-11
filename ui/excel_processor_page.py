@@ -17,6 +17,29 @@ def show_excel_processor():
     """显示Excel处理页面"""
     apply_global_settings()
     
+    # Additional CSS to ensure bottom content is visible
+    st.markdown("""
+    <style>
+    /* Ensure Excel processor page content is fully visible */
+    .main .block-container {
+        padding-bottom: 6rem !important;
+        margin-bottom: 2rem !important;
+    }
+    
+    /* Ensure download buttons and success messages are visible */
+    .stSuccess, .stDownloadButton {
+        margin-bottom: 1rem !important;
+    }
+    
+    /* Make sure the entire page content is scrollable */
+    .stApp {
+        height: auto !important;
+        min-height: 100vh !important;
+        overflow-y: auto !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
     # 检查数据库状态
     selected_db_file = get_current_database()
     if not selected_db_file:
@@ -145,7 +168,11 @@ def process_excel_file(df_input: pd.DataFrame, db: HbprDatabase) -> Tuple[Option
             if operation in ['废票', 'Void']:
                 emd_number = str(row.get('EMD', '') or row.get('EMD 票号', '')).strip()
                 if emd_number and emd_number != 'nan':
-                    void_emds.add(convert_to_string_no_decimal(emd_number))
+                    void_emd_clean = convert_to_string_no_decimal(emd_number)
+                    void_emds.add(void_emd_clean)
+        # 如果发现废票EMD，显示警告
+        if void_emds:
+            st.warning(f"⚠️ 发现废票EMD: {list(void_emds)}，这些EMD的所有记录将被设为0")
         # 处理每一行输入数据
         for index, row in df_input.iterrows():
             try:
@@ -157,27 +184,30 @@ def process_excel_file(df_input: pd.DataFrame, db: HbprDatabase) -> Tuple[Option
                 hbnb_records = find_records_by_tkne(db, tkne)
                 # 创建基础输出行
                 output_row = create_base_output_row(row)
-                # 检查当前EMD是否为废票EMD，如果是则第4列设为0
+                # 检查当前EMD是否为废票EMD
                 current_emd = convert_to_string_no_decimal(str(row.get('EMD', '') or row.get('EMD 票号', '')))
                 if current_emd in void_emds:
                     output_row['D'] = 0  # 废票EMD的第4列设为0
-                # 处理CKIN CCRD信息
-                for hbnb_record in hbnb_records:
-                    if has_ckin_ccrd(hbnb_record):
-                        ckin_data = parse_ckin_ccrd(hbnb_record['ckin_msg'])
-                        if ckin_data['success']:
-                            # 成功解析CKIN CCRD，添加到输出行
-                            output_row.update(ckin_data['data'])
-                            # 从hbnb_list中移除已处理的记录
-                            hbnb_list = [h for h in hbnb_list if h['hbnb_number'] != hbnb_record['hbnb_number']]
-                            break
-                        else:
-                            # 解析失败，添加到未处理记录
-                            unprocessed_records.append({
-                                'name': hbnb_record.get('name', '未知'),
-                                'tkne': tkne,
-                                'ckin_ccrd': hbnb_record['ckin_msg']
-                            })
+                    output_row['K'] = 0  # 废票EMD的实收金额设为0
+                    # 废票EMD不处理CKIN CCRD，直接跳过
+                else:
+                    # 只有非废票EMD才处理CKIN CCRD信息
+                    for hbnb_record in hbnb_records:
+                        if has_ckin_ccrd(hbnb_record):
+                            ckin_data = parse_ckin_ccrd(hbnb_record['ckin_msg'])
+                            if ckin_data['success']:
+                                # 成功解析CKIN CCRD，添加到输出行
+                                output_row.update(ckin_data['data'])
+                                # 从hbnb_list中移除已处理的记录
+                                hbnb_list = [h for h in hbnb_list if h['hbnb_number'] != hbnb_record['hbnb_number']]
+                                break
+                            else:
+                                # 解析失败，添加到未处理记录
+                                unprocessed_records.append({
+                                    'name': hbnb_record.get('name', '未知'),
+                                    'tkne': tkne,
+                                    'ckin_ccrd': hbnb_record['ckin_msg']
+                                })
                 output_data.append(output_row) 
             except Exception as e:
                 st.warning(f"⚠️ 处理第 {index+1} 行时出错: {str(e)}")
@@ -307,6 +337,20 @@ def convert_to_string_no_decimal(value) -> str:
         return str(value) if value else ""
 
 
+def extract_first_line(value) -> str:
+    """提取多行文本的第一行"""
+    try:
+        if not value or str(value).strip() == '' or str(value) == 'nan':
+            return ""
+        
+        # 处理换行符，提取第一行
+        value_str = str(value).strip()
+        first_line = value_str.split('\n')[0].strip()
+        return first_line
+    except Exception:
+        return str(value) if value else ""
+
+
 def create_base_output_row(input_row: pd.Series) -> Dict:
     """创建基础输出行，包含列映射和固定值"""
     # 根据用户截图的正确映射关系
@@ -326,7 +370,9 @@ def create_base_output_row(input_row: pd.Series) -> Dict:
         output_row['B'] = convert_to_string_no_decimal(et_value)
         
         # 其他列映射
-        output_row['C'] = str(input_row.get('航程', '') or input_row.get('O-D', ''))
+        # 第3列(C) - 航程，处理换行保留第一行
+        route_value = input_row.get('航程', '') or input_row.get('O-D', '')
+        output_row['C'] = extract_first_line(route_value)
         
         # 操作 -> E列的翻译处理
         operation_value = str(input_row.get('操作', '') or input_row.get('Operation', ''))
@@ -337,7 +383,11 @@ def create_base_output_row(input_row: pd.Series) -> Dict:
         output_row['F'] = convert_to_string_no_decimal(job_no_value)
         
         output_row['G'] = str(input_row.get('操作时间', '') or input_row.get('Time', ''))
-        output_row['J'] = str(input_row.get('航班号', '') or input_row.get('Flight', ''))
+        
+        # 第10列(J) - 航班号，处理换行保留第一行
+        flight_value = input_row.get('航班号', '') or input_row.get('Flight', '')
+        output_row['J'] = extract_first_line(flight_value)
+        
         output_row['K'] = str(input_row.get('实收金额', '') or input_row.get('Amount', ''))
         
         # 产品类型 -> H列的翻译处理
@@ -683,6 +733,7 @@ def generate_output_excel(result_df: pd.DataFrame, unprocessed_records: List[Dic
         # 处理Receipt工作表
         if 'RECEIPT' in wb.sheetnames:
             ws_receipt = wb['RECEIPT']
+            
             # 计算现金总额(L列是第12列，现金数据)
             cash_total = 0.0
             for _, row in result_df.iterrows():
@@ -693,11 +744,29 @@ def generate_output_excel(result_df: pd.DataFrame, unprocessed_records: List[Dic
                         cash_total += cash_amount
                     except ValueError:
                         continue
+            
             if cash_total > 0:
                 # 转换数字为英文
                 english_amount = number_to_english(cash_total)
                 # 写入Receipt表的C8位置
                 ws_receipt.cell(row=8, column=3, value=english_amount)  # C8位置
+            
+            # 处理Receipt表的departure和flight信息
+            if len(result_df) > 0:
+                # 从第一行数据获取航程和航班号
+                route = result_df.iloc[0].get('C', '')  # C列是航程
+                flight = result_df.iloc[0].get('J', '')  # J列是航班号
+                
+                if route and '-' in route:
+                    # 提取departure（航程的前三个字母）
+                    departure = route.split('-')[0][:3].upper()
+                    # H17写入departure
+                    ws_receipt.cell(row=17, column=8, value=departure)  # H17
+                    
+                    # C14写入组合信息: {departure} + {flight_number} + "EMD REPORT"
+                    if flight:
+                        report_title = f"{departure} {flight} EMD REPORT"
+                        ws_receipt.cell(row=14, column=3, value=report_title)  # C14
         # 保存到新文件
         wb.save(output_file)
         wb.close()
