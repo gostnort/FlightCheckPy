@@ -72,7 +72,7 @@ def show_command_analysis():
             st.session_state.confirm_clear = False
             st.session_state.current_command_tab = 'import'
         show_import_commands(processor)
-    elif selected_tab == "✏️ Add/Edit Data":
+    elif selected_tab == "✒️ Add/Edit Data":
         # 切换到此标签页时重置通用确认标志
         if st.session_state.get('current_command_tab') != 'edit':
             st.session_state.confirm_clear = False

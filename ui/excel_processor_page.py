@@ -13,8 +13,6 @@ from ui.common import apply_global_settings, get_current_database
 from scripts.hbpr_info_processor import HbprDatabase
 
 
-
-
 def show_excel_processor():
     """显示Excel处理页面"""
     apply_global_settings()
@@ -25,10 +23,7 @@ def show_excel_processor():
         st.error("❌ 未选择数据库!")
         st.info("💡 请从侧边栏选择数据库或先创建数据库。")
         return
-    
     db = HbprDatabase(selected_db_file)
-    st.success(f"✅ 数据库已连接: {os.path.basename(selected_db_file)}")
-    
     # 文件上传区域
     st.subheader("📁 上传Excel文件")
     uploaded_file = st.file_uploader(
@@ -46,7 +41,6 @@ def show_excel_processor():
                 # 对于XLS格式，明确指定引擎
                 try:
                     df_input = pd.read_excel(uploaded_file, skiprows=1, engine='xlrd')
-                    st.info("📊 检测到XLS格式文件，使用xlrd引擎读取")
                 except ImportError:
                     st.error("❌ 缺少xlrd包，无法读取XLS文件。请安装：pip install xlrd")
                     return
@@ -61,9 +55,6 @@ def show_excel_processor():
                 except Exception as e:
                     st.error(f"❌ 读取XLSX文件失败: {str(e)}")
                     return
-            
-            st.success(f"✅ 成功读取文件: {uploaded_file.name}")
-            
             # 检查必要的列是否存在 (支持中英文列名)
             available_columns = list(df_input.columns)
             missing_essential = []
@@ -146,9 +137,15 @@ def process_excel_file(df_input: pd.DataFrame, db: HbprDatabase) -> Tuple[Option
         unprocessed_records = []
         
         # 获取所有包含CKIN CCRD的HBNB记录
-        hbnb_list = get_all_ckin_ccrd_hbnb(db)
-        st.info(f"📊 数据库中找到 {len(hbnb_list)} 个包含CKIN CCRD的记录")
-        
+        hbnb_list = get_all_ckin_ccrd_hbnb(db)  
+        # 第一步：找出所有废票(Void)的EMD号码
+        void_emds = set()
+        for index, row in df_input.iterrows():
+            operation = str(row.get('操作', '') or row.get('Operation', '')).strip()
+            if operation in ['废票', 'Void']:
+                emd_number = str(row.get('EMD', '') or row.get('EMD 票号', '')).strip()
+                if emd_number and emd_number != 'nan':
+                    void_emds.add(convert_to_string_no_decimal(emd_number))
         # 处理每一行输入数据
         for index, row in df_input.iterrows():
             try:
@@ -156,13 +153,14 @@ def process_excel_file(df_input: pd.DataFrame, db: HbprDatabase) -> Tuple[Option
                 tkne = str(row.get('关联ET', '')).strip()
                 if not tkne or tkne == 'nan' or tkne == '':
                     continue
-                
                 # 在数据库中查找对应的TKNE记录
                 hbnb_records = find_records_by_tkne(db, tkne)
-                
                 # 创建基础输出行
                 output_row = create_base_output_row(row)
-                
+                # 检查当前EMD是否为废票EMD，如果是则第4列设为0
+                current_emd = convert_to_string_no_decimal(str(row.get('EMD', '') or row.get('EMD 票号', '')))
+                if current_emd in void_emds:
+                    output_row['D'] = 0  # 废票EMD的第4列设为0
                 # 处理CKIN CCRD信息
                 for hbnb_record in hbnb_records:
                     if has_ckin_ccrd(hbnb_record):
@@ -170,7 +168,6 @@ def process_excel_file(df_input: pd.DataFrame, db: HbprDatabase) -> Tuple[Option
                         if ckin_data['success']:
                             # 成功解析CKIN CCRD，添加到输出行
                             output_row.update(ckin_data['data'])
-                            
                             # 从hbnb_list中移除已处理的记录
                             hbnb_list = [h for h in hbnb_list if h['hbnb_number'] != hbnb_record['hbnb_number']]
                             break
@@ -181,9 +178,7 @@ def process_excel_file(df_input: pd.DataFrame, db: HbprDatabase) -> Tuple[Option
                                 'tkne': tkne,
                                 'ckin_ccrd': hbnb_record['ckin_msg']
                             })
-                
-                output_data.append(output_row)
-                
+                output_data.append(output_row) 
             except Exception as e:
                 st.warning(f"⚠️ 处理第 {index+1} 行时出错: {str(e)}")
                 continue
@@ -401,7 +396,8 @@ def translate_operation_to_english(value: str) -> str:
     
     # 操作翻译映射
     operation_translation = {
-        '出票': 'Issue'
+        '出票': 'Issue',
+        '废票': 'Void',
     }
     
     return operation_translation.get(value_str, value_str)
@@ -573,7 +569,6 @@ def get_output_file_path(filename: str) -> str:
     
     if os.path.exists(downloads_path) and os.access(downloads_path, os.W_OK):
         output_path = os.path.join(downloads_path, filename)
-        st.info(f"📁 文件将保存到: Downloads/{filename}")
         return output_path
     
     # 如果Downloads不存在或无法访问，尝试创建C:\temp
@@ -627,8 +622,13 @@ def generate_output_excel(result_df: pd.DataFrame, unprocessed_records: List[Dic
             for col_idx, header in enumerate(headers, 1):
                 value = row.get(header, '')
                 
-                # 特殊处理数字列 (K=11, L=12, M=13, N=14)，但不包括O=15列
-                if col_idx in [11, 12, 13, 14]:  # K, L, M, N列需要数字格式
+                # 特殊处理列格式
+                if col_idx == 4:  # D列：根据是否废票EMD决定写1还是0
+                    if str(value) == "0":
+                        ws_emd.cell(row=row_idx, column=col_idx, value=0)  # 废票EMD写数字0
+                    else:
+                        ws_emd.cell(row=row_idx, column=col_idx, value=1)  # 正常EMD写数字1
+                elif col_idx in [11, 12, 13, 14]:  # K, L, M, N列需要数字格式
                     try:
                         # 如果是数字，转换为float；如果是空或非数字，设为0
                         if value and str(value).strip() and str(value) != 'nan':
@@ -683,7 +683,6 @@ def generate_output_excel(result_df: pd.DataFrame, unprocessed_records: List[Dic
         # 处理Receipt工作表
         if 'RECEIPT' in wb.sheetnames:
             ws_receipt = wb['RECEIPT']
-            
             # 计算现金总额(L列是第12列，现金数据)
             cash_total = 0.0
             for _, row in result_df.iterrows():
@@ -694,18 +693,14 @@ def generate_output_excel(result_df: pd.DataFrame, unprocessed_records: List[Dic
                         cash_total += cash_amount
                     except ValueError:
                         continue
-            
             if cash_total > 0:
                 # 转换数字为英文
                 english_amount = number_to_english(cash_total)
                 # 写入Receipt表的C8位置
                 ws_receipt.cell(row=8, column=3, value=english_amount)  # C8位置
-                st.info(f"💰 已将现金总额 ${cash_total:.2f} 转换为英文写入Receipt表C8")
-        
         # 保存到新文件
         wb.save(output_file)
         wb.close()
-        
         return output_file
         
     except Exception as e:
