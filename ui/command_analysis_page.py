@@ -42,7 +42,7 @@ def show_command_analysis():
     processor = CommandProcessor(selected_db)
     
     # 定义标签页选项
-    tab_options = ["📥 Import Commands", "✒️ Add/Edit Data", "📊 View Data", "🗃️ Statistics"]
+    tab_options = ["📥 Import Commands", "✒️ Add/Edit Data", "📊 View Data", "🗃️ Maintain"]
     
     # 初始化默认选择（如果还没有设置）
     if "command_tab_selector" not in st.session_state:
@@ -84,7 +84,7 @@ def show_command_analysis():
             st.session_state.confirm_clear = False
             st.session_state.current_command_tab = 'view'
         show_view_data(processor)
-    elif selected_tab == "🗃️ Statistics":
+    elif selected_tab == "🗃️ Maintain":
         # 切换到此标签页时重置通用确认标志（不影响专用的commands确认）
         if st.session_state.get('current_command_tab') != 'statistics':
             st.session_state.confirm_clear = False
@@ -265,6 +265,102 @@ def show_view_data(processor: CommandProcessor):
         st.text(traceback.format_exc())
 
 
+def show_manual_command_input(processor: CommandProcessor, create_table_if_needed: bool = False):
+    """显示手动命令输入界面"""
+    st.markdown("### 手动添加新命令")
+    
+    # 检查是否有航班信息
+    if not processor.flight_info:
+        st.warning("⚠️ No flight information found in selected database")
+        return
+    
+    # 显示当前航班信息
+    flight_info = processor.flight_info
+    st.info(f"✈️ 当前航班: {flight_info['flight_number']} - {flight_info['flight_date']}")
+    
+    # 手动输入表单
+    with st.form("manual_command_form"):
+        st.markdown("**输入完整的命令内容:**")
+        raw_input = st.text_area(
+            "完整原始输入（包括命令行和内容）:",
+            height=300,
+            key="manual_raw_input",
+            help="请输入完整的命令内容，包括命令行（以>开头）和后续内容。例如：\n>SY:CA988/25JUL\nSOME COMMAND CONTENT",
+            placeholder=f">SY:{flight_info['flight_number']}/{flight_info['flight_date']}\n"
+        )
+        
+        # 提交按钮
+        if st.form_submit_button("💾 添加命令", use_container_width=True, type="primary"):
+            if raw_input.strip():
+                save_manual_command(processor, raw_input.strip(), create_table_if_needed)
+            else:
+                st.error("❌ 请输入命令内容")
+
+
+def save_manual_command(processor: CommandProcessor, raw_input: str, create_table_if_needed: bool = False):
+    """保存手动输入的命令"""
+    try:
+        # 应用字符修正
+        corrected_input = apply_character_corrections(raw_input)
+        
+        # 解析命令行
+        lines = corrected_input.split('\n')
+        command_line = None
+        
+        for line in lines:
+            stripped_line = line.strip()
+            # 检查是否包含命令模式 [A-Z]{2,4}:
+            if re.search(r'[A-Z]{2,4}:', stripped_line):
+                command_line = stripped_line
+                break
+        
+        if not command_line:
+            st.error("❌ 未找到有效的命令行（应包含命令模式如 SY:, PD:, SE: 等）")
+            return
+        
+        # 解析命令信息
+        command_info = processor._parse_command_line(command_line)
+        if not command_info:
+            st.error("❌ 无法解析命令行格式")
+            return
+        
+        # 验证航班信息
+        if not processor.validate_flight_info(command_info['flight_number'], command_info['flight_date']):
+            st.warning("⚠️ 警告：命令的航班信息与数据库不匹配")
+        
+        # 使用CommandProcessor的store_commands方法（自动创建表）
+        command_data = {
+            'command_full': command_info['command_full'],
+            'command_type': command_info['command_type'],
+            'flight_number': command_info['flight_number'],
+            'flight_date': command_info['flight_date'],
+            'content': corrected_input
+        }
+        
+        # 检查命令是否已存在
+        existing_commands = processor.get_all_commands_data()
+        for existing in existing_commands:
+            if existing.get('command_full') == command_info['command_full']:
+                st.error(f"❌ 命令 '{command_info['command_full']}' 已存在")
+                return
+        
+        # 存储命令（CommandProcessor会自动创建表）
+        stats = processor.store_commands([command_data])
+        
+        if stats['new'] > 0:
+            st.success(f"✅ 命令已成功添加: {command_info['command_full']}")
+            if create_table_if_needed:
+                st.info("ℹ️ Commands table was automatically created")
+            st.rerun()
+        else:
+            st.error("❌ 命令添加失败")
+        
+    except Exception as e:
+        st.error(f"❌ Error saving command: {e}")
+        import traceback
+        st.text(traceback.format_exc())
+
+
 def show_edit_data(processor: CommandProcessor):
     """Show command data editing interface"""
     st.subheader("✏️ Edit Command Data")
@@ -274,7 +370,8 @@ def show_edit_data(processor: CommandProcessor):
         commands_data = processor.get_all_commands_data()
         
         if not commands_data:
-            st.info("ℹ️ No command data found. Import some commands first.")
+            st.info("ℹ️ No command data found. You can manually add commands below.")
+            show_manual_command_input(processor, create_table_if_needed=True)
             return
         
         # Record selection
@@ -477,6 +574,9 @@ def apply_character_corrections(raw_input: str) -> str:
     return corrected_input
 
 
+
+
+
 def show_command_settings(processor: CommandProcessor):
     """Show command analysis settings"""
     # Database info
@@ -522,7 +622,7 @@ def show_command_settings(processor: CommandProcessor):
     
     col1, col2 = st.columns(2)
     
-    with col1:
+    with col1:        
         if st.button("🗑️ Clear All Command Data", use_container_width=True):
             if st.session_state.get('confirm_clear_commands', False):
                 try:

@@ -105,16 +105,35 @@ def show_home_page():
             st.rerun()
     st.markdown("---")
     # 最近活动
-    st.subheader("📝 How to Use")
+    st.subheader("📝 导航指南")
     st.markdown("""
-    1. **Database Management**: Build your database from HBPR list files
-    2. **Process Records**: Select and process individual HBPR records or manually input new records
-    3. **View Results**: Browse validation results and export data
-    4. **Settings**: Configure system preferences
+    使用左侧边栏中的导航按钮访问不同功能：
     
-    **Manual Input Features:**
-    - Select database from dropdown
-    - Input full HBPR records with flight info validation
-    - Create simple HBNB records for placeholders
-    - Automatic replacement of simple records with full records
+    ## 🗄️ **数据库管理**
+    - 从HBPR列表文件构建数据库
+    - 导入和处理HBPR列表数据
+    - 管理数据库文件并查看航班信息
+    
+    ## 🔍 **处理记录** 
+    - 手动添加/编辑单个HBPR记录
+    - 验证和处理所有记录
+    - 创建简单的HBNB占位符
+    - 将处理后的数据导出到Excel
+    - 对记录进行排序和筛选
+    
+    ## 📋 **其他指令**
+    - 添加/编辑指令分析数据  
+    - 处理EMD（电子杂费单）记录
+    - 分析指令模式和验证
+    
+    ## 📊 **Excel处理器**
+    - 导入包含TKNE数据的Excel文件
+    - 处理EMD销售日报
+    - 生成格式化的输出文件
+    - 自动匹配CKIN CCRD记录
+    
+    ## ⚙️ **设置**
+    - 配置字体族和大小偏好
+    
+    **💡 开始使用：** 从边栏下拉菜单中选择数据库，然后使用导航按钮访问所需功能。
     """)
