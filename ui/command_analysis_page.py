@@ -12,6 +12,7 @@ import re
 from ui.common import apply_global_settings
 from scripts.command_processor import CommandProcessor
 import sqlite3
+from datetime import datetime
 
 
 def cleanup_command_files():
@@ -42,7 +43,7 @@ def show_command_analysis():
     processor = CommandProcessor(selected_db)
     
     # 定义标签页选项
-    tab_options = ["📥 Import Commands", "✒️ Add/Edit Data", "📊 View Data", "🗃️ Maintain"]
+    tab_options = ["📥 Import Commands", "✒️ Add/Edit Data", "📊 View Data", "📅 Timeline", "🗃️ Maintain"]
     
     # 初始化默认选择（如果还没有设置）
     if "command_tab_selector" not in st.session_state:
@@ -84,6 +85,12 @@ def show_command_analysis():
             st.session_state.confirm_clear = False
             st.session_state.current_command_tab = 'view'
         show_view_data(processor)
+    elif selected_tab == "📅 Timeline":
+        # 切换到此标签页时重置通用确认标志
+        if st.session_state.get('current_command_tab') != 'timeline':
+            st.session_state.confirm_clear = False
+            st.session_state.current_command_tab = 'timeline'
+        show_timeline_view(processor)
     elif selected_tab == "🗃️ Maintain":
         # 切换到此标签页时重置通用确认标志（不影响专用的commands确认）
         if st.session_state.get('current_command_tab') != 'statistics':
@@ -179,6 +186,161 @@ def parse_commands_from_file(processor: CommandProcessor, file_path: str):
         return 
 
 
+def show_timeline_view(processor: CommandProcessor):
+    """Show command timeline view"""
+    st.subheader("📅 Command Timeline View")
+    
+    try:
+        # Get all commands data (latest versions only for selection)
+        commands_data = processor.get_all_commands_data()
+        
+        if not commands_data:
+            st.info("ℹ️ No command data found. Import some commands first.")
+            return
+        
+        # Command selection
+        command_options = [cmd['command_full'] for cmd in commands_data]
+        selected_command = st.selectbox("Select Command to View Timeline:", command_options)
+        
+        if selected_command:
+            show_command_timeline(processor, selected_command)
+    
+    except Exception as e:
+        st.error(f"❌ Error in timeline view: {e}")
+        st.text(traceback.format_exc())
+
+
+def show_command_timeline(processor: CommandProcessor, command_full: str):
+    """Show timeline for a specific command"""
+    try:
+        # Get timeline data for the selected command
+        timeline_data = processor.get_command_timeline(command_full)
+        
+        if not timeline_data:
+            st.warning("⚠️ No timeline data found for this command")
+            return
+        
+        st.markdown(f"### 📅 Timeline for: **{command_full}**")
+        
+        # Show version count
+        version_count = len(timeline_data)
+        st.info(f"📊 Total versions: {version_count}")
+        
+        # Show timeline
+        for i, version_data in enumerate(timeline_data):
+            version_id = version_data['id']
+            version_num = version_data['version']
+            content = version_data['content']
+            created_at = version_data['created_at']
+            updated_at = version_data['updated_at']
+            is_latest = version_data['is_latest']
+            
+            # Create expander for each version
+            with st.expander(f"Version {version_num} {'(Latest)' if is_latest else ''}", expanded=is_latest):
+                col1, col2, col3 = st.columns([1, 2, 1])
+                
+                with col1:
+                    st.metric("Version", version_num)
+                    if is_latest:
+                        st.success("Latest")
+                    else:
+                        st.info(f"v{version_num}")
+                
+                with col2:
+                    st.text_area("Content", content, height=200, disabled=True, key=f"content_v{version_num}")
+                
+                with col3:
+                    # Format timestamps properly
+                    if created_at:
+                        created_display = created_at[:19] if len(created_at) > 19 else created_at
+                        st.metric("Created", created_display)
+                    else:
+                        st.metric("Created", "N/A")
+                    
+                    if updated_at:
+                        updated_display = updated_at[:19] if len(updated_at) > 19 else updated_at
+                        st.metric("Updated", updated_display)
+                    else:
+                        st.metric("Updated", "N/A")
+                    
+                    if not is_latest:
+                        if st.button(f"🔄 Restore v{version_num}", key=f"restore_{version_id}"):
+                            restore_command_version(processor, command_full, version_num)
+        
+        # Show version comparison if multiple versions exist
+        if len(timeline_data) > 1:
+            st.markdown("---")
+            st.markdown("### 🔍 Version Comparison")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                version1 = st.selectbox("Select first version:", 
+                                      [f"v{v['version']}" for v in timeline_data], 
+                                      key="compare_v1")
+            with col2:
+                version2 = st.selectbox("Select second version:", 
+                                      [f"v{v['version']}" for v in timeline_data], 
+                                      key="compare_v2")
+            
+            if version1 != version2:
+                v1_num = int(version1[1:])
+                v2_num = int(version2[1:])
+                
+                v1_data = next(v for v in timeline_data if v['version'] == v1_num)
+                v2_data = next(v for v in timeline_data if v['version'] == v2_num)
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown(f"**{version1}**")
+                    st.text_area("Content", v1_data['content'], height=300, disabled=True)
+                with col2:
+                    st.markdown(f"**{version2}**")
+                    st.text_area("Content", v2_data['content'], height=300, disabled=True)
+    
+    except Exception as e:
+        st.error(f"❌ Error showing timeline: {e}")
+        st.text(traceback.format_exc())
+
+
+def restore_command_version(processor: CommandProcessor, command_full: str, version_num: int):
+    """Restore a specific version of a command"""
+    try:
+        # Get the specific version data
+        timeline_data = processor.get_command_timeline(command_full)
+        target_version = next((v for v in timeline_data if v['version'] == version_num), None)
+        
+        if not target_version:
+            st.error(f"❌ Version {version_num} not found")
+            return
+        
+        # Mark current latest as not latest
+        conn = sqlite3.connect(processor.db_file)
+        
+        # Update current latest version
+        conn.execute("""
+            UPDATE commands 
+            SET is_latest = FALSE 
+            WHERE command_full = ? AND is_latest = TRUE
+        """, (command_full,))
+        
+        # Mark target version as latest
+        conn.execute("""
+            UPDATE commands 
+            SET is_latest = TRUE, updated_at = CURRENT_TIMESTAMP 
+            WHERE id = ?
+        """, (target_version['id'],))
+        
+        conn.commit()
+        conn.close()
+        
+        st.success(f"✅ Version {version_num} restored successfully!")
+        st.rerun()
+        
+    except Exception as e:
+        st.error(f"❌ Error restoring version: {e}")
+        st.text(traceback.format_exc())
+
+
 def show_view_data(processor: CommandProcessor):
     """Show command data viewing interface"""
     st.subheader("📊 View Command Data")
@@ -196,6 +358,13 @@ def show_view_data(processor: CommandProcessor):
         
         # Basic info
         st.info(f"📈 Total records: {len(df)}")
+        
+        # Show version information if available
+        if 'version' in df.columns:
+            version_counts = df['version'].value_counts()
+            if len(version_counts) > 1:
+                st.info(f"📊 Versions: {', '.join([f'v{v} ({c})' for v, c in version_counts.items()])}")
+                st.info("💡 Use the Timeline tab to view version history and compare changes")
         
         # Command type filter
         command_types = processor.get_command_types()
@@ -227,7 +396,7 @@ def show_view_data(processor: CommandProcessor):
                     st.dataframe(display_df, use_container_width=True, height=400)
                     
                     # Export options
-                    col1, col2 = st.columns(2)
+                    col1, col2, col3 = st.columns(3)
                     
                     with col1:
                         if st.button("📥 Export to CSV", use_container_width=True):
@@ -253,6 +422,11 @@ def show_view_data(processor: CommandProcessor):
                                 file_name="command_data.xlsx",
                                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                             )
+                    
+                    with col3:
+                        if st.button("📅 View Timeline", use_container_width=True):
+                            st.session_state.command_tab_selector = "📅 Timeline"
+                            st.rerun()
                 else:
                     st.warning("⚠️ No data to display with selected filters")
             else:
@@ -298,7 +472,7 @@ def show_manual_command_input(processor: CommandProcessor, create_table_if_neede
 
 
 def save_manual_command(processor: CommandProcessor, raw_input: str, create_table_if_needed: bool = False):
-    """保存手动输入的命令"""
+    """保存手动输入的命令，支持版本控制"""
     try:
         # 应用字符修正
         corrected_input = apply_character_corrections(raw_input)
@@ -337,20 +511,24 @@ def save_manual_command(processor: CommandProcessor, raw_input: str, create_tabl
             'content': corrected_input
         }
         
-        # 检查命令是否已存在
+        # 检查命令是否已存在（现在支持版本控制）
         existing_commands = processor.get_all_commands_data()
-        for existing in existing_commands:
-            if existing.get('command_full') == command_info['command_full']:
-                st.error(f"❌ 命令 '{command_info['command_full']}' 已存在")
-                return
+        command_exists = any(existing.get('command_full') == command_info['command_full'] for existing in existing_commands)
         
-        # 存储命令（CommandProcessor会自动创建表）
+        if command_exists:
+            st.info(f"ℹ️ 命令 '{command_info['command_full']}' 已存在，将创建新版本")
+        
+        # 存储命令（CommandProcessor会自动创建表和新版本）
         stats = processor.store_commands([command_data])
         
         if stats['new'] > 0:
             st.success(f"✅ 命令已成功添加: {command_info['command_full']}")
             if create_table_if_needed:
                 st.info("ℹ️ Commands table was automatically created")
+            st.rerun()
+        elif stats['updated'] > 0:
+            st.success(f"✅ 命令已更新为新版本: {command_info['command_full']}")
+            st.info("💡 旧版本已保存在时间线中")
             st.rerun()
         else:
             st.error("❌ 命令添加失败")
@@ -425,13 +603,13 @@ def show_edit_data(processor: CommandProcessor):
 
 
 def save_edited_data(processor: CommandProcessor, original_command_full: str, edited_raw_input: str):
-    """Save edited command data with special character handling"""
+    """Save edited command data with versioning support"""
     try:
         if not processor.db_file:
             st.error("❌ No database file specified")
             return
         
-        # Step 1: 处理特殊字符替换（类似于 validate_full_hbpr_record）
+        # Step 1: 处理特殊字符替换
         corrected_input = apply_character_corrections(edited_raw_input)
         
         # Step 2: 解析编辑后的输入以提取命令行和内容
@@ -442,11 +620,8 @@ def save_edited_data(processor: CommandProcessor, original_command_full: str, ed
         
         # 找到命令行（包含命令模式的行，如 SY:, PD:, SE: 等）
         command_line = None
-        
         for line in lines:
             stripped_line = line.strip()
-            # 使用与 _parse_command_line 相同的逻辑检测命令
-            # 检查是否包含命令模式 [A-Z]{2,4}:
             if re.search(r'[A-Z]{2,4}:', stripped_line):
                 command_line = stripped_line
                 break
@@ -467,47 +642,87 @@ def save_edited_data(processor: CommandProcessor, original_command_full: str, ed
         if not processor.validate_flight_info(new_command_info['flight_number'], new_command_info['flight_date']):
             st.warning("⚠️ 警告：新命令的航班信息与数据库不匹配")
         
-        # Step 5: 确定是更新还是创建新记录
+        # Step 5: 使用版本控制系统保存命令
         conn = sqlite3.connect(processor.db_file)
         
-        if new_command_full == original_command_full:
-            # 命令行未更改，更新现有记录
-            conn.execute(
-                "UPDATE commands SET content = ?, updated_at = CURRENT_TIMESTAMP WHERE command_full = ?",
-                (corrected_input, original_command_full)  # 存储完整的原始输入（经过字符修正）
-            )
-            st.success("✅ 记录已更新！")
-        else:
-            # 命令行已更改，创建新记录并可选删除旧记录
-            # 检查新命令是否已存在
-            cursor = conn.execute("SELECT id FROM commands WHERE command_full = ?", (new_command_full,))
-            existing = cursor.fetchone()
+        try:
+            if new_command_full == original_command_full:
+                # 命令行未更改，检查内容是否改变
+                cursor = conn.execute("""
+                    SELECT id, version, content FROM commands 
+                    WHERE command_full = ? AND is_latest = TRUE
+                """, (original_command_full,))
+                existing = cursor.fetchone()
+                
+                if existing and existing[2] != corrected_input:
+                    # 内容改变，创建新版本
+                    existing_id, existing_version = existing[0], existing[1]
+                    
+                    # 标记旧版本为不是最新
+                    conn.execute("""
+                        UPDATE commands SET is_latest = FALSE WHERE id = ?
+                    """, (existing_id,))
+                    
+                    # 插入新版本
+                    new_version = existing_version + 1
+                    conn.execute("""
+                        INSERT INTO commands (
+                            command_full, command_type, flight_number, flight_date, 
+                            content, version, parent_id, is_latest, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    """, (
+                        new_command_full, new_command_info['command_type'],
+                        new_command_info['flight_number'], new_command_info['flight_date'],
+                        corrected_input, new_version, existing_id
+                    ))
+                    
+                    st.success(f"✅ 命令内容已更新，创建新版本 v{new_version}")
+                    st.info("💡 旧版本已保存在时间线中")
+                else:
+                    # 内容相同，只更新时间戳
+                    conn.execute("""
+                        UPDATE commands SET updated_at = CURRENT_TIMESTAMP 
+                        WHERE command_full = ? AND is_latest = TRUE
+                    """, (original_command_full,))
+                    st.success("✅ 记录已更新（内容未改变）")
+            else:
+                # 命令行已更改，创建新命令记录
+                # 检查新命令是否已存在
+                cursor = conn.execute("""
+                    SELECT id FROM commands WHERE command_full = ? AND is_latest = TRUE
+                """, (new_command_full,))
+                existing = cursor.fetchone()
+                
+                if existing:
+                    st.error(f"❌ 命令 '{new_command_full}' 已存在。请选择不同的命令。")
+                    conn.close()
+                    return
+                
+                # 创建新命令记录
+                conn.execute("""
+                    INSERT INTO commands (
+                        command_full, command_type, flight_number, flight_date, 
+                        content, version, is_latest, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, 1, TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """, (
+                    new_command_full, new_command_info['command_type'],
+                    new_command_info['flight_number'], new_command_info['flight_date'],
+                    corrected_input
+                ))
+                
+                st.success(f"✅ 已创建新命令记录: {new_command_full}")
+                st.info(f"💡 原命令 '{original_command_full}' 仍然存在")
             
-            if existing:
-                st.error(f"❌ 命令 '{new_command_full}' 已存在。请选择不同的命令。")
-                conn.close()
-                return
+            conn.commit()
             
-            # 创建新记录
-            conn.execute("""
-                INSERT INTO commands (command_full, command_type, flight_number, flight_date, content, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            """, (
-                new_command_full,
-                new_command_info['command_type'],
-                new_command_info['flight_number'], 
-                new_command_info['flight_date'],
-                corrected_input  # 存储完整的原始输入（经过字符修正）
-            ))
-            
-            # 询问是否删除旧记录
-            st.success(f"✅ 已创建新记录: {new_command_full}")
-            st.info(f"💡 原记录 '{original_command_full}' 仍然存在。如需删除，请使用删除按钮。")
+        except Exception as e:
+            conn.rollback()
+            raise e
+        finally:
+            conn.close()
         
-        conn.commit()
-        conn.close()
         st.rerun()
-    
+        
     except Exception as e:
         st.error(f"❌ Error saving changes: {e}")
         import traceback
@@ -577,8 +792,89 @@ def apply_character_corrections(raw_input: str) -> str:
 
 
 
+def migrate_commands_table(processor: CommandProcessor):
+    """迁移现有commands表到支持时间线的版本"""
+    try:
+        if not processor.db_file:
+            st.error("❌ No database file specified")
+            return False
+        
+        conn = sqlite3.connect(processor.db_file)
+        
+        # 检查是否已经迁移过
+        cursor = conn.execute("PRAGMA table_info(commands)")
+        columns = [col[1] for col in cursor.fetchall()]
+        
+        if 'version' in columns and 'parent_id' in columns and 'is_latest' in columns:
+            st.info("ℹ️ Commands table already supports timeline")
+            conn.close()
+            return True
+        
+        # 备份现有数据
+        existing_commands = conn.execute("SELECT * FROM commands").fetchall()
+        
+        if not existing_commands:
+            st.info("ℹ️ No existing commands to migrate")
+            conn.close()
+            return True
+        
+        # 创建新表结构
+        conn.execute("""
+            CREATE TABLE commands_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                command_full TEXT NOT NULL,
+                command_type TEXT,
+                flight_number TEXT,
+                flight_date TEXT,
+                content TEXT,
+                version INTEGER DEFAULT 1,
+                parent_id INTEGER,
+                is_latest BOOLEAN DEFAULT TRUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # 迁移现有数据
+        for cmd in existing_commands:
+            # 假设现有表结构：id, command_full, command_type, flight_number, flight_date, content, created_at, updated_at
+            if len(cmd) >= 7:  # 确保有足够的列
+                conn.execute("""
+                    INSERT INTO commands_new (
+                        id, command_full, command_type, flight_number, flight_date, 
+                        content, version, is_latest, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, 1, TRUE, ?, ?)
+                """, (cmd[0], cmd[1], cmd[2], cmd[3], cmd[4], cmd[5], cmd[6], cmd[7]))
+        
+        # 删除旧表并重命名新表
+        conn.execute("DROP TABLE commands")
+        conn.execute("ALTER TABLE commands_new RENAME TO commands")
+        
+        # 创建索引
+        conn.execute("CREATE INDEX idx_commands_timeline ON commands(command_full, version)")
+        conn.execute("CREATE INDEX idx_commands_parent ON commands(parent_id)")
+        conn.execute("CREATE INDEX idx_commands_latest ON commands(command_full, is_latest)")
+        
+        conn.commit()
+        conn.close()
+        
+        st.success(f"✅ Successfully migrated {len(existing_commands)} commands to timeline system!")
+        return True
+        
+    except Exception as e:
+        st.error(f"❌ Error migrating commands table: {e}")
+        import traceback
+        st.error(f"❌ Full error details: {traceback.format_exc()}")
+        return False
+
+
 def show_command_settings(processor: CommandProcessor):
     """Show command analysis settings"""
+    # Check if database file exists and show file info
+    if processor.db_file:
+        if not os.path.exists(processor.db_file):
+            st.error(f"❌ Database file not found: {processor.db_file}")
+    
     # Database info
     st.write("**Database Information:**")
     if processor.flight_info:
@@ -599,11 +895,20 @@ def show_command_settings(processor: CommandProcessor):
         commands_data = processor.get_all_commands_data()
         command_types = processor.get_command_types()
         
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns(3)
         with col1:
             st.metric("Total Records", len(commands_data))
         with col2:
             st.metric("Command Types", len(command_types))
+        with col3:
+            try:
+                # Get total versions including all historical versions
+                all_versions = processor.get_all_commands_with_versions()
+                total_versions = len(all_versions)
+                st.metric("Total Versions", total_versions)
+            except AttributeError:
+                st.metric("Total Versions", "N/A")
+                st.warning("⚠️ Timeline methods not available - migration needed")
         
         if command_types:
             st.write("**Available Command Types:**")
@@ -620,9 +925,18 @@ def show_command_settings(processor: CommandProcessor):
     st.markdown("---")
     st.write("**Maintenance Operations:**")
     
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     
-    with col1:        
+    with col1:
+        if st.button("🔄 Migrate to Timeline", use_container_width=True, key="migrate_timeline"):
+            success = migrate_commands_table(processor)
+            if success:
+                st.success("✅ Migration completed! Please refresh the page.")
+                st.rerun()
+            else:
+                st.error("❌ Migration failed. Check the error messages above.")
+            
+    with col2:        
         if st.button("🗑️ Clear All Command Data", use_container_width=True):
             if st.session_state.get('confirm_clear_commands', False):
                 try:
@@ -639,8 +953,8 @@ def show_command_settings(processor: CommandProcessor):
                     else:
                         st.error("❌ No database file specified")
                 except Exception as e:
-                    st.error(f"❌ Error clearing data: {e}")
-                    st.session_state.confirm_clear_commands = False
+                        st.error(f"❌ Error clearing data: {e}")
+                        st.session_state.confirm_clear_commands = False
             else:
                 st.session_state.confirm_clear_commands = True
                 st.warning("⚠️ Click again to confirm deletion of all command data")
@@ -654,6 +968,6 @@ def show_command_settings(processor: CommandProcessor):
             st.info("✅ Deletion cancelled")
             st.rerun()
     
-    with col2:
+    with col3:
         if st.button("📊 Refresh Statistics", use_container_width=True):
             st.rerun()

@@ -377,7 +377,7 @@ class CommandProcessor:
             conn.execute("PRAGMA busy_timeout = 30000")  # 30秒超时
             # 关键：开始事务以确保原子性
             conn.execute("BEGIN TRANSACTION")
-            # 如果不存在则创建commands表
+            # 如果不存在则创建commands表（支持时间线版本控制）
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS commands (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -386,11 +386,18 @@ class CommandProcessor:
                     flight_number TEXT,
                     flight_date TEXT,
                     content TEXT,
+                    version INTEGER DEFAULT 1,
+                    parent_id INTEGER,
+                    is_latest BOOLEAN DEFAULT TRUE,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE(command_full)
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            
+            # 创建索引以提高查询性能
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_commands_timeline ON commands(command_full, version)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_commands_parent ON commands(parent_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_commands_latest ON commands(command_full, is_latest)")
             # 过滤命令，只存储匹配数据库航班信息的命令
             matching_commands = []
             mismatched_commands = []
@@ -399,26 +406,65 @@ class CommandProcessor:
                     matching_commands.append(cmd)
                 else:
                     mismatched_commands.append(cmd)
-            # 只存储匹配的命令
+            # 只存储匹配的命令（支持版本控制）
             for cmd in matching_commands:
                 try:
-                    # 检查命令是否已存在以确定是新建还是更新
-                    cursor = conn.execute("SELECT id FROM commands WHERE command_full = ?", (cmd['command_full'],))
+                    # 检查命令是否已存在的最新版本
+                    cursor = conn.execute("""
+                        SELECT id, version, content 
+                        FROM commands 
+                        WHERE command_full = ? AND is_latest = TRUE
+                    """, (cmd['command_full'],))
                     existing = cursor.fetchone()
-                    conn.execute("""
-                        INSERT OR REPLACE INTO commands 
-                        (command_full, command_type, flight_number, flight_date, content, updated_at)
-                        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                    """, (
-                        cmd['command_full'], 
-                        cmd['command_type'],
-                        cmd['flight_number'],
-                        cmd['flight_date'],
-                        cmd['content']
-                    ))
+                    
                     if existing:
-                        stats['updated'] += 1
+                        existing_id, existing_version, existing_content = existing
+                        
+                        # 如果内容不同，创建新版本
+                        if existing_content != cmd['content']:
+                            # 标记旧版本为不是最新
+                            conn.execute("""
+                                UPDATE commands 
+                                SET is_latest = FALSE 
+                                WHERE id = ?
+                            """, (existing_id,))
+                            
+                            # 插入新版本
+                            new_version = existing_version + 1
+                            conn.execute("""
+                                INSERT INTO commands (
+                                    command_full, command_type, flight_number, flight_date, 
+                                    content, version, parent_id, is_latest, created_at, updated_at
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                            """, (
+                                cmd['command_full'], cmd['command_type'],
+                                cmd['flight_number'], cmd['flight_date'],
+                                cmd['content'], new_version, existing_id
+                            ))
+                            
+                            stats['updated'] += 1
+                        else:
+                            # 内容相同，只更新时间戳
+                            conn.execute("""
+                                UPDATE commands 
+                                SET updated_at = CURRENT_TIMESTAMP 
+                                WHERE id = ?
+                            """, (existing_id,))
+                            
+                            stats['skipped'] += 1
                     else:
+                        # 新命令
+                        conn.execute("""
+                            INSERT INTO commands (
+                                command_full, command_type, flight_number, flight_date, 
+                                content, version, is_latest, created_at, updated_at
+                            ) VALUES (?, ?, ?, ?, ?, 1, TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        """, (
+                            cmd['command_full'], cmd['command_type'],
+                            cmd['flight_number'], cmd['flight_date'],
+                            cmd['content']
+                        ))
+                        
                         stats['new'] += 1
                 except Exception as e:
                     stats['errors'] += 1
@@ -460,8 +506,9 @@ class CommandProcessor:
                 return []
             cursor = conn.execute("""
                 SELECT id, command_full, command_type, flight_number, flight_date, 
-                       content, created_at, updated_at 
+                       content, version, parent_id, is_latest, created_at, updated_at 
                 FROM commands 
+                WHERE is_latest = TRUE
                 ORDER BY created_at DESC
             """)
             columns = [desc[0] for desc in cursor.description]
@@ -478,12 +525,57 @@ class CommandProcessor:
             return []
         try:
             conn = sqlite3.connect(self.db_file)
-            cursor = conn.execute("SELECT DISTINCT command_type FROM commands WHERE command_type IS NOT NULL")
+            cursor = conn.execute("SELECT DISTINCT command_type FROM commands WHERE command_type IS NOT NULL AND is_latest = TRUE")
             command_types = [row[0] for row in cursor.fetchall()]
             conn.close()
             return sorted(command_types)
         except Exception as e:
             print(f"Error getting command types: {e}")
+            return []
+
+
+    def get_command_timeline(self, command_full: str) -> List[Dict[str, Any]]:
+        """Get timeline data for a specific command"""
+        if not self.db_file:
+            return []
+        try:
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.execute("""
+                SELECT id, command_full, command_type, flight_number, flight_date, 
+                       content, version, parent_id, is_latest, created_at, updated_at 
+                FROM commands 
+                WHERE command_full = ? 
+                ORDER BY version ASC
+            """, (command_full,))
+            
+            columns = [desc[0] for desc in cursor.description]
+            rows = cursor.fetchall()
+            conn.close()
+            return [dict(zip(columns, row)) for row in rows]
+        except Exception as e:
+            print(f"Error getting command timeline: {e}")
+            return []
+
+
+    def get_all_commands_with_versions(self) -> List[Dict[str, Any]]:
+        """Get all commands including all versions (for timeline view)"""
+        if not self.db_file:
+            return []
+        try:
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.execute("""
+                SELECT id, command_full, command_type, flight_number, flight_date, 
+                       content, version, parent_id, is_latest, created_at, updated_at 
+                FROM commands 
+                ORDER BY command_full, version ASC
+            """)
+            
+            columns = [desc[0] for desc in cursor.description]
+            rows = cursor.fetchall()
+            conn.close()
+            return [dict(zip(columns, row)) for row in rows]
+        except Exception as e:
+            print(f"Error getting all commands with versions: {e}")
             return []
 
 
