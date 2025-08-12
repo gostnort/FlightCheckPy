@@ -107,24 +107,18 @@ def start_processing_all_records(db, batch_size):
 def erase_splited_records(db):
     """清除所有处理结果，重置hbpr_full_records表中的处理字段"""
     try:
-        # 显示确认对话框
-        if st.button("⚠️ Confirm Erase", type="primary"):
-            with st.spinner("🧹 Erasing all processing results..."):
-                # 调用数据库类的erase_splited_records方法
-                success = db.erase_splited_records()
+        with st.spinner("🧹 Erasing all processing results..."):
+            # 调用数据库类的erase_splited_records方法
+            success = db.erase_splited_records()
+            
+            if success:
+                st.success("✅ Successfully erased all processing results!")
+                st.info("ℹ️ All processing fields have been reset. Only HBNB numbers and raw content remain.")
                 
-                if success:
-                    st.success("✅ Successfully erased all processing results!")
-                    st.info("ℹ️ All processing fields have been reset. Only HBNB numbers and raw content remain.")
-                    
-                    # 自动刷新页面以显示更新后的状态
-                    st.rerun()
-                else:
-                    st.error("❌ Failed to erase processing results.")
-        
-        else:
-            st.warning("⚠️ This will permanently remove ALL processing results from the database.")
-            st.info("💡 Only HBNB numbers and raw content will be preserved. Click 'Confirm Erase' to proceed.")
+                # 自动刷新页面以显示更新后的状态
+                st.rerun()
+            else:
+                st.error("❌ Failed to erase processing results.")
     
     except Exception as e:
         st.error(f"❌ Error during cleanup: {str(e)}")

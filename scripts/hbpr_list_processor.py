@@ -93,7 +93,7 @@ class HBPRProcessor:
                 flight_data['simple_records'][hbnb_num] = record_line
 
 
-    def parse_full_record(self, lines: List[str], start_index: int) -> Tuple[Optional[str], Optional[int], str, int]:
+    def parse_full_record(self, lines: List[str], start_index: int) -> Tuple[Optional[int], str, int]:
         """
         解析完整HBPR记录并提取航班信息和HBNB号码
         如果解析成功，则设置self.flight_id 
@@ -111,12 +111,12 @@ class HBPRProcessor:
         # 格式: >HBPR: CA984/25JUL25*LAX,{NUMBER}
         match = re.search(r'>HBPR:\s*([^*,]+)', line)
         if not match:
-            return None, None, "", start_index + 1
+            return None, "", start_index + 1
         flight_info = match.group(1).strip()
-        # 提取HBNB号码
+        # 提取HBNB号码 - 允许逗号后有空格和其他文本
         hbnb_match = re.search(r'>HBPR:\s*[^,]+,(\d+)', line)
         if not hbnb_match:
-            return None, None, "", start_index + 1
+            return None, "", start_index + 1
         hbnb_num = int(hbnb_match.group(1))
         # 解析航班号和日期
         if not self.flight_id:
