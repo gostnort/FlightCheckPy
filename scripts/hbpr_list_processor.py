@@ -47,7 +47,7 @@ class HBPRProcessor:
         while i < len(lines):
             line = lines[i].strip()
             # 检查完整HBPR记录
-            if line.startswith('>HBPR:'):
+            if line.startswith('>HBPR:') or line.startswith('HBPR:'):
                 hbnb_num, record_content, next_index = self.parse_full_record(lines, i)
                 if hbnb_num:
                     self.flight_data[self.flight_id]['hbnb_numbers'].add(hbnb_num)
@@ -278,11 +278,11 @@ class HBPRProcessor:
 
 
     def _clean_duplicate_headers(self, content: str) -> str:
-        """清理记录内容中的重复>HBPR:标题"""
+        """清理记录内容中的重复>HBPR:标题和分页标记"""
         lines = content.split('\n')
         cleaned_lines = []
         header_seen = False
-        # 遍历所有行，过滤重复标题
+        # 遍历所有行，过滤重复标题和分页标记
         for line in lines:
             if line.strip().startswith('>HBPR:'):
                 if not header_seen:
@@ -290,7 +290,9 @@ class HBPRProcessor:
                     header_seen = True
                 # 跳过重复标题
             else:
-                cleaned_lines.append(line)
+                # 删除行末的分页标记"+"（通常在index79位置）
+                cleaned_line = line.rstrip('+')
+                cleaned_lines.append(cleaned_line)
         return '\n'.join(cleaned_lines)
     
 
