@@ -529,7 +529,7 @@ class CHbpr:
                         f"HBPR{self.HbnbNumber},the baggage average weight is overweight "
                         f"{self.__ChkBagAverageWeight - (max_bag['weight'] / max_bag['piece'])} KGs."
                     )
-                bol_ckin_exbg = True
+                    bol_ckin_exbg = True
         if bol_ckin_exbg:
             self.error_msg["Baggage"].append(self.CKIN_EXBG)
         return
