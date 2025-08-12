@@ -10,7 +10,7 @@ import sqlite3
 import os
 import glob
 import time
-from typing import Dict, Any, Optional
+from typing import Any, Optional
 from .general_func import CArgs
 from .hbpr_list_processor import HBPRProcessor
 import pandas as pd
@@ -119,6 +119,7 @@ class CHbpr:
     PROPERTIES = []
     IS_CA_FLYER = False
     TKNE = ""  # Add TKNE field
+    HAS_INFANT = False
     # 私有变量
     __ChkBagAverageWeight = 0
     __ERROR_NUMBER = 65535
@@ -165,6 +166,7 @@ class CHbpr:
             self.INBOUND_FLIGHT = ""
             self.OUTBOUND_FLIGHT = ""
             self.TKNE = ""  # Initialize TKNE field
+            self.HAS_INFANT = False
             # 调用处理方法
             bolRun = True
             # 首先获取HBNB号码（用于错误消息）
@@ -174,6 +176,8 @@ class CHbpr:
                 bolRun = self.__GetPassengerInfo()
             if bolRun:
                 self.__ExtractStructuredData()  # 新方法：提取结构化数据
+                # 检测婴儿
+                self.__DetectInfant()
                 # 检查是否有BN号码，如果没有则跳过验证
                 if self.BoardingNumber > 0:
                     self.__MatchingBag()
@@ -293,6 +297,23 @@ class CHbpr:
         # 提取CKIN信息
         self.CKIN_EXBG = self.__CaptureCkin()
         return
+
+
+    def __DetectInfant(self):
+        """检测是否有婴儿信息（以“INF-”开头的行）"""
+        try:
+            # 优先依据以 INF- 开头的行
+            if re.search(r"^\s*INF-", self.__Hbpr, flags=re.MULTILINE):
+                self.HAS_INFANT = True
+                return True
+            # 兼容性：若出现 IFBA/ 或文中有 INF1/ 等标识，也认为随行婴儿存在
+            if re.search(r"\bIFBA/\dPC\b", self.__Hbpr) or re.search(r"\bINF\d/", self.__Hbpr):
+                self.HAS_INFANT = True
+                return True
+        except Exception:
+            pass
+        self.HAS_INFANT = False
+        return False
 
 
     def __GetChkBag(self):
@@ -720,6 +741,7 @@ class CHbpr:
             'OUTBOUND_FLIGHT': self.OUTBOUND_FLIGHT,
             'PROPERTIES': ','.join(self.PROPERTIES) if self.PROPERTIES else '',
             'TKNE': self.TKNE,  # Add TKNE to structured data
+            'HAS_INFANT': self.HAS_INFANT,
             'has_error': any(self.error_msg.values()),
             'error_baggage': '\n'.join(self.error_msg["Baggage"]) if self.error_msg["Baggage"] else '',
             'error_passport': '\n'.join(self.error_msg["Passport"]) if self.error_msg["Passport"] else '',
@@ -949,6 +971,7 @@ class HbprDatabase:
                 ('asvc_piece', 'INTEGER'),
                 ('fba_piece', 'INTEGER'),
                 ('ifba_piece', 'INTEGER'),
+                ('has_infant', 'BOOLEAN DEFAULT 0'),
                 ('flyer_benefit', 'INTEGER'),
                 ('is_ca_flyer', 'BOOLEAN'),
                 ('inbound_flight', 'TEXT'),
@@ -1049,6 +1072,7 @@ class HbprDatabase:
                     asvc_piece = ?,
                     fba_piece = ?,
                     ifba_piece = ?,
+                    has_infant = ?,
                     flyer_benefit = ?,
                     is_ca_flyer = ?,
                     inbound_flight = ?,
@@ -1084,6 +1108,7 @@ class HbprDatabase:
                 data['ASVC_PIECE'],
                 data['FBA_PIECE'],
                 data['IFBA_PIECE'],
+                1 if data['HAS_INFANT'] else 0,
                 data['FLYER_BENEFIT'],
                 data['IS_CA_FLYER'],
                 data['INBOUND_FLIGHT'],
@@ -1630,7 +1655,8 @@ class HbprDatabase:
             conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
             # 获取基本统计信息
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT 
                     COUNT(*) as total_accepted,
                     MIN(boarding_number) as min_boarding,
@@ -1641,18 +1667,53 @@ class HbprDatabase:
                     SUM(bag_weight) as total_bag_weight
                 FROM hbpr_full_records 
                 WHERE boarding_number IS NOT NULL AND boarding_number > 0
-            """)
-            result = cursor.fetchone()
+                """
+            )
+            base = cursor.fetchone()
+
+            # 计算婴儿数量（可能不存在列，做兼容处理）
+            infant_count = 0
+            try:
+                cursor.execute(
+                    """
+                    SELECT COUNT(*) FROM hbpr_full_records
+                    WHERE boarding_number IS NOT NULL AND boarding_number > 0 AND has_infant = 1
+                    """
+                )
+                infant_count = cursor.fetchone()[0]
+            except sqlite3.OperationalError:
+                infant_count = 0
+
+            # 计算公务舱(含头等舱)与经济舱成人数量
+            cursor.execute(
+                """
+                SELECT COUNT(*) FROM hbpr_full_records
+                WHERE boarding_number IS NOT NULL AND boarding_number > 0 AND class IN ('F','C')
+                """
+            )
+            accepted_business = cursor.fetchone()[0]
+            cursor.execute(
+                """
+                SELECT COUNT(*) FROM hbpr_full_records
+                WHERE boarding_number IS NOT NULL AND boarding_number > 0 AND class = 'Y'
+                """
+            )
+            accepted_economy = cursor.fetchone()[0]
+
             conn.close()
-            if result:
+
+            if base:
                 return {
-                    'total_accepted': result[0],
-                    'min_boarding': result[1],
-                    'max_boarding': result[2],
-                    'avg_bag_piece': result[3] if result[3] else 0,
-                    'avg_bag_weight': result[4] if result[4] else 0,
-                    'total_bag_pieces': result[5] if result[5] else 0,
-                    'total_bag_weight': result[6] if result[6] else 0
+                    'total_accepted': base[0],
+                    'min_boarding': base[1],
+                    'max_boarding': base[2],
+                    'avg_bag_piece': base[3] if base[3] else 0,
+                    'avg_bag_weight': base[4] if base[4] else 0,
+                    'total_bag_pieces': base[5] if base[5] else 0,
+                    'total_bag_weight': base[6] if base[6] else 0,
+                    'infant_count': infant_count,
+                    'accepted_business': accepted_business,
+                    'accepted_economy': accepted_economy
                 }
             else:
                 return {
@@ -1662,7 +1723,10 @@ class HbprDatabase:
                     'avg_bag_piece': 0,
                     'avg_bag_weight': 0,
                     'total_bag_pieces': 0,
-                    'total_bag_weight': 0
+                    'total_bag_weight': 0,
+                    'infant_count': 0,
+                    'accepted_business': 0,
+                    'accepted_economy': 0
                 }
         except sqlite3.Error as e:
             raise Exception(f"Database error: {e}")

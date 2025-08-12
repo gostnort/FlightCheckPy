@@ -209,7 +209,7 @@ def show_statistics():
         # 添加刷新按钮
         col1, col2 = st.columns([3, 1])
         with col1:
-            st.subheader("📈 HBNB Range Statistics")
+            st.subheader("📈 Statistics")
         with col2:
             if st.button("🔄 Refresh", use_container_width=True):
                 # 强制刷新所有统计信息
@@ -219,29 +219,22 @@ def show_statistics():
         all_stats = db.get_all_statistics()
         range_info = all_stats['hbnb_range_info']
         missing_numbers = all_stats['missing_numbers']
-        # 主要指标
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("HBNB Range", f"{range_info['min']} - {range_info['max']}")
-        with col2:
-            st.metric("Total Expected", range_info['total_expected'])
-        with col3:
-            st.metric("Total Found", range_info['total_found'])
-        with col4:
-            st.metric("Missing Numbers", len(missing_numbers))
-        # 已接受乘客和登机范围指标
-        try:
-            accepted_stats = all_stats['accepted_passengers_stats']
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("Accepted Passengers", accepted_stats['total_accepted'])
-            with col2:
-                if accepted_stats['total_accepted'] > 0:
-                    st.metric("Boarding Range", f"{accepted_stats['min_boarding']} - {accepted_stats['max_boarding']}")
-                else:
-                    st.metric("Boarding Range", "N/A")
-        except Exception as e:
-            st.error(f"❌ Error loading accepted passenger data: {str(e)}")
+        accepted_stats = all_stats['accepted_passengers_stats']
+
+        # 仅保留三项指标：Max HBNB, Missing Count, Accepted Passengers（成人+婴儿Inf，Delta显示C/Y）
+        m1, m2, m3 = st.columns(3)
+        with m1:
+            st.metric("Max HBNB", range_info['max'])
+        with m2:
+            st.metric("Missing Count", len(missing_numbers))
+        with m3:
+            adult = accepted_stats.get('total_accepted', 0)
+            infant = accepted_stats.get('infant_count', 0)
+            b = accepted_stats.get('accepted_business', 0)
+            y = accepted_stats.get('accepted_economy', 0)
+            value = f"{adult}+{infant}Inf"
+            delta = f"{b}/{y}"
+            st.metric("Accepted Passengers", value, delta)
         # 显示缺失号码表格
         if missing_numbers:
             st.subheader("🚫 Missing HBNB Numbers")
