@@ -15,7 +15,6 @@ def show_process_all_records():
     try:
         db = HbprDatabase()
         db.find_database()
-        
         # 获取当前选中的数据库
         selected_db_file = get_current_database()    
         if not selected_db_file:
@@ -51,17 +50,13 @@ def start_processing_all_records(db, batch_size):
         cursor.execute("SELECT hbnb_number FROM hbpr_full_records ORDER BY hbnb_number")
         records = [row[0] for row in cursor.fetchall()]
         conn.close()
-        
         if not records:
             st.info("ℹ️ No records found.")
             return
-        
         results_container = st.container()
-        
         processed_count = 0
         valid_count = 0
         error_count = 0
-        
         # 使用spinner显示处理状态
         with st.spinner(f"🔄 Processing {len(records)} records..."):
             for hbnb_number in records:
@@ -70,36 +65,29 @@ def start_processing_all_records(db, batch_size):
                     content = db.get_hbpr_record(hbnb_number)
                     chbpr = CHbpr()
                     chbpr.run(content)
-                    
                     # 更新数据库
                     success = db.update_with_chbpr_results(chbpr)
-                    
                     if success:
                         processed_count += 1
                         if chbpr.is_valid():
                             valid_count += 1
                         else:
                             error_count += 1
-                    
                 except Exception as e:
                     # 静默处理错误，不显示具体错误信息
                     pass
-        
         # 显示结果总结
         with results_container:
             st.success(f"🎉 Processed {processed_count} records")
             col1, col2, col3 = st.columns(3)
-            
             with col1:
                 st.metric("Total Processed", processed_count)
             with col2:
                 st.metric("Valid Records", valid_count)
             with col3:
                 st.metric("Records with Errors", error_count)
-        
         # 自动刷新页面以显示新的错误信息
         st.rerun()
-    
     except Exception as e:
         st.error(f"❌ Processing error: {str(e)}")
 
@@ -110,16 +98,13 @@ def erase_splited_records(db):
         with st.spinner("🧹 Erasing all processing results..."):
             # 调用数据库类的erase_splited_records方法
             success = db.erase_splited_records()
-            
             if success:
                 st.success("✅ Successfully erased all processing results!")
                 st.info("ℹ️ All processing fields have been reset. Only HBNB numbers and raw content remain.")
-                
                 # 自动刷新页面以显示更新后的状态
                 st.rerun()
             else:
                 st.error("❌ Failed to erase processing results.")
-    
     except Exception as e:
         st.error(f"❌ Error during cleanup: {str(e)}")
 
@@ -226,7 +211,6 @@ def show_error_messages(db):
                 display_error = error_preview
             else:
                 display_error = "Unknown error"
-            
             with st.expander(f"🚫 {display_error}"):
                 st.write(f"**Validated at:** {row['validated_at']}")
                 # 添加查看记录的弹出窗口
@@ -260,7 +244,6 @@ def show_error_messages(db):
                     # 使用markdown来支持换行显示
                     error_text = row[error_field].replace('\n', '<br>')
                     st.markdown(f"🔴 **{selected_error_type}:** {error_text}", unsafe_allow_html=True)
-        
         if total_pages > 1:
             st.info(f"Showing page {page} of {total_pages} ({len(page_df)} of {total_errors} records)")
     except Exception as e:
@@ -291,10 +274,8 @@ def apply_font_settings():
     # Get font settings from session state
     font_family = st.session_state.get('settings', {}).get('font_family', 'Courier New')
     font_size_percent = st.session_state.get('settings', {}).get('font_size_percent', 100)
-    
     # Calculate font size in pixels (assuming default is 14px)
     font_size_px = int(14 * font_size_percent / 100)
-    
     # Apply font settings using CSS
     st.markdown(f"""
     <style>
@@ -308,3 +289,4 @@ def apply_font_settings():
     }}
     </style>
     """, unsafe_allow_html=True)
+

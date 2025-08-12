@@ -13,7 +13,6 @@ from tkinter import filedialog
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
-
 # Project-specific imports (after path setup)
 from ui.common import get_icon_base64, apply_global_settings, get_sorted_database_files
 from ui.login_page import show_login_page
@@ -51,24 +50,20 @@ def setup_navigation_highlighting():
         border-color: #228B22 !important;
         color: #000000 !important;
     }
-    
     /* Ensure main content area can scroll properly and show all content */
     .main .block-container {
         padding-bottom: 5rem !important;
         max-width: none !important;
     }
-    
     /* Ensure proper height for main content */
     section[data-testid="stAppViewContainer"] > .main {
         min-height: 100vh !important;
         padding-bottom: 5rem !important;
     }
-    
     /* Fix any potential height constraints */
     .stApp > header {
         background: transparent;
     }
-    
     .stApp {
         overflow-y: auto !important;
     }
@@ -116,10 +111,8 @@ def main():
         return
     # Apply global settings
     apply_global_settings()
-    
     # Add CSS for navigation highlighting
     setup_navigation_highlighting()
-    
     # Sidebar navigation
     st.sidebar.title("📋 Navigation")
     # Get database files (including custom folder if set)
@@ -154,7 +147,6 @@ def main():
                 else:
                     location_indicator = "📄"
                 display_name = f"{location_indicator} Database - {base_name}"
-            
             db_options.append((display_name, db_file))
         # Sidebar selectbox
         selected_db_display = st.sidebar.selectbox(
@@ -182,7 +174,6 @@ def main():
         open_db_clicked = st.button("🧾 Open DB", use_container_width=True)
     with col3:
         refresh_clicked = st.button("🔄", use_container_width=True, help="Refresh all content")
-    
     if open_db_clicked:
         try:
             # Create a root window and hide it
@@ -202,11 +193,9 @@ def main():
                 st.rerun()
         except Exception as e:
             st.sidebar.error(f"❌ Error opening folder dialog: {str(e)}")
-    
     # Handle refresh button click
     if refresh_clicked:
         st.rerun()
-    
     # Show current custom folder if set
     current_custom_folder = st.session_state.get('custom_db_folder', '')
     if current_custom_folder:
@@ -239,7 +228,6 @@ def main():
         st.rerun()
     # Update previous page before creating navigation
     st.session_state.previous_page = st.session_state.current_page
-    
     # Clean up uploaded file when navigating away from database page
     pages_with_uploads = ["🗄️ Database"]
     if (st.session_state.previous_page in pages_with_uploads and 
@@ -276,7 +264,6 @@ def main():
         show_excel_processor()
     elif current_page == "⚙️ Settings":
         show_settings()
-
-
 if __name__ == "__main__":
     main()
+

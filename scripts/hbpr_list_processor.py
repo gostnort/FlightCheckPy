@@ -12,7 +12,6 @@ from typing import List, Tuple, Optional
 from collections import defaultdict
 
 
-
 class HBPRProcessor:
     """HBPR数据处理器"""
 
@@ -73,7 +72,7 @@ class HBPRProcessor:
         #for flight_id, data in self.flight_data.items():
         #    print(f"Flight {flight_id}: {len(data['hbnb_numbers'])} HBNB numbers, "
         #          f"{len(data['full_records'])} full records, {len(data['simple_records'])} simple records")
-            
+
 
     def _assign_simple_records(self) -> None:
         """将简单记录分配到航班（简化版本：整个文件只有一个航班）"""
@@ -133,7 +132,7 @@ class HBPRProcessor:
                 break
         record_content = '\n'.join(record_lines)
         return hbnb_num, record_content, i
-    
+
 
     def _parse_flight_info(self, flight_info: str) -> str:
         """解析航班信息并生成航班ID"""
@@ -151,7 +150,7 @@ class HBPRProcessor:
         else:
             self.flight_info[flight_parts] = (flight_info, "UNKNOWN")
         return flight_parts
-    
+
 
     def _parse_simple_record(self, line: str) -> Optional[int]:
         """解析简单hbpr记录提取HBNB号码"""
@@ -160,7 +159,7 @@ class HBPRProcessor:
         if match:
             return int(match.group(1))
         return None
-    
+
 
     def find_missing_numbers(self, flight_id: str) -> List[int]:
         """查找指定航班的缺失HBNB号码（真正不存在的号码）"""
@@ -175,15 +174,14 @@ class HBPRProcessor:
         #print(f"Flight {flight_id} HBNB range: {min_num} to {max_num}")
         #print(f"Missing {len(missing)} numbers: {missing}")
         return missing
-    
-    
+
+
     def create_database(self, flight_id: str) -> str:
         """为指定航班创建SQLite数据库"""
         # 确保databases文件夹存在
         databases_folder = "databases"
         if not os.path.exists(databases_folder):
             os.makedirs(databases_folder)
-        
         # 生成数据库文件名（在databases文件夹中）
         db_file = os.path.join(databases_folder, f"{flight_id}.db")
         # 删除已存在的数据库（带重试机制）
@@ -236,7 +234,7 @@ class HBPRProcessor:
         conn.close()
         #print(f"Created database: {db_file}")
         return db_file
-    
+
 
     def store_records(self, flight_id: str, db_file: str) -> None:
         """将指定航班的记录存储到数据库"""
@@ -294,7 +292,7 @@ class HBPRProcessor:
                 cleaned_line = line.rstrip('+')
                 cleaned_lines.append(cleaned_line)
         return '\n'.join(cleaned_lines)
-    
+
 
     def generate_report(self, flight_id: str) -> None:
         """生成指定航班的处理报告"""
@@ -355,3 +353,4 @@ def main():
 
 if __name__ == "__main__":
     main() 
+

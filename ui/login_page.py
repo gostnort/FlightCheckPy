@@ -15,25 +15,20 @@ def show_login_page():
         <h1 style="margin: 0;">Flight Check 0.62 --- Python</h1>
     </div>
     """.format(get_icon_base64("resources/fcp.ico")), unsafe_allow_html=True)
-    
     st.markdown("---")
-    
     # Center the login form
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.markdown("### 🔐 User Authentication")
         st.caption("Please enter your username to access the system")
-        
         with st.form("login_form"):
             username = st.text_input("👤 Username", placeholder="Enter username")
-            
             col1, col2 = st.columns(2)
             with col1:
                 submit_button = st.form_submit_button("🚀 Login", type="primary", use_container_width=True)
             with col2:
                 if st.form_submit_button("🔄 Clear", use_container_width=True):
                     st.rerun()
-            
             if submit_button:
                 if not username:
                     st.error("❌ Please enter a username")
@@ -44,6 +39,6 @@ def show_login_page():
                     st.rerun()
                 else:
                     st.error("❌ Invalid username. Please try again.")
-        
         st.markdown("---")
         st.caption("🔐 **Contact administrator for access credentials**")
+

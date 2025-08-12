@@ -9,11 +9,11 @@ from ui.common import apply_global_settings, get_current_database
 from scripts.hbpr_info_processor import HbprDatabase
 import os
 
+
 def show_home_page():
     """显示主页"""
     # Apply settings
     apply_global_settings()
-    
     # 检查是否需要刷新
     if 'refresh_home' in st.session_state and st.session_state.refresh_home:
         st.session_state.refresh_home = False
@@ -25,7 +25,6 @@ def show_home_page():
         try:
             # 获取当前选中的数据库
             selected_db_file = get_current_database()
-            
             if not selected_db_file:
                 st.error("❌ No database selected!")
                 st.info("💡 Please select a database from the sidebar or build one first using the Database Management page.")
@@ -37,7 +36,6 @@ def show_home_page():
             all_stats = db.get_all_statistics()
             range_info = all_stats['hbnb_range_info']
             missing_numbers = all_stats['missing_numbers']
-            
             # 显示HBNB范围信息
             metrics_col1, metrics_col2, metrics_col3, metrics_col4 = st.columns(4)
             with metrics_col1:
@@ -48,7 +46,6 @@ def show_home_page():
                 st.metric("Total Found", range_info['total_found'])
             with metrics_col4:
                 st.metric("Missing Numbers", len(missing_numbers))
-            
             # 显示已接受乘客统计
             try:
                 accepted_stats = all_stats['accepted_passengers_stats']
@@ -108,32 +105,27 @@ def show_home_page():
     st.subheader("📝 导航指南")
     st.markdown("""
     使用左侧边栏中的导航按钮访问不同功能：
-    
     ## 🗄️ **数据库管理**
     - 从HBPR列表文件构建数据库
     - 导入和处理HBPR列表数据
     - 管理数据库文件并查看航班信息
-    
     ## 🔍 **处理记录** 
     - 手动添加/编辑单个HBPR记录
     - 验证和处理所有记录
     - 创建简单的HBNB占位符
     - 将处理后的数据导出到Excel
     - 对记录进行排序和筛选
-    
     ## 📋 **其他指令**
     - 添加/编辑指令分析数据  
     - 处理EMD（电子杂费单）记录
     - 分析指令模式和验证
-    
     ## 📊 **Excel处理器**
     - 导入包含TKNE数据的Excel文件
     - 处理EMD销售日报
     - 生成格式化的输出文件
     - 自动匹配CKIN CCRD记录
-    
     ## ⚙️ **设置**
     - 配置字体族和大小偏好
-    
     **💡 开始使用：** 从边栏下拉菜单中选择数据库，然后使用导航按钮访问所需功能。
     """)
+

@@ -18,59 +18,58 @@ import pandas as pd
 
 class StatisticsManager:
     """Manages statistics caching and automatic refresh when database changes"""
-    
+
+
     def __init__(self, db_file: str):
         self.db_file = db_file
         self.cache = {}
         self.cache_timestamps = {}
         self.db_last_modified = 0
         self.cache_duration = 300  # 5 minutes cache duration
-    
+
+
     def _get_db_last_modified(self) -> float:
         """Get the last modification time of the database file"""
         try:
             return os.path.getmtime(self.db_file)
         except (OSError, FileNotFoundError):
             return 0
-    
+
+
     def _is_cache_valid(self, cache_key: str) -> bool:
         """Check if cache is still valid"""
         if cache_key not in self.cache or cache_key not in self.cache_timestamps:
             return False
-        
         current_time = time.time()
         cache_time = self.cache_timestamps[cache_key]
-        
         # Check if cache has expired
         if current_time - cache_time > self.cache_duration:
             return False
-        
         # Check if database has been modified since cache was created
         current_db_modified = self._get_db_last_modified()
         if current_db_modified > self.db_last_modified:
             return False
-        
         return True
-    
+
+
     def _update_db_timestamp(self):
         """Update the database modification timestamp"""
         self.db_last_modified = self._get_db_last_modified()
-    
+
+
     def get_cached_or_fetch(self, cache_key: str, fetch_func, *args, **kwargs) -> Any:
         """Get cached data or fetch fresh data if cache is invalid"""
         if self._is_cache_valid(cache_key):
             return self.cache[cache_key]
-        
         # Fetch fresh data
         result = fetch_func(*args, **kwargs)
-        
         # Cache the result
         self.cache[cache_key] = result
         self.cache_timestamps[cache_key] = time.time()
         self._update_db_timestamp()
-        
         return result
-    
+
+
     def invalidate_cache(self, cache_key: Optional[str] = None):
         """Invalidate cache for specific key or all cache"""
         if cache_key:
@@ -81,7 +80,8 @@ class StatisticsManager:
         else:
             self.cache.clear()
             self.cache_timestamps.clear()
-    
+
+
     def force_refresh(self, cache_key: str, fetch_func, *args, **kwargs) -> Any:
         """Force refresh of cached data"""
         self.invalidate_cache(cache_key)
@@ -755,7 +755,7 @@ class CHbpr:
         self.debug_msg.append(f"INBOUND_FLIGHT = {self.INBOUND_FLIGHT}, OUTBOUND_FLIGHT = {self.OUTBOUND_FLIGHT}")
         self.debug_msg.append(f"INBOUND_STATION = {result['inbound_station']}, OUTBOUND_STATION = {result['outbound_station']}")
         return result
-    
+
 
     def __GetProperties(self):
         """获取属性"""
@@ -774,10 +774,8 @@ class CHbpr:
         for line in properties_lines:
             current_property = line.split(" ")
             properties.extend(current_property)
-        
         # 提取TKNE数据
         self.ExtractTKNE(properties)
-        
         #删除没用的属性
         properties_to_remove = []
         for property in properties:
@@ -840,11 +838,10 @@ class CHbpr:
         return not any(self.error_msg.values())
 
 
-
-
 class HbprDatabase:
     """数据库操作类，管理HBPR相关的所有数据库操作"""
-    
+
+
     def __init__(self, db_file: str = None):
         """初始化数据库连接"""
         # Initialize cache before setting db_file
@@ -852,14 +849,13 @@ class HbprDatabase:
         self.db_file = db_file
         if db_file and not os.path.exists(db_file):
             raise FileNotFoundError(f"Database file {db_file} not found!")
-        
         # Initialize statistics manager for caching
         if db_file:
             self.stats_manager = StatisticsManager(db_file)
         else:
             self.stats_manager = None
-    
-    
+
+
     def find_database(self):
         """查找包含HBPR数据的数据库文件，优先查找databases文件夹"""
         # 首先查找databases文件夹中的数据库文件
@@ -868,14 +864,11 @@ class HbprDatabase:
             db_files = glob.glob(os.path.join(databases_folder, "*.db"))
         else:
             db_files = []
-        
         # 如果databases文件夹中没有找到，则查找根目录
         if not db_files:
             db_files = glob.glob("*.db")
-        
         if not db_files:
             raise FileNotFoundError("No database files found! Please build database first.")
-        
         for db_file in db_files:
             try:
                 conn = sqlite3.connect(db_file)
@@ -887,65 +880,52 @@ class HbprDatabase:
                     if self.db_file != db_file:
                         self._chbpr_fields_initialized = False
                     self.db_file = db_file
-                    
                     # Initialize statistics manager with the found database
                     self.stats_manager = StatisticsManager(db_file)
-                    
                     # 确保数据库有最新的字段结构
                     self._add_chbpr_fields()
                     return db_file
                 conn.close()
             except sqlite3.Error:
                 continue
-        
         raise FileNotFoundError("No database with hbpr_full_records table found!")
-    
-    
+
+
     def build_from_hbpr_list(self, input_file: str = "sample_hbpr_list.txt"):
         """使用hbpr_list_processor从文件构建数据库"""
         print(f"=== Building database from {input_file} ===")
-        
         if not os.path.exists(input_file):
             raise FileNotFoundError(f"Input file {input_file} not found!")
-        
         # 创建处理器并处理文件
         processor = HBPRProcessor(input_file)
         processor.process()
-        
         # 更新数据库文件路径
         self.find_database()
-        
         # 添加CHbpr字段到hbpr_full_records表
         self._add_chbpr_fields()
-        
         # 初始化missing_numbers表
         try:
             self.update_missing_numbers_table()
             print("Missing numbers table initialized")
         except Exception as e:
             print(f"Warning: Could not initialize missing numbers table: {e}")
-        
         print(f"Database built successfully: {self.db_file}")
         return processor
-    
-    
+
+
     def _add_chbpr_fields(self):
         """向hbpr_full_records表添加CHbpr解析的字段"""
         if not self.db_file:
             self.find_database()
-        
         # Skip if already initialized for this database instance
         if self._chbpr_fields_initialized:
             return
-        
         try:
             conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
-            
             # 检查表结构
             cursor.execute("PRAGMA table_info(hbpr_full_records)")
             existing_columns = [column[1] for column in cursor.fetchall()]
-            
             # 定义需要添加的字段
             new_fields = [
                 ('is_validated', 'BOOLEAN DEFAULT 0'),
@@ -984,7 +964,6 @@ class HbprDatabase:
                 ('validated_at', 'TIMESTAMP'),
                 ('bol_duplicate', 'BOOLEAN DEFAULT 0')
             ]
-            
             # 添加不存在的字段
             fields_added = 0
             for field_name, field_type in new_fields:
@@ -995,21 +974,17 @@ class HbprDatabase:
                         fields_added += 1
                     except sqlite3.Error as e:
                         print(f"Warning: Could not add field {field_name}: {e}")
-            
             conn.commit()
             conn.close()
-            
             # Only print summary message if fields were actually added
             if fields_added > 0:
                 print(f"CHbpr fields added to hbpr_full_records table ({fields_added} new fields)")
-            
             # Mark as initialized for this instance
             self._chbpr_fields_initialized = True
-            
         except sqlite3.Error as e:
             raise Exception(f"Database error: {e}")
-    
-    
+
+
     def get_hbpr_record(self, hbnb_number: int):
         """从数据库获取HBPR记录内容"""
         if not self.db_file:
@@ -1017,24 +992,20 @@ class HbprDatabase:
         else:
             # 确保数据库有最新的字段结构
             self._add_chbpr_fields()
-        
         try:
             conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
-            
             cursor.execute("SELECT record_content FROM hbpr_full_records WHERE hbnb_number = ?", (hbnb_number,))
             result = cursor.fetchone()
             conn.close()
-            
             if result:
                 return result[0]
             else:
                 raise ValueError(f"No HBPR record found for HBNB {hbnb_number}")
-                
         except sqlite3.Error as e:
             raise Exception(f"Database error: {e}")
-    
-    
+
+
     def update_with_chbpr_results(self, chbpr_instance: CHbpr):
         """使用CHbpr实例的结果更新hbpr_full_records表"""
         if not self.db_file:
@@ -1042,20 +1013,16 @@ class HbprDatabase:
         else:
             # 确保数据库有最新的字段结构
             self._add_chbpr_fields()
-        
         # 获取结构化数据
         data = chbpr_instance.get_structured_data()
         hbnb_number = data['hbnb_number']
-        
         try:
             conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
-            
             # 检查记录是否存在
             cursor.execute("SELECT 1 FROM hbpr_full_records WHERE hbnb_number = ?", (hbnb_number,))
             if not cursor.fetchone():
                 raise ValueError(f"HBNB {hbnb_number} not found in hbpr_full_records")
-            
             # 更新记录
             cursor.execute('''
                 UPDATE hbpr_full_records SET
@@ -1065,6 +1032,8 @@ class HbprDatabase:
                     pnr = ?,
                     name = ?,
                     seat = ?,
+
+
                     class = ?,
                     destination = ?,
                     bag_piece = ?,
@@ -1129,55 +1098,43 @@ class HbprDatabase:
                 data['error_other'],
                 hbnb_number
             ))
-            
             conn.commit()
             conn.close()
-            
             # Invalidate statistics cache after database update
             if self.stats_manager:
                 self.stats_manager.invalidate_cache()
-            
             print(f"Updated HBNB {hbnb_number} in hbpr_full_records table")
             return True
-            
         except sqlite3.Error as e:
             raise Exception(f"Database error: {e}")
-    
-    
+
+
     def get_validation_stats(self):
         """获取验证统计信息"""
         if not self.db_file:
             self.find_database()
-        
         try:
             conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
-            
             # 总记录数
             cursor.execute("SELECT COUNT(*) FROM hbpr_full_records")
             total_records = cursor.fetchone()[0]
-            
             # 已验证记录数
             cursor.execute("SELECT COUNT(*) FROM hbpr_full_records WHERE is_validated = 1")
             validated_records = cursor.fetchone()[0]
-            
             # 有效记录数
             cursor.execute("SELECT COUNT(*) FROM hbpr_full_records WHERE is_valid = 1")
             valid_records = cursor.fetchone()[0]
-            
             # 无效记录数
             cursor.execute("SELECT COUNT(*) FROM hbpr_full_records WHERE is_validated = 1 AND is_valid = 0")
             invalid_records = cursor.fetchone()[0]
-            
             conn.close()
-            
             return {
                 'total_records': total_records,
                 'validated_records': validated_records,
                 'valid_records': valid_records,
                 'invalid_records': invalid_records
             }
-            
         except sqlite3.Error as e:
             raise Exception(f"Database error: {e}")
 
@@ -1186,38 +1143,30 @@ class HbprDatabase:
         """获取缺失的HBNB号码列表"""
         if not self.db_file:
             self.find_database()
-        
         try:
             conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
-            
             # 检查是否存在missing_numbers表
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='missing_numbers'")
             if not cursor.fetchone():
                 conn.close()
                 return []
-            
             # 获取缺失的HBNB号码
             cursor.execute("SELECT hbnb_number FROM missing_numbers ORDER BY hbnb_number")
             missing_numbers = [row[0] for row in cursor.fetchall()]
-            
             conn.close()
             return missing_numbers
-            
         except sqlite3.Error as e:
             raise Exception(f"Database error: {e}")
-
 
 
     def update_missing_numbers_table(self):
         """重新计算并更新missing_numbers表"""
         if not self.db_file:
             self.find_database()
-        
         try:
             conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
-            
             # 检查是否存在missing_numbers表，如果不存在则创建
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='missing_numbers'")
             if not cursor.fetchone():
@@ -1227,11 +1176,9 @@ class HbprDatabase:
                     )
                 ''')
                 print("Created missing_numbers table")
-            
             # 获取所有现有的HBNB号码（包括完整记录和简单记录）
             cursor.execute("SELECT hbnb_number FROM hbpr_full_records ORDER BY hbnb_number")
             full_records = [row[0] for row in cursor.fetchall()]
-            
             # 检查是否存在hbpr_simple_records表
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='hbpr_simple_records'")
             if cursor.fetchone():
@@ -1239,35 +1186,26 @@ class HbprDatabase:
                 simple_records = [row[0] for row in cursor.fetchall()]
             else:
                 simple_records = []
-            
             # 合并所有HBNB号码
             all_hbnb_numbers = set(full_records + simple_records)
-            
             if not all_hbnb_numbers:
                 conn.close()
                 return False
-            
             # 计算期望的范围
             min_num = min(all_hbnb_numbers)
             max_num = max(all_hbnb_numbers)
             expected_numbers = set(range(min_num, max_num + 1))
-            
             # 计算缺失的号码
             missing_numbers = expected_numbers - all_hbnb_numbers
-            
             # 清空现有的missing_numbers表
             cursor.execute("DELETE FROM missing_numbers")
-            
             # 插入新的缺失号码
             for num in sorted(missing_numbers):
                 cursor.execute("INSERT INTO missing_numbers (hbnb_number) VALUES (?)", (num,))
-            
             conn.commit()
             conn.close()
-            
             print(f"Updated missing_numbers table: {len(missing_numbers)} missing numbers")
             return True
-            
         except sqlite3.Error as e:
             raise Exception(f"Database error: {e}")
 
@@ -1276,39 +1214,31 @@ class HbprDatabase:
         """获取HBNB号码范围信息"""
         if not self.db_file:
             self.find_database()
-        
         try:
             conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
-            
             # 获取所有HBNB号码
             cursor.execute("SELECT hbnb_number FROM hbpr_full_records ORDER BY hbnb_number")
             hbnb_numbers = [row[0] for row in cursor.fetchall()]
-            
             if not hbnb_numbers:
                 conn.close()
                 return {'min': 0, 'max': 0, 'total_expected': 0, 'total_found': 0}
-            
             min_num = min(hbnb_numbers)
             max_num = max(hbnb_numbers)
             total_found = len(hbnb_numbers)
-            
             # 计算期望的总数（连续范围）
             total_expected = max_num - min_num + 1
-            
             conn.close()
-            
             return {
                 'min': min_num,
                 'max': max_num,
                 'total_expected': total_expected,
                 'total_found': total_found
             }
-            
         except sqlite3.Error as e:
             raise Exception(f"Database error: {e}")
-    
-    
+
+
     def erase_splited_records(self):
         """删除hbpr_full_records表中除hbnb_number和record_content外的所有记录"""
         if not self.db_file:
@@ -1316,62 +1246,48 @@ class HbprDatabase:
         try:
             conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
-            
             # 获取当前记录数
             cursor.execute("SELECT COUNT(*) FROM hbpr_full_records")
             total_records = cursor.fetchone()[0]
-            
             # 获取表的所有列名
             cursor.execute("PRAGMA table_info(hbpr_full_records)")
             columns = cursor.fetchall()
             column_names = [col[1] for col in columns]
-            
             print(f"发现表字段: {column_names}")
-            
             # 找出需要清除的字段（除了hbnb_number和record_content）
             fields_to_clear = [col for col in column_names if col not in ['hbnb_number', 'record_content']]
             print(f"需要清除的字段: {fields_to_clear}")
-            
             if fields_to_clear:
                 # 构建UPDATE语句，将所有其他字段设置为NULL
                 set_clause = ", ".join([f"{field} = NULL" for field in fields_to_clear])
                 update_sql = f"UPDATE hbpr_full_records SET {set_clause}"
-                
                 print(f"执行SQL: {update_sql}")
                 cursor.execute(update_sql)
                 conn.commit()
                 print(f"已清除 {len(fields_to_clear)} 个字段的数据，保留 {total_records} 条记录")
             else:
                 print("没有需要清除的字段")
-            
             conn.close()
             return True
         except sqlite3.Error as e:
             raise Exception(f"Database error: {e}")
 
 
-
-
-
     def get_flight_info(self):
         """获取当前数据库的航班信息"""
         if not self.db_file:
             self.find_database()
-        
         try:
             conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
-            
             # 检查是否存在flight_info表
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='flight_info'")
             if not cursor.fetchone():
                 conn.close()
                 return None
-            
             cursor.execute("SELECT flight_id, flight_number, flight_date FROM flight_info LIMIT 1")
             result = cursor.fetchone()
             conn.close()
-            
             if result:
                 return {
                     'flight_id': result[0],
@@ -1379,7 +1295,6 @@ class HbprDatabase:
                     'flight_date': result[2]
                 }
             return None
-            
         except sqlite3.Error as e:
             raise Exception(f"Database error: {e}")
 
@@ -1388,15 +1303,12 @@ class HbprDatabase:
         """检查HBNB号码是否存在于数据库中（完整记录或简单记录）"""
         if not self.db_file:
             self.find_database()
-        
         try:
             conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
-            
             # 检查完整记录
             cursor.execute("SELECT 1 FROM hbpr_full_records WHERE hbnb_number = ?", (hbnb_number,))
             full_exists = cursor.fetchone() is not None
-            
             # 检查简单记录
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='hbpr_simple_records'")
             if cursor.fetchone():
@@ -1404,15 +1316,12 @@ class HbprDatabase:
                 simple_exists = cursor.fetchone() is not None
             else:
                 simple_exists = False
-            
             conn.close()
-            
             return {
                 'exists': full_exists or simple_exists,
                 'full_record': full_exists,
                 'simple_record': simple_exists
             }
-            
         except sqlite3.Error as e:
             raise Exception(f"Database error: {e}")
 
@@ -1421,11 +1330,9 @@ class HbprDatabase:
         """创建简单HBPR记录"""
         if not self.db_file:
             self.find_database()
-        
         try:
             conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
-            
             # 确保hbpr_simple_records表存在
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS hbpr_simple_records (
@@ -1434,23 +1341,18 @@ class HbprDatabase:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
-            
             # 插入简单记录
             cursor.execute(
                 'INSERT OR REPLACE INTO hbpr_simple_records (hbnb_number, record_line) VALUES (?, ?)',
                 (hbnb_number, record_line)
             )
-            
             conn.commit()
             conn.close()
-            
             # Invalidate statistics cache after database update
             if self.stats_manager:
                 self.stats_manager.invalidate_cache()
-            
             print(f"Created simple record for HBNB {hbnb_number}")
             return True
-            
         except sqlite3.Error as e:
             raise Exception(f"Database error: {e}")
 
@@ -1459,32 +1361,25 @@ class HbprDatabase:
         """创建完整HBPR记录"""
         if not self.db_file:
             self.find_database()
-        
         try:
             conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
-            
             # 插入完整记录
             cursor.execute(
                 'INSERT OR REPLACE INTO hbpr_full_records (hbnb_number, record_content) VALUES (?, ?)',
                 (hbnb_number, record_content)
             )
-            
             # 如果存在简单记录，删除它
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='hbpr_simple_records'")
             if cursor.fetchone():
                 cursor.execute("DELETE FROM hbpr_simple_records WHERE hbnb_number = ?", (hbnb_number,))
-            
             conn.commit()
             conn.close()
-            
             # Invalidate statistics cache after database update
             if self.stats_manager:
                 self.stats_manager.invalidate_cache()
-            
             print(f"Created full record for HBNB {hbnb_number}")
             return True
-            
         except sqlite3.Error as e:
             raise Exception(f"Database error: {e}")
 
@@ -1493,30 +1388,23 @@ class HbprDatabase:
         """删除简单HBPR记录"""
         if not self.db_file:
             self.find_database()
-        
         try:
             conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
-            
             cursor.execute("DELETE FROM hbpr_simple_records WHERE hbnb_number = ?", (hbnb_number,))
-            
             conn.commit()
             conn.close()
-            
             # Invalidate statistics cache after database update
             if self.stats_manager:
                 self.stats_manager.invalidate_cache()
-            
             # 更新missing_numbers表
             try:
                 self.update_missing_numbers_table()
                 print(f"Updated missing numbers table after deleting HBNB {hbnb_number}")
             except Exception as e:
                 print(f"Warning: Could not update missing numbers table: {e}")
-            
             print(f"Deleted simple record for HBNB {hbnb_number}")
             return True
-            
         except sqlite3.Error as e:
             raise Exception(f"Database error: {e}")
 
@@ -1524,7 +1412,6 @@ class HbprDatabase:
     def extract_flight_info_from_hbpr(self, hbpr_content: str):
         """从HBPR内容中提取航班信息"""
         import re
-        
         # 查找航班信息模式
         match = re.search(r'>HBPR:\s*([^*,]+)', hbpr_content)
         if match:
@@ -1540,20 +1427,17 @@ class HbprDatabase:
                         'flight_date': date,
                         'flight_info': flight_info
                     }
-            
             return {
                 'flight_number': flight_info,
                 'flight_date': 'Unknown',
                 'flight_info': flight_info
             }
-        
         return None
 
 
     def extract_hbnb_from_simple_record(self, record_line: str):
         """从简单记录中提取HBNB号码"""
         import re
-        
         # 格式: hbpr *,{NUMBER} 或 HBPR *,{NUMBER}
         match = re.search(r'hbpr\s*[^,]*,(\d+)', record_line, re.IGNORECASE)
         if match:
@@ -1564,7 +1448,6 @@ class HbprDatabase:
     def is_simple_record(self, content: str):
         """判断是否为简单记录"""
         import re
-        
         # 简单记录格式: hbpr *,{NUMBER} 或 HBPR *,{NUMBER}
         return bool(re.match(r'^hbpr\s*[^,]*,(\d+)$', content.strip(), re.IGNORECASE))
 
@@ -1579,21 +1462,17 @@ class HbprDatabase:
         """验证HBPR内容中的航班信息是否与数据库匹配"""
         if not self.db_file:
             self.find_database()
-        
         # 获取数据库中的航班信息
         db_flight_info = self.get_flight_info()
         if not db_flight_info:
             return {'match': False, 'reason': 'No flight info in database'}
-        
         # 从HBPR内容中提取航班信息
         hbpr_flight_info = self.extract_flight_info_from_hbpr(hbpr_content)
         if not hbpr_flight_info:
             return {'match': False, 'reason': 'No flight info found in HBPR content'}
-        
         # 比较航班信息
         db_flight_number = db_flight_info['flight_number']
         hbpr_flight_number = hbpr_flight_info['flight_number']
-        
         if db_flight_number == hbpr_flight_number:
             return {
                 'match': True,
@@ -1613,23 +1492,18 @@ class HbprDatabase:
         """获取所有简单记录"""
         if not self.db_file:
             self.find_database()
-        
         try:
             conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
-            
             # 检查是否存在hbpr_simple_records表
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='hbpr_simple_records'")
             if not cursor.fetchone():
                 conn.close()
                 return []
-            
             cursor.execute("SELECT hbnb_number, record_line FROM hbpr_simple_records ORDER BY hbnb_number")
             results = cursor.fetchall()
             conn.close()
-            
             return [{'hbnb_number': row[0], 'record_line': row[1]} for row in results]
-            
         except sqlite3.Error as e:
             raise Exception(f"Database error: {e}")
 
@@ -1638,7 +1512,6 @@ class HbprDatabase:
         """获取记录摘要信息"""
         if not self.db_file:
             self.find_database()
-        
         # Use statistics manager for caching
         if self.stats_manager:
             return self.stats_manager.get_cached_or_fetch(
@@ -1647,17 +1520,16 @@ class HbprDatabase:
             )
         else:
             return self._fetch_record_summary()
-    
+
+
     def _fetch_record_summary(self):
         """Internal method to fetch record summary from database"""
         try:
             conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
-            
             # 获取完整记录数量
             cursor.execute("SELECT COUNT(*) FROM hbpr_full_records")
             full_count = cursor.fetchone()[0]
-            
             # 获取简单记录数量
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='hbpr_simple_records'")
             if cursor.fetchone():
@@ -1665,15 +1537,12 @@ class HbprDatabase:
                 simple_count = cursor.fetchone()[0]
             else:
                 simple_count = 0
-            
             # 获取已验证记录数量
             cursor.execute("SELECT COUNT(*) FROM hbpr_full_records WHERE is_validated = 1")
             validated_count = cursor.fetchone()[0]
-            
             # 获取已接受乘客数量（有登机号的记录）
             cursor.execute("SELECT COUNT(*) FROM hbpr_full_records WHERE boarding_number IS NOT NULL AND boarding_number > 0")
             accepted_pax_count = cursor.fetchone()[0]
-            
             # 获取TKNE数量（检查列是否存在）
             try:
                 cursor.execute("SELECT COUNT(*) FROM hbpr_full_records WHERE tkne IS NOT NULL AND tkne != ''")
@@ -1681,9 +1550,7 @@ class HbprDatabase:
             except sqlite3.OperationalError:
                 # 如果tkne列不存在，返回0
                 tkne_count = 0
-            
             conn.close()
-            
             return {
                 'full_records': full_count,
                 'simple_records': simple_count,
@@ -1692,18 +1559,16 @@ class HbprDatabase:
                 'tkne_count': tkne_count,
                 'total_records': full_count + simple_count
             }
-            
         except sqlite3.Error as e:
             raise Exception(f"Database error: {e}")
+
 
     def get_accepted_passengers(self, sort_by='boarding_number', limit=None):
         """获取已接受乘客列表（有登机号的记录）"""
         if not self.db_file:
             self.find_database()
-        
         try:
             conn = sqlite3.connect(self.db_file)
-            
             # 构建查询语句
             query = """
                 SELECT hbnb_number, boarding_number, name, seat, class, destination,
@@ -1711,7 +1576,6 @@ class HbprDatabase:
                 FROM hbpr_full_records 
                 WHERE boarding_number IS NOT NULL AND boarding_number > 0
             """
-            
             # 添加排序
             if sort_by == 'boarding_number':
                 query += " ORDER BY boarding_number"
@@ -1721,42 +1585,35 @@ class HbprDatabase:
                 query += " ORDER BY name"
             else:
                 query += " ORDER BY boarding_number"
-            
             # 添加限制
             if limit:
                 query += f" LIMIT {limit}"
-            
             df = pd.read_sql_query(query, conn)
             conn.close()
-            
             return df
-            
         except sqlite3.Error as e:
             raise Exception(f"Database error: {e}")
+
 
     def get_accepted_passengers_count(self):
         """获取已接受乘客数量"""
         if not self.db_file:
             self.find_database()
-        
         try:
             conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
-            
             cursor.execute("SELECT COUNT(*) FROM hbpr_full_records WHERE boarding_number IS NOT NULL AND boarding_number > 0")
             count = cursor.fetchone()[0]
-            
             conn.close()
             return count
-            
         except sqlite3.Error as e:
             raise Exception(f"Database error: {e}")
+
 
     def get_accepted_passengers_stats(self):
         """获取已接受乘客统计信息"""
         if not self.db_file:
             self.find_database()
-        
         # Use statistics manager for caching
         if self.stats_manager:
             return self.stats_manager.get_cached_or_fetch(
@@ -1765,13 +1622,13 @@ class HbprDatabase:
             )
         else:
             return self._fetch_accepted_passengers_stats()
-    
+
+
     def _fetch_accepted_passengers_stats(self):
         """Internal method to fetch accepted passengers statistics from database"""
         try:
             conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
-            
             # 获取基本统计信息
             cursor.execute("""
                 SELECT 
@@ -1785,10 +1642,8 @@ class HbprDatabase:
                 FROM hbpr_full_records 
                 WHERE boarding_number IS NOT NULL AND boarding_number > 0
             """)
-            
             result = cursor.fetchone()
             conn.close()
-            
             if result:
                 return {
                     'total_accepted': result[0],
@@ -1809,43 +1664,39 @@ class HbprDatabase:
                     'total_bag_pieces': 0,
                     'total_bag_weight': 0
                 }
-            
         except sqlite3.Error as e:
             raise Exception(f"Database error: {e}")
-    
+
+
     def invalidate_statistics_cache(self, cache_key: Optional[str] = None):
         """Invalidate statistics cache manually"""
         if self.stats_manager:
             self.stats_manager.invalidate_cache(cache_key)
-    
+
+
     def force_refresh_statistics(self, cache_key: str):
         """Force refresh specific statistics"""
         if not self.stats_manager:
             return None
-        
         if cache_key == "record_summary":
             return self.stats_manager.force_refresh(cache_key, self._fetch_record_summary)
         elif cache_key == "accepted_passengers_stats":
             return self.stats_manager.force_refresh(cache_key, self._fetch_accepted_passengers_stats)
         else:
             raise ValueError(f"Unknown cache key: {cache_key}")
-    
+
+
     def get_all_statistics(self):
         """Get all statistics with automatic caching and fallback"""
         if not self.db_file:
             self.find_database()
-        
         stats = {}
-        
         # Get accepted passengers stats
         stats['accepted_passengers_stats'] = self.get_accepted_passengers_stats()
-        
         # Get HBNB range info
         stats['hbnb_range_info'] = self.get_hbnb_range_info()
-        
         # Get missing numbers
         stats['missing_numbers'] = self.get_missing_hbnb_numbers()
-        
         return stats
 
 
@@ -1853,11 +1704,9 @@ class HbprDatabase:
         """创建duplicate_record表"""
         if not self.db_file:
             self.find_database()
-        
         try:
             conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
-            
             # 创建duplicate_record表
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS duplicate_record (
@@ -1869,99 +1718,80 @@ class HbprDatabase:
                     FOREIGN KEY (original_hbnb_id) REFERENCES hbpr_full_records(hbnb_number)
                 )
             ''')
-            
             conn.commit()
             conn.close()
             print("Created duplicate_record table")
-            
         except sqlite3.Error as e:
             raise Exception(f"Database error: {e}")
-    
-    
+
+
     def create_duplicate_record(self, hbnb_number: int, original_hbnb_id: int, record_content: str):
         """创建重复记录"""
         if not self.db_file:
             self.find_database()
-        
         try:
             # 确保duplicate_record表存在
             self.create_duplicate_record_table()
-            
             conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
-            
             # 插入重复记录
             cursor.execute(
                 'INSERT INTO duplicate_record (hbnb_number, original_hbnb_id, record_content) VALUES (?, ?, ?)',
                 (hbnb_number, original_hbnb_id, record_content)
             )
-            
             # 更新原始记录的bol_duplicate标志
             cursor.execute(
                 'UPDATE hbpr_full_records SET bol_duplicate = 1 WHERE hbnb_number = ?',
                 (original_hbnb_id,)
             )
-            
             conn.commit()
             conn.close()
-            
             print(f"Created duplicate record for HBNB {hbnb_number} (original: {original_hbnb_id})")
             return True
-            
         except sqlite3.Error as e:
             raise Exception(f"Database error: {e}")
-    
-    
+
+
     def create_duplicate_record_with_time(self, hbnb_number: int, original_hbnb_id: int, record_content: str, created_at: str):
         """创建重复记录并指定创建时间"""
         if not self.db_file:
             self.find_database()
-        
         try:
             # 确保duplicate_record表存在
             self.create_duplicate_record_table()
-            
             conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
-            
             # 插入重复记录并指定创建时间
             cursor.execute(
                 'INSERT INTO duplicate_record (hbnb_number, original_hbnb_id, record_content, created_at) VALUES (?, ?, ?, ?)',
                 (hbnb_number, original_hbnb_id, record_content, created_at)
             )
-            
             # 更新原始记录的bol_duplicate标志
             cursor.execute(
                 'UPDATE hbpr_full_records SET bol_duplicate = 1 WHERE hbnb_number = ?',
                 (original_hbnb_id,)
             )
-            
             conn.commit()
             conn.close()
-            
             print(f"Created duplicate record for HBNB {hbnb_number} (original: {original_hbnb_id}) with original timestamp")
             return True
-            
         except sqlite3.Error as e:
             raise Exception(f"Database error: {e}")
-    
-    
+
+
     def get_original_record_info(self, hbnb_number: int):
         """获取原始记录的内容和创建时间"""
         if not self.db_file:
             self.find_database()
-        
         try:
             conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
-            
             cursor.execute(
                 "SELECT record_content, created_at FROM hbpr_full_records WHERE hbnb_number = ?", 
                 (hbnb_number,)
             )
             result = cursor.fetchone()
             conn.close()
-            
             if result:
                 return {
                     'record_content': result[0],
@@ -1969,20 +1799,17 @@ class HbprDatabase:
                 }
             else:
                 return None
-                
         except sqlite3.Error as e:
             raise Exception(f"Database error: {e}")
-    
-    
+
+
     def auto_backup_before_replace(self, hbnb_number: int):
         """在替换记录前自动备份原始记录"""
         if not self.db_file:
             self.find_database()
-        
         try:
             # 获取原始记录信息
             original_info = self.get_original_record_info(hbnb_number)
-            
             if original_info:
                 # 创建备份记录，保持原始创建时间
                 self.create_duplicate_record_with_time(
@@ -1994,26 +1821,22 @@ class HbprDatabase:
                 return True
             else:
                 return False
-                
         except Exception as e:
             raise Exception(f"Auto backup failed: {e}")
-    
-    
+
+
     def get_duplicate_records(self, original_hbnb_id: int):
         """获取指定HBNB的所有重复记录"""
         if not self.db_file:
             self.find_database()
-        
         try:
             conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
-            
             # 检查duplicate_record表是否存在
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='duplicate_record'")
             if not cursor.fetchone():
                 conn.close()
                 return []
-            
             # 获取重复记录
             cursor.execute(
                 'SELECT id, hbnb_number, record_content, created_at FROM duplicate_record WHERE original_hbnb_id = ? ORDER BY created_at',
@@ -2021,83 +1844,68 @@ class HbprDatabase:
             )
             results = cursor.fetchall()
             conn.close()
-            
             return [{'id': row[0], 'hbnb_number': row[1], 'record_content': row[2], 'created_at': row[3]} for row in results]
-            
         except sqlite3.Error as e:
             raise Exception(f"Database error: {e}")
-    
-    
+
+
     def get_all_duplicate_hbnbs(self):
         """获取所有有重复记录的HBNB号码"""
         if not self.db_file:
             self.find_database()
-        
         try:
             conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
-            
             # 检查duplicate_record表是否存在
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='duplicate_record'")
             if not cursor.fetchone():
                 conn.close()
                 return []
-            
             # 获取所有有重复记录的HBNB号码
             cursor.execute(
                 'SELECT DISTINCT original_hbnb_id FROM duplicate_record ORDER BY original_hbnb_id'
             )
             results = cursor.fetchall()
             conn.close()
-            
             return [row[0] for row in results]
-            
         except sqlite3.Error as e:
             raise Exception(f"Database error: {e}")
-    
-    
+
+
     def get_duplicate_record_content(self, duplicate_id: int):
         """根据duplicate record ID获取记录内容"""
         if not self.db_file:
             self.find_database()
-        
         try:
             conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
-            
             cursor.execute(
                 'SELECT record_content FROM duplicate_record WHERE id = ?',
                 (duplicate_id,)
             )
             result = cursor.fetchone()
             conn.close()
-            
             if result:
                 return result[0]
             else:
                 raise ValueError(f"No duplicate record found with ID {duplicate_id}")
-                
         except sqlite3.Error as e:
             raise Exception(f"Database error: {e}")
-    
-    
+
+
     def get_combined_records_for_display(self):
         """获取用于显示的组合记录（包括原始记录和重复记录）"""
         if not self.db_file:
             self.find_database()
-        
         try:
             conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
-            
             records = []
-            
             # 获取所有完整记录
             cursor.execute(
                 'SELECT hbnb_number, record_content, created_at, bol_duplicate FROM hbpr_full_records ORDER BY hbnb_number'
             )
             full_records = cursor.fetchall()
-            
             for record in full_records:
                 hbnb_number, content, created_at, bol_duplicate = record
                 records.append({
@@ -2108,7 +1916,6 @@ class HbprDatabase:
                     'has_duplicates': bool(bol_duplicate),
                     'duplicate_id': None
                 })
-                
                 # 如果有重复记录，也添加进来
                 if bol_duplicate:
                     duplicates = self.get_duplicate_records(hbnb_number)
@@ -2122,32 +1929,27 @@ class HbprDatabase:
                             'duplicate_id': dup['id'],
                             'original_hbnb': hbnb_number
                         })
-            
             conn.close()
             return records
-            
         except sqlite3.Error as e:
             raise Exception(f"Database error: {e}")
+
 
     def get_tkne_count(self):
         """获取TKNE数量（有TKNE字段的记录数）"""
         if not self.db_file:
             self.find_database()
-        
         try:
             conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
-            
             try:
                 cursor.execute("SELECT COUNT(*) FROM hbpr_full_records WHERE tkne IS NOT NULL AND tkne != ''")
                 count = cursor.fetchone()[0]
             except sqlite3.OperationalError:
                 # 如果tkne列不存在，返回0
                 count = 0
-            
             conn.close()
             return count
-            
         except sqlite3.Error as e:
             raise Exception(f"Database error: {e}")
 
@@ -2156,13 +1958,10 @@ def main():
     """测试__GetProperties方法"""
     with open("sample_hbpr.txt", "r", encoding="utf-8") as f:
         sample_content = f.read()
-    
     chbpr = CHbpr()
     chbpr.run(sample_content)
-    
     print("Debug Message:", chbpr.debug_msg)
     print("error_msg:", chbpr.error_msg)
-
-
 if __name__ == "__main__":
     main() 
+

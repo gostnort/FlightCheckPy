@@ -17,33 +17,24 @@ def show_export_data():
     try:
         # 获取当前选中的数据库
         selected_db_file = get_current_database()
-        
         if not selected_db_file:
             st.error("❌ No database selected.")
             st.info("💡 Please select a database from the sidebar or build one first in the Database Management page.")
             return
-        
         db = HbprDatabase(selected_db_file)
-        
         st.subheader("📤 Export Data")
-        
         conn = sqlite3.connect(db.db_file)
-        
         # 获取所有已处理的记录
         df = pd.read_sql_query("""
             SELECT * FROM hbpr_full_records 
             WHERE is_validated = 1
             ORDER BY hbnb_number
         """, conn)
-        
         conn.close()
-        
         if df.empty:
             st.info("ℹ️ No processed records to export.")
             return
-        
         col1, col2, col3 = st.columns(3)
-        
         with col1:
             # CSV导出
             csv_data = df.to_csv(index=False)
@@ -54,7 +45,6 @@ def show_export_data():
                 mime="text/csv",
                 use_container_width=True
             )
-        
         with col2:
             # Excel导出
             excel_buffer = BytesIO()
@@ -67,7 +57,6 @@ def show_export_data():
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True
             )
-        
         with col3:
             # 原始文本导出
             origin_txt_data = export_as_origin_txt(db.db_file)
@@ -78,7 +67,6 @@ def show_export_data():
                 mime="text/plain",
                 use_container_width=True
             )
-        
         # 显示导出预览
         st.subheader("👀 Export Preview")
         st.dataframe(df.head(10), use_container_width=True)
@@ -98,7 +86,6 @@ def export_as_origin_txt(db_file: str) -> str:
     content_parts = []
     try:
         conn = sqlite3.connect(db_file)
-        
         # 导出full_record表的record_content
         cursor = conn.execute("""
             SELECT hbnb_number, record_content 
@@ -116,16 +103,13 @@ def export_as_origin_txt(db_file: str) -> str:
             FROM commands 
             ORDER BY command_full, content
         """)
-        
         commands = cursor.fetchall()
         if commands:
             for command_full, content in commands:
                 content_parts.append(f">{command_full}\n{content}")
                 content_parts.append("")
-        
         conn.close()
-        
         return "\n".join(content_parts)
-        
     except Exception as e:
         return f"Error exporting data: {str(e)}"
+

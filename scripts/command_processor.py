@@ -14,10 +14,10 @@ from typing import Dict, List, Optional, Any
 class CommandProcessor:
     """Process and manage airline system commands"""
 
+
     def __init__(self, db_file: str = None):
         """
         Initialize command processor
-        
         Args:
             db_file (str, optional): Path to database file for flight info validation
         """
@@ -54,10 +54,8 @@ class CommandProcessor:
     def parse_commands_from_text(self, text_content: str) -> List[Dict[str, Any]]:
         """
         Parse commands from text content
-        
         Args:
             text_content (str): Raw text content containing commands
-            
         Returns:
             List[Dict[str, Any]]: List of parsed commands
         """
@@ -94,7 +92,6 @@ class CommandProcessor:
                         full_raw_content = raw_command_line + '\n' + '\n'.join(content_lines)
                     else:
                         full_raw_content = raw_command_line
-                    
                     command_data = {
                         **command_info,
                         'content': full_raw_content,  # 存储完整的原始输入，不使用strip()以保留格式
@@ -112,19 +109,15 @@ class CommandProcessor:
     def _parse_command_line(self, line: str) -> Optional[Dict[str, str]]:
         """
         Parse a command line to extract command information
-        
         Args:
             line (str): Command line to parse
-            
         Returns:
             Optional[Dict[str, str]]: Parsed command info or None
         """
         # 应用特殊字符处理
         corrected_line = self._apply_character_corrections(line)
-        
         # 移除前导'>'如果存在
         corrected_line = corrected_line.lstrip('>')
-        
         # 使用正则表达式提取命令：r"[A-Z]{2,4}:\s?.+?(?=\s{2})"
         # 修改后可以兼容毫无空格的指令
         pattern = r"([A-Z]{2,4}):\s?(.+?)(?=\s{2,}|\s*$)"
@@ -149,45 +142,35 @@ class CommandProcessor:
         """
         Apply character corrections to command line
         Similar to validate_full_hbpr_record logic for special characters
-        
         Args:
             line (str): Command line to correct
-            
         Returns:
             str: Corrected command line
         """
         corrected_line = line
-        
         # 处理DLE字符(ASCII 16, \x10)
         if '\x10' in corrected_line:
             corrected_line = corrected_line.replace('\x10', '>')
-        
         # 处理DEL字符(ASCII 127, \x7f)
         elif '\x7f' in corrected_line:
             corrected_line = corrected_line.replace('\x7f', '>')
-        
         # 处理其他控制字符
         elif re.search(r'[\x00-\x1f\x7f]', corrected_line):
             corrected_line = re.sub(r'[\x00-\x1f\x7f]', '>', corrected_line)
-        
         # 处理可见的"del"文本(不区分大小写)
         elif re.search(r'del[A-Z]{2,4}:', corrected_line, re.IGNORECASE):
             corrected_line = re.sub(r'del([A-Z]{2,4}:)', r'>\1', corrected_line, flags=re.IGNORECASE)
-        
         # 如果命令行没有>前缀且严格符合命令模式，添加它
         elif re.match(r'^[A-Z]{2,4}:\s*[A-Z0-9]', corrected_line):
             corrected_line = '>' + corrected_line
-        
         return corrected_line
 
 
     def _extract_flight_info(self, command: str) -> Dict[str, str]:
         """
         Extract flight number and date from command
-        
         Args:
             command (str): Command string
-            
         Returns:
             Dict[str, str]: Flight info with flight_number and flight_date
         """
@@ -204,10 +187,8 @@ class CommandProcessor:
     def _parse_flight_info(self, flight_info_str: str) -> Dict[str, Any]:
         """
         Parse flight info string like "CA984/25JUL25" into components
-        
         Args:
             flight_info_str (str): Flight info string
-            
         Returns:
             Dict[str, Any]: Parsed flight info with airline, flight_number, flight_date
         """
@@ -238,10 +219,8 @@ class CommandProcessor:
     def _parse_flight_date(self, date_str: str) -> Optional[datetime]:
         """
         Parse flight date string to datetime object using built-in datetime
-        
         Args:
             date_str (str): Date string like "25JUL25" or "25JUL"
-            
         Returns:
             Optional[datetime]: Parsed date or None
         """
@@ -261,10 +240,8 @@ class CommandProcessor:
     def _merge_duplicate_commands(self, commands: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
         Merge commands that have the same command_full but different content
-        
         Args:
             commands (List[Dict[str, Any]]): List of parsed commands
-            
         Returns:
             List[Dict[str, Any]]: List of merged commands
         """
@@ -286,11 +263,9 @@ class CommandProcessor:
     def validate_flight_info(self, flight_number: str, flight_date: str) -> bool:
         """
         Validate if flight info matches database
-        
         Args:
             flight_number (str): Flight number to validate (e.g., "CA984")
             flight_date (str): Flight date to validate (e.g., "25JUL25")
-            
         Returns:
             bool: True if matches database flight info
         """
@@ -317,11 +292,9 @@ class CommandProcessor:
     def _compare_flight_dates(self, date1: str, date2: str) -> bool:
         """
         Compare flight dates in different formats
-        
         Args:
             date1 (str): First date
             date2 (str): Second date
-            
         Returns:
             bool: True if dates match
         """
@@ -334,10 +307,8 @@ class CommandProcessor:
     def _normalize_flight_date(self, date_str: str) -> str:
         """
         Normalize flight date to standard format
-        
         Args:
             date_str (str): Date string to normalize
-            
         Returns:
             str: Normalized date string
         """
@@ -354,13 +325,10 @@ class CommandProcessor:
     def store_commands(self, commands: List[Dict[str, Any]]) -> Dict[str, int]:
         """
         Store commands in database with atomic transaction
-        
         Args:
             commands (List[Dict[str, Any]]): Commands to store
-            
         Returns:
             Dict[str, int]: Statistics about stored commands
-            
         Raises:
             Exception: If database operation fails
         """
@@ -393,7 +361,6 @@ class CommandProcessor:
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
-            
             # 创建索引以提高查询性能
             conn.execute("CREATE INDEX IF NOT EXISTS idx_commands_timeline ON commands(command_full, version)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_commands_parent ON commands(parent_id)")
@@ -416,10 +383,8 @@ class CommandProcessor:
                         WHERE command_full = ? AND is_latest = TRUE
                     """, (cmd['command_full'],))
                     existing = cursor.fetchone()
-                    
                     if existing:
                         existing_id, existing_version, existing_content = existing
-                        
                         # 如果内容不同，创建新版本
                         if existing_content != cmd['content']:
                             # 标记旧版本为不是最新
@@ -428,7 +393,6 @@ class CommandProcessor:
                                 SET is_latest = FALSE 
                                 WHERE id = ?
                             """, (existing_id,))
-                            
                             # 插入新版本
                             new_version = existing_version + 1
                             conn.execute("""
@@ -441,7 +405,6 @@ class CommandProcessor:
                                 cmd['flight_number'], cmd['flight_date'],
                                 cmd['content'], new_version, existing_id
                             ))
-                            
                             stats['updated'] += 1
                         else:
                             # 内容相同，只更新时间戳
@@ -450,7 +413,6 @@ class CommandProcessor:
                                 SET updated_at = CURRENT_TIMESTAMP 
                                 WHERE id = ?
                             """, (existing_id,))
-                            
                             stats['skipped'] += 1
                     else:
                         # 新命令
@@ -464,7 +426,6 @@ class CommandProcessor:
                             cmd['flight_number'], cmd['flight_date'],
                             cmd['content']
                         ))
-                        
                         stats['new'] += 1
                 except Exception as e:
                     stats['errors'] += 1
@@ -547,7 +508,6 @@ class CommandProcessor:
                 WHERE command_full = ? 
                 ORDER BY version ASC
             """, (command_full,))
-            
             columns = [desc[0] for desc in cursor.description]
             rows = cursor.fetchall()
             conn.close()
@@ -569,7 +529,6 @@ class CommandProcessor:
                 FROM commands 
                 ORDER BY command_full, version ASC
             """)
-            
             columns = [desc[0] for desc in cursor.description]
             rows = cursor.fetchall()
             conn.close()
@@ -582,7 +541,6 @@ class CommandProcessor:
     def erase_commands_table(self) -> bool:
         """
         Erase all data from the commands table
-        
         Returns:
             bool: True if successful, False otherwise
         """
@@ -696,7 +654,6 @@ def main():
         for cmd in non_matching_commands:
             print(f"   {cmd['command_type']}: {cmd['command_full']}")
     print("\n✅ TEST COMPLETED")
-
-
 if __name__ == "__main__":
     main()
+

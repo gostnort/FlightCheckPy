@@ -24,10 +24,8 @@ def setup_working_directory():
 def get_resource_path(relative_path):
     """
     获取资源文件的绝对路径
-    
     Args:
         relative_path: 相对于项目根目录的路径
-        
     Returns:
         str: 资源文件的绝对路径
     """
@@ -38,13 +36,11 @@ def get_resource_path(relative_path):
 def get_python_executable():
     """
     获取合适的Python执行文件路径，优先使用虚拟环境
-    
     Returns:
         tuple: (python_path: str, is_venv: bool) - Python执行文件的完整路径和是否为虚拟环境
     """
     # 常见的虚拟环境目录名
     venv_dirs = ['venv', '.venv', 'env', '.env']
-    
     # 检查是否在虚拟环境中
     for venv_dir in venv_dirs:
         if os.path.exists(venv_dir):
@@ -52,10 +48,8 @@ def get_python_executable():
             # Windows虚拟环境路径（转换为绝对路径）
             python_path = os.path.abspath(os.path.join(venv_dir, 'Scripts', 'python.exe'))
             pythonw_path = os.path.abspath(os.path.join(venv_dir, 'Scripts', 'pythonw.exe'))
-            
             print(f"检查Python路径: {pythonw_path}")
             print(f"Python文件存在: {os.path.exists(pythonw_path)}")
-            
             # 优先使用pythonw.exe（不显示控制台窗口）
             if os.path.exists(pythonw_path):
                 print(f"✓ 使用虚拟环境Python: {pythonw_path}")
@@ -65,7 +59,6 @@ def get_python_executable():
                 return python_path, True
             else:
                 print("! 虚拟环境目录存在但Python执行文件不存在")
-    
     # 如果没有找到虚拟环境，使用系统Python
     print("! 未找到虚拟环境，使用系统Python")
     return "pythonw", False
@@ -74,7 +67,6 @@ def get_python_executable():
 def notify_winotify(title: str, msg: str, icon_path: str = None):
     """
     Show a Windows toast notification.
-
     title:      Toast title
     msg:        Toast message body
     icon_path:  Path to a .ico file (optional)
@@ -83,7 +75,6 @@ def notify_winotify(title: str, msg: str, icon_path: str = None):
     if icon_path and not os.path.exists(icon_path):
         print(f"Warning: Icon file not found: {icon_path}")
         icon_path = None
-    
     toast = Notification(
         app_id="StreamlitLauncher",
         title=title,
@@ -95,11 +86,9 @@ def notify_winotify(title: str, msg: str, icon_path: str = None):
     toast.show()
 
 
-
 def wait_for_streamlit(url="http://localhost:8501/_stcore/health", timeout: int = 60) -> bool:
     """
     Polls the Streamlit health endpoint until success or timeout.
-
     Returns True on HTTP 200, False on timeout.
     """
     start = time.time()
@@ -128,7 +117,6 @@ def start_streamlit():
     python_exec, is_venv = get_python_executable()
     print(f"启动Streamlit使用的Python: {python_exec}")
     print(f"是否使用虚拟环境: {'是' if is_venv else '否'}")
-    
     # 构建自定义命令
     main_py_path = get_resource_path("ui/main.py")
     cmd = [
@@ -148,7 +136,6 @@ def start_streamlit():
             notify_winotify("Streamlit Launcher", "Streamlit is ready!", icon_path=icon_path)
         else:
             notify_winotify("Streamlit Launcher", "Streamlit failed to start in time.", icon_path=icon_path)
-
     threading.Thread(target=watch_and_notify, daemon=True).start()
     return False
 
@@ -204,19 +191,17 @@ if __name__ == "__main__":
     # 设置正确的工作目录
     project_dir = setup_working_directory()
     print(f"工作目录: {project_dir}")
-    
     # 显示检测到的Python执行文件路径
     python_path, is_venv = get_python_executable()
     print(f"检测到的Python执行文件: {python_path}")
-    
     # 检查是否使用了虚拟环境
     if is_venv:
         print("✓ 使用虚拟环境中的Python")
     else:
         print("! 使用系统Python（未检测到虚拟环境）")
-    
     # Launch Streamlit on startup
     threading.Thread(target=start_streamlit).start()
     # Start the tray icon event loop
     tray = build_tray()
     tray.run()
+
