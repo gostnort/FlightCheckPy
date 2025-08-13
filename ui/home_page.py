@@ -8,6 +8,7 @@ import pandas as pd
 from ui.common import apply_global_settings, get_current_database
 from scripts.hbpr_info_processor import HbprDatabase
 import os
+from scripts.home_metrics import get_home_summary
 
 
 def show_home_page():
@@ -91,8 +92,30 @@ def show_home_page():
             # 强制刷新所有统计信息
             db.invalidate_statistics_cache()
             st.rerun()
-        if st.button("🔄 Refresh Home Page", use_container_width=True):
-            st.rerun()
+        # 航班摘要信息折叠块
+        try:
+            summary = get_home_summary(selected_db_file)
+            title = f"{summary['flight_number']} / {summary['flight_date']}"
+            with st.expander(title, expanded=True):
+                total_line = f"TOTAL {summary['total_accepted']} + {summary['infant_count']} INF"
+                j_y_line = f"J_{summary['accepted_business']} / Y_{summary['accepted_economy']}"
+                ratio_display = f"{summary['ratio']}%" if summary['ratio'] is not None else "N/A"
+                ratio_line = f"RATIO: {ratio_display}"
+                id_line = f"ID_J: {summary['id_j']}  ID_Y: {summary['id_y']}"
+                noshow_line = f"NOSHOW: J_{summary['noshow_j']} / Y_{summary['noshow_y']}"
+                inad_line = f"INAD: {summary['inad_total']}"
+                msg = "\n".join([
+                    title,
+                    total_line,
+                    j_y_line,
+                    ratio_line,
+                    id_line,
+                    noshow_line,
+                    inad_line,
+                ])
+                st.code(msg)
+        except Exception as e:
+            st.info(f"Summary not available: {str(e)}")
     st.markdown("---")
     # 最近活动
     st.subheader("📝 导航指南")
