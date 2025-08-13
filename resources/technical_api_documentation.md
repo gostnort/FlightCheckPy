@@ -2,17 +2,18 @@
 
 ## Project Overview
 
-The Flight Data Processing System is a comprehensive Python application designed to process and analyze passenger records from HBPR (Hotel Booking Passenger Record) format. The system provides data validation, structured parsing, database storage, and a modern web-based UI for data management and analysis. 
+The Flight Data Processing System is a comprehensive Python application for processing and analyzing HBPR (Hotel Booking Passenger Record) data. It validates and parses records, stores them in SQLite databases, and provides a modern Streamlit-based UI for database building, record processing, airline command analysis with timeline versioning, and Excel output generation by mapping TKNE to CKIN CCRD data.
 
 **Key Features:**
-- Multi-source database discovery with visual location indicators
-- Native Windows folder picker integration for custom database directories
-- Enhanced session state management for persistent user preferences
-- Centralized database selection with flight information display
+- Multi-source database discovery with visual location indicators (📁 Custom, 🏠 Default, 📄 Root)
+- Native Windows folder picker integration (topmost) with custom folder persistence
+- Centralized database selection with flight information and session persistence
 - Real-time database switching without application restart
-- Intelligent statistics caching with automatic refresh
-- Accepted passengers tracking and analysis
-- TKNE-based acceptance rate calculations
+- Intelligent statistics caching with automatic invalidation on updates
+- Accepted passengers tracking with infant count and class split (Business/Economy)
+- Excel Processor: XLS/XLSX import, strict header validation, TKNE ↔ CKIN CCRD mapping, formatted EMD Excel export
+- Command analysis: import, manual edit, view, timeline versioning, and maintenance/migration
+- TKNE-aware calculations and compatibility handling
 
 ## 🏗️ System Architecture
 
@@ -23,14 +24,16 @@ FlightCheckPy/
 ├── scripts/                    # Core processing modules
 │   ├── hbpr_info_processor.py  # HBPR record processing, validation, and statistics
 │   ├── hbpr_list_processor.py  # Batch processing and database creation
+│   ├── excel_processor.py      # Excel-to-EMD processing via TKNE/CKIN CCRD mapping
 │   └── general_func.py         # Utility functions and configuration
 ├── ui/                         # Web UI components
 │   ├── main.py                 # Main UI coordinator with Windows integration
 │   ├── login_page.py           # Authentication interface
 │   ├── home_page.py            # System overview with real-time statistics
 │   ├── database_page.py        # Database management and construction
-│   ├── process_records_page.py # Record processing interface with sub-tabs
-│   ├── command_analysis_page.py # Command processing and analysis
+│   ├── process_records_page.py # Record processing navigation (batch/single/simple/sort/export)
+│   ├── command_analysis_page.py # Command processing, timeline view, and maintenance
+│   ├── excel_processor_page.py # Excel upload and EMD export UI
 │   ├── settings_page.py        # System configuration and about info
 │   ├── common.py               # Shared utilities with enhanced database discovery
 │   └── process_records/        # Sub-modules for record processing
@@ -55,6 +58,8 @@ FlightCheckPy/
 - `tkinter` - Native Windows GUI toolkit (built-in with Python)
 - `sqlite3` - Database operations
 - `pandas` - Data manipulation
+- `openpyxl` - Excel reading/writing for XLSX
+- `xlrd` - Legacy XLS support
 - `glob` - File pattern matching
 - `time` - Cache timing management
 
@@ -654,8 +659,9 @@ from ui.common import get_icon_base64, apply_global_settings, get_sorted_databas
 from ui.login_page import show_login_page
 from ui.home_page import show_home_page
 from ui.database_page import show_database_management
-from ui.process_records_page import show_process_records_page
+from ui.process_records_page import show_process_records
 from ui.command_analysis_page import show_command_analysis
+from ui.excel_processor_page import show_excel_processor
 from ui.settings_page import show_settings
 from scripts.hbpr_info_processor import HbprDatabase
 ```
@@ -729,7 +735,7 @@ def authenticate_user(username: str) -> bool:
 
 **Location**: `ui/home_page.py`
 
-**Purpose**: Displays system overview with simplified metrics (excluding acceptance rate, TKNE count, and remaining pax).
+**Purpose**: Displays system overview with simplified metrics (Max HBNB, Missing Count, Accepted Passengers with infant and class split), quick actions, and refresh.
 
 ```python
 def show_home_page() -> None:
