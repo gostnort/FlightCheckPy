@@ -27,14 +27,12 @@ def _connect(db_file: str) -> sqlite3.Connection:
 
 def create_or_refresh_views(db_file: str) -> None:
     """Create views used by the home page. Idempotent.
-
     Views:
     - vw_home_accepted_counts: totals for accepted pax (adults), infants, J/Y adult split
     - vw_home_flags: ID (SA) counts by class, NOSHOW by class, INAD total
     """
     conn = _connect(db_file)
     cur = conn.cursor()
-
     # Drop and recreate to keep logic simple and always up-to-date
     cur.execute("DROP VIEW IF EXISTS vw_home_accepted_counts")
     cur.execute(
@@ -52,7 +50,6 @@ def create_or_refresh_views(db_file: str) -> None:
         FROM hbpr_full_records
         """
     )
-
     cur.execute("DROP VIEW IF EXISTS vw_home_flags")
     cur.execute(
         """
@@ -83,14 +80,12 @@ def create_or_refresh_views(db_file: str) -> None:
         FROM hbpr_full_records
         """
     )
-
     conn.commit()
     conn.close()
 
 
 def _parse_cnf_from_text(text: str) -> Optional[Tuple[int, int]]:
     """Extract CNF/JxYy from a block of SY command text.
-
     Returns a tuple (j_compartment, y_compartment) if found.
     """
     if not text:
@@ -104,7 +99,6 @@ def _parse_cnf_from_text(text: str) -> Optional[Tuple[int, int]]:
 
 def get_sy_compartments(db_file: str) -> Optional[Tuple[int, int]]:
     """Find the latest SY command matching current flight in DB and parse CNF.
-
     Looks up the flight in table flight_info, then finds the newest matching
     command in table commands where command_type = 'SY' and is_latest = 1.
     """
@@ -145,43 +139,34 @@ def get_sy_compartments(db_file: str) -> Optional[Tuple[int, int]]:
 
 def get_home_summary(db_file: str) -> Dict[str, object]:
     """Return a dict with all values needed by the home page expander.
-
     Keys: flight_number, flight_date, total_accepted, infant_count,
           accepted_business, accepted_economy, id_j, id_y,
           noshow_j, noshow_y, inad_total, j_cnf, y_cnf, ratio
     """
     # Ensure views exist
     create_or_refresh_views(db_file)
-
     conn = _connect(db_file)
     cur = conn.cursor()
-
     # Flight info
     cur.execute("SELECT flight_number, flight_date FROM flight_info LIMIT 1")
     flight_row = cur.fetchone()
     flight_number, flight_date = (flight_row[0], flight_row[1]) if flight_row else ("", "")
-
     # Accepted counts
     cur.execute("SELECT total_accepted, infant_count, accepted_business, accepted_economy FROM vw_home_accepted_counts")
     a = cur.fetchone() or (0, 0, 0, 0)
     total_accepted, infant_count, accepted_business, accepted_economy = a
-
     # Flags
     cur.execute("SELECT id_j, id_y, noshow_j, noshow_y, inad_total FROM vw_home_flags")
     f = cur.fetchone() or (0, 0, 0, 0, 0)
     id_j, id_y, noshow_j, noshow_y, inad_total = f
-
     conn.close()
-
     # CNF from SY
     cnf = get_sy_compartments(db_file)
     j_cnf, y_cnf = (cnf if cnf else (0, 0))
-
     compartment_total = (j_cnf or 0) + (y_cnf or 0)
     ratio = None
     if compartment_total > 0:
         ratio = round((total_accepted / compartment_total) * 100)
-
     return {
         'flight_number': flight_number,
         'flight_date': flight_date,
@@ -204,9 +189,7 @@ def get_debug_data(db_file: str) -> Dict[str, object]:
     """Return debug data for manual verification of statistics"""
     conn = _connect(db_file)
     cur = conn.cursor()
-    
     debug_data = {}
-    
     # Get total counts by class
     cur.execute("""
         SELECT class, COUNT(*) as total_count,
@@ -216,7 +199,6 @@ def get_debug_data(db_file: str) -> Dict[str, object]:
         GROUP BY class
     """)
     debug_data['class_breakdown'] = cur.fetchall()
-    
     # Get XRES counts
     cur.execute("""
         SELECT class, COUNT(*) as xres_count
@@ -225,7 +207,6 @@ def get_debug_data(db_file: str) -> Dict[str, object]:
         GROUP BY class
     """)
     debug_data['xres_counts'] = cur.fetchall()
-    
     # Get SA counts
     cur.execute("""
         SELECT class, COUNT(*) as sa_count
@@ -234,7 +215,6 @@ def get_debug_data(db_file: str) -> Dict[str, object]:
         GROUP BY class
     """)
     debug_data['sa_counts'] = cur.fetchall()
-    
     # Get empty properties counts
     cur.execute("""
         SELECT class, COUNT(*) as empty_props_count
@@ -243,7 +223,6 @@ def get_debug_data(db_file: str) -> Dict[str, object]:
         GROUP BY class
     """)
     debug_data['empty_properties'] = cur.fetchall()
-    
     # Get sample records for each category
     cur.execute("""
         SELECT hbnb_number, class, boarding_number, properties
@@ -252,7 +231,6 @@ def get_debug_data(db_file: str) -> Dict[str, object]:
         LIMIT 5
     """)
     debug_data['xres_samples'] = cur.fetchall()
-    
     cur.execute("""
         SELECT hbnb_number, class, boarding_number, properties
         FROM hbpr_full_records 
@@ -260,7 +238,6 @@ def get_debug_data(db_file: str) -> Dict[str, object]:
         LIMIT 5
     """)
     debug_data['sa_samples'] = cur.fetchall()
-    
     cur.execute("""
         SELECT hbnb_number, class, boarding_number, properties
         FROM hbpr_full_records 
@@ -271,7 +248,6 @@ def get_debug_data(db_file: str) -> Dict[str, object]:
         LIMIT 5
     """)
     debug_data['noshow_samples'] = cur.fetchall()
-    
     conn.close()
     return debug_data
 
@@ -280,53 +256,42 @@ def get_debug_summary(db_file: str) -> str:
     """Return a formatted debug summary string for manual verification"""
     try:
         debug_data = get_debug_data(db_file)
-        
         summary = []
         summary.append("🔍 Debug Data for Manual Verification")
         summary.append("")
-        
         # Class breakdown
         summary.append("**Class Breakdown:**")
         for row in debug_data['class_breakdown']:
             summary.append(f"- Class {row[0]}: Total={row[1]}, With BN={row[2]}, Without BN={row[3]}")
-        
         # XRES counts
         summary.append("")
         summary.append("**XRES Counts:**")
         for row in debug_data['xres_counts']:
             summary.append(f"- Class {row[0]}: {row[1]} records")
-        
         # SA counts  
         summary.append("")
         summary.append("**SA Counts:**")
         for row in debug_data['sa_counts']:
             summary.append(f"- Class {row[0]}: {row[1]} records")
-        
         # Empty properties
         summary.append("")
         summary.append("**Empty Properties Counts:**")
         for row in debug_data['empty_properties']:
             summary.append(f"- Class {row[0]}: {row[1]} records")
-        
         # Sample records
         summary.append("")
         summary.append("**XRES Sample Records:**")
         for row in debug_data['xres_samples']:
             summary.append(f"- HBNB {row[0]}, Class {row[1]}, BN {row[2]}, Props: {row[3]}")
-        
         summary.append("")
         summary.append("**SA Sample Records:**")
         for row in debug_data['sa_samples']:
             summary.append(f"- HBNB {row[0]}, Class {row[1]}, BN {row[2]}, Props: {row[3]}")
-        
         summary.append("")
         summary.append("**NOSHOW Sample Records:**")
         for row in debug_data['noshow_samples']:
             summary.append(f"- HBNB {row[0]}, Class {row[1]}, BN {row[2]}, Props: {row[3]}")
-            
         return "\n".join(summary)
-        
     except Exception as e:
         return f"Error getting debug data: {str(e)}"
-
 

@@ -51,10 +51,12 @@ EXPECTED_COLUMNS: Dict[int, str] = {
 FLIGHT_NUMBER: str = ''
 FLIGHT_DATE: Optional[date] = None
 
+
 def format_date_ddmmmyy(d: date) -> str:
     """将日期格式化为 DDMMMYY（英文大写月份缩写）"""
     MONTH_ABBR = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC']
     return f"{d.day:02d}{MONTH_ABBR[d.month-1]}{d.year % 100:02d}"
+
 
 def validate_input_columns(df_input: pd.DataFrame) -> None:
     """校验表头：第二行作为表头且与固定列序号完全一致。
@@ -152,13 +154,38 @@ def parse_ckin_ccrd(ckin_msg: str) -> Dict:
                 letters = item1[:2]
                 digits = item1[2:]
                 data['O'] = digits
-                if letters.upper() == 'AX':
-                    data['M'] = item2
+                # 智能转换item2中的非数字字母字符为小数点（金额格式转换）
+                converted_item2 = ''
+                if item2:
+                    try:
+                        # 检查是否包含字母（除了数字和常见分隔符）
+                        if re.search(r'[a-zA-Z]', item2):
+                            raise ValueError(f"金额格式无效，包含字母: {item2}")
+                        # 将非数字字符转换为小数点
+                        converted_item2 = re.sub(r'[^\d]', '.', item2)
+                        # 验证转换后的格式是否为有效数字
+                        if converted_item2.count('.') > 1:
+                            # 如果有多余的小数点，只保留最后一个
+                            parts = converted_item2.split('.')
+                            if len(parts) > 2:
+                                converted_item2 = ''.join(parts[:-1]) + '.' + parts[-1]
+                        # 最终验证：确保是有效的数字格式
+                        float(converted_item2)
+                    except (ValueError, TypeError) as e:
+                        # 转换失败，抛出异常让记录进入unprocessed_records
+                        raise ValueError(f"金额格式转换失败 '{item2}' -> '{converted_item2}': {str(e)}")
                 else:
-                    data['N'] = item2
+                    converted_item2 = ''
+                if letters.upper() == 'AX':
+                    data['M'] = converted_item2
+                else:
+                    data['N'] = converted_item2
                 data['P'] = item3_and_beyond
                 return {'success': True, 'data': data}
         return {'success': False, 'data': {}}
+    except ValueError as e:
+        # 重新抛出ValueError异常，让主处理循环捕获并添加到unprocessed_records
+        raise e
     except Exception:
         return {'success': False, 'data': {}}
 
@@ -184,6 +211,8 @@ def number_to_english(amount: float) -> str:
         ones = ['', 'ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE']
         teens = ['TEN', 'ELEVEN', 'TWELVE', 'THIRTEEN', 'FOURTEEN', 'FIFTEEN', 'SIXTEEN', 'SEVENTEEN', 'EIGHTEEN', 'NINETEEN']
         tens = ['', '', 'TWENTY', 'THIRTY', 'FORTY', 'FIFTY', 'SIXTY', 'SEVENTY', 'EIGHTY', 'NINETY']
+
+
         def convert_hundreds(n):
             result = ''
             if n >= 100:
@@ -323,7 +352,6 @@ def create_base_output_row(input_row: pd.Series) -> Dict:
 
 def process_excel_file(df_input: pd.DataFrame, db, debug: bool = False) -> Tuple[Optional[pd.DataFrame], List[Dict], List[Dict]]:
     """处理输入数据，返回结果表、未处理记录、调试日志（按行）。
-
     注：全局变量 FLIGHT_NUMBER/FLIGHT_DATE 会在处理期间被设置，可供其他地方直接使用。
     """
     # 校验表头
@@ -391,7 +419,6 @@ def process_excel_file(df_input: pd.DataFrame, db, debug: bool = False) -> Tuple
 
 def generate_output_excel(result_df: pd.DataFrame, unprocessed_records: List[Dict], output_file: str) -> str:
     """根据模板生成输出Excel文件，返回保存路径。
-
     使用全局 FLIGHT_NUMBER/FLIGHT_DATE 写入 SUM 表。
     """
     from openpyxl import load_workbook
@@ -491,5 +518,4 @@ def generate_output_excel(result_df: pd.DataFrame, unprocessed_records: List[Dic
     wb.save(output_file)
     wb.close()
     return output_file
-
 

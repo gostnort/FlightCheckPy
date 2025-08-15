@@ -1672,7 +1672,6 @@ class HbprDatabase:
                 """
             )
             base = cursor.fetchone()
-
             # 计算婴儿数量（可能不存在列，做兼容处理）
             infant_count = 0
             try:
@@ -1685,7 +1684,6 @@ class HbprDatabase:
                 infant_count = cursor.fetchone()[0]
             except sqlite3.OperationalError:
                 infant_count = 0
-
             # 计算公务舱(含头等舱)与经济舱成人数量
             cursor.execute(
                 """
@@ -1701,9 +1699,7 @@ class HbprDatabase:
                 """
             )
             accepted_economy = cursor.fetchone()[0]
-
             conn.close()
-
             if base:
                 return {
                     'total_accepted': base[0],
