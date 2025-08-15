@@ -187,6 +187,8 @@ class CHbpr:
                     self.__GetProperties()
                     self.__GetConnectingFlights()
                 else:
+                    self.__GetProperties()
+                    self.__GetConnectingFlights()
                     self.debug_msg.append("No BN number found, skipping validation")
         except Exception as e:
             self.error_msg["Other"].append(

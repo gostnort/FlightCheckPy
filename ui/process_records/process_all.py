@@ -69,10 +69,15 @@ def start_processing_all_records(db, batch_size):
                     success = db.update_with_chbpr_results(chbpr)
                     if success:
                         processed_count += 1
-                        if chbpr.is_valid():
-                            valid_count += 1
+                        # 只有有BN号的记录才计入错误统计
+                        if chbpr.BoardingNumber > 0:
+                            if chbpr.is_valid():
+                                valid_count += 1
+                            else:
+                                error_count += 1
                         else:
-                            error_count += 1
+                            # 无BN号的记录标记为已处理但不计入错误统计
+                            st.write(f"ℹ️ HBNB {hbnb_number}: No boarding number, processed but not counted in error stats")
                 except Exception as e:
                     # 静默处理错误，不显示具体错误信息
                     pass
@@ -83,9 +88,9 @@ def start_processing_all_records(db, batch_size):
             with col1:
                 st.metric("Total Processed", processed_count)
             with col2:
-                st.metric("Valid Records", valid_count)
+                st.metric("Valid Records (with BN)", valid_count)
             with col3:
-                st.metric("Records with Errors", error_count)
+                st.metric("Records with Errors (with BN)", error_count)
         # 自动刷新页面以显示新的错误信息
         st.rerun()
     except Exception as e:

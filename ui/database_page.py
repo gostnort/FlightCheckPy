@@ -207,7 +207,7 @@ def show_statistics():
     try:
         db = HbprDatabase(selected_db_file)
         # 添加刷新按钮
-        col1, col2 = st.columns([3, 1])
+        col1, col2, col3 = st.columns([3, 1, 1])
         with col1:
             st.subheader("📈 Statistics")
         with col2:
@@ -215,6 +215,14 @@ def show_statistics():
                 # 强制刷新所有统计信息
                 db.invalidate_statistics_cache()
                 st.rerun()
+        with col3:
+            debug_trigger = st.toggle("🔍 Debug", value=False)
+        
+        # 显示调试信息（如果触发）
+        if debug_trigger:
+            from scripts.home_metrics import get_debug_summary
+            debug_info = get_debug_summary(selected_db_file)
+            st.info(debug_info)
         # 使用新的统计管理系统获取所有统计信息
         all_stats = db.get_all_statistics()
         range_info = all_stats['hbnb_range_info']

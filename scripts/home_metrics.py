@@ -58,12 +58,26 @@ def create_or_refresh_views(db_file: str) -> None:
         """
         CREATE VIEW vw_home_flags AS
         SELECT
-            -- SA indicates ID staff tickets
-            SUM(CASE WHEN boarding_number IS NOT NULL AND boarding_number > 0 AND class IN ('F','C') AND properties LIKE '%SA%' THEN 1 ELSE 0 END) AS id_j,
-            SUM(CASE WHEN boarding_number IS NOT NULL AND boarding_number > 0 AND class = 'Y' AND properties LIKE '%SA%' THEN 1 ELSE 0 END) AS id_y,
-            -- NOSHOW: no boarding number and property does not contain XRES
-            SUM(CASE WHEN (boarding_number IS NULL OR boarding_number = 0) AND class IN ('F','C') AND IFNULL(properties,'') NOT LIKE '%XRES%' THEN 1 ELSE 0 END) AS noshow_j,
-            SUM(CASE WHEN (boarding_number IS NULL OR boarding_number = 0) AND class = 'Y' AND IFNULL(properties,'') NOT LIKE '%XRES%' THEN 1 ELSE 0 END) AS noshow_y,
+            -- SA indicates ID staff tickets (match as token, not substring like in USA)
+            SUM(CASE WHEN boarding_number IS NOT NULL AND boarding_number > 0 AND class IN ('F','C') AND (
+                      INSTR(','||IFNULL(properties,'')||',', ',SA') > 0
+                    ) THEN 1 ELSE 0 END) AS id_j,
+            SUM(CASE WHEN boarding_number IS NOT NULL AND boarding_number > 0 AND class = 'Y' AND (
+                      INSTR(','||IFNULL(properties,'')||',', ',SA') > 0
+                    ) THEN 1 ELSE 0 END) AS id_y,
+            -- NOSHOW: total - XRES - SA - BN - empty_properties
+            SUM(CASE WHEN class IN ('F','C')
+                      AND (boarding_number IS NULL OR boarding_number = 0)
+                      AND INSTR(','||IFNULL(properties,'')||',', ',XRES') = 0
+                      AND INSTR(','||IFNULL(properties,'')||',', ',SA') = 0
+                      AND LENGTH(TRIM(IFNULL(properties,''))) > 0
+                THEN 1 ELSE 0 END) AS noshow_j,
+            SUM(CASE WHEN class = 'Y'
+                      AND (boarding_number IS NULL OR boarding_number = 0)
+                      AND INSTR(','||IFNULL(properties,'')||',', ',XRES') = 0
+                      AND INSTR(','||IFNULL(properties,'')||',', ',SA') = 0
+                      AND LENGTH(TRIM(IFNULL(properties,''))) > 0
+                THEN 1 ELSE 0 END) AS noshow_y,
             -- INAD: any record with INAD property
             SUM(CASE WHEN IFNULL(properties,'') LIKE '%INAD%' THEN 1 ELSE 0 END) AS inad_total
         FROM hbpr_full_records
@@ -184,5 +198,135 @@ def get_home_summary(db_file: str) -> Dict[str, object]:
         'y_cnf': int(y_cnf or 0),
         'ratio': ratio,
     }
+
+
+def get_debug_data(db_file: str) -> Dict[str, object]:
+    """Return debug data for manual verification of statistics"""
+    conn = _connect(db_file)
+    cur = conn.cursor()
+    
+    debug_data = {}
+    
+    # Get total counts by class
+    cur.execute("""
+        SELECT class, COUNT(*) as total_count,
+               SUM(CASE WHEN boarding_number IS NOT NULL AND boarding_number > 0 THEN 1 ELSE 0 END) as with_bn,
+               SUM(CASE WHEN boarding_number IS NULL OR boarding_number = 0 THEN 1 ELSE 0 END) as without_bn
+        FROM hbpr_full_records 
+        GROUP BY class
+    """)
+    debug_data['class_breakdown'] = cur.fetchall()
+    
+    # Get XRES counts
+    cur.execute("""
+        SELECT class, COUNT(*) as xres_count
+        FROM hbpr_full_records 
+        WHERE INSTR(','||IFNULL(properties,'')||',', ',XRES') > 0
+        GROUP BY class
+    """)
+    debug_data['xres_counts'] = cur.fetchall()
+    
+    # Get SA counts
+    cur.execute("""
+        SELECT class, COUNT(*) as sa_count
+        FROM hbpr_full_records 
+        WHERE INSTR(','||IFNULL(properties,'')||',', ',SA') > 0
+        GROUP BY class
+    """)
+    debug_data['sa_counts'] = cur.fetchall()
+    
+    # Get empty properties counts
+    cur.execute("""
+        SELECT class, COUNT(*) as empty_props_count
+        FROM hbpr_full_records 
+        WHERE LENGTH(TRIM(IFNULL(properties,''))) = 0
+        GROUP BY class
+    """)
+    debug_data['empty_properties'] = cur.fetchall()
+    
+    # Get sample records for each category
+    cur.execute("""
+        SELECT hbnb_number, class, boarding_number, properties
+        FROM hbpr_full_records 
+        WHERE INSTR(','||IFNULL(properties,'')||',', ',XRES') > 0
+        LIMIT 5
+    """)
+    debug_data['xres_samples'] = cur.fetchall()
+    
+    cur.execute("""
+        SELECT hbnb_number, class, boarding_number, properties
+        FROM hbpr_full_records 
+        WHERE INSTR(','||IFNULL(properties,'')||',', ',SA') > 0
+        LIMIT 5
+    """)
+    debug_data['sa_samples'] = cur.fetchall()
+    
+    cur.execute("""
+        SELECT hbnb_number, class, boarding_number, properties
+        FROM hbpr_full_records 
+        WHERE (boarding_number IS NULL OR boarding_number = 0)
+          AND INSTR(','||IFNULL(properties,'')||',', ',XRES') = 0
+          AND INSTR(','||IFNULL(properties,'')||',', ',SA') = 0
+          AND LENGTH(TRIM(IFNULL(properties,''))) > 0
+        LIMIT 5
+    """)
+    debug_data['noshow_samples'] = cur.fetchall()
+    
+    conn.close()
+    return debug_data
+
+
+def get_debug_summary(db_file: str) -> str:
+    """Return a formatted debug summary string for manual verification"""
+    try:
+        debug_data = get_debug_data(db_file)
+        
+        summary = []
+        summary.append("🔍 Debug Data for Manual Verification")
+        summary.append("")
+        
+        # Class breakdown
+        summary.append("**Class Breakdown:**")
+        for row in debug_data['class_breakdown']:
+            summary.append(f"- Class {row[0]}: Total={row[1]}, With BN={row[2]}, Without BN={row[3]}")
+        
+        # XRES counts
+        summary.append("")
+        summary.append("**XRES Counts:**")
+        for row in debug_data['xres_counts']:
+            summary.append(f"- Class {row[0]}: {row[1]} records")
+        
+        # SA counts  
+        summary.append("")
+        summary.append("**SA Counts:**")
+        for row in debug_data['sa_counts']:
+            summary.append(f"- Class {row[0]}: {row[1]} records")
+        
+        # Empty properties
+        summary.append("")
+        summary.append("**Empty Properties Counts:**")
+        for row in debug_data['empty_properties']:
+            summary.append(f"- Class {row[0]}: {row[1]} records")
+        
+        # Sample records
+        summary.append("")
+        summary.append("**XRES Sample Records:**")
+        for row in debug_data['xres_samples']:
+            summary.append(f"- HBNB {row[0]}, Class {row[1]}, BN {row[2]}, Props: {row[3]}")
+        
+        summary.append("")
+        summary.append("**SA Sample Records:**")
+        for row in debug_data['sa_samples']:
+            summary.append(f"- HBNB {row[0]}, Class {row[1]}, BN {row[2]}, Props: {row[3]}")
+        
+        summary.append("")
+        summary.append("**NOSHOW Sample Records:**")
+        for row in debug_data['noshow_samples']:
+            summary.append(f"- HBNB {row[0]}, Class {row[1]}, BN {row[2]}, Props: {row[3]}")
+            
+        return "\n".join(summary)
+        
+    except Exception as e:
+        return f"Error getting debug data: {str(e)}"
 
 
