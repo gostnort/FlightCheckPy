@@ -508,7 +508,7 @@ class CHbpr:
         # 清空之前的CKIN_MSG列表
         self.CKIN_MSG.clear()
         # 使用findall来找到所有匹配的CKIN行
-        pat = re.compile(r"CKIN\s+[^\n]*")
+        pat = re.compile(r"\nCKIN\s+[^\n]*")
         re_matches = pat.findall(self.__Hbpr)
         if re_matches:
             # 将所有找到的CKIN行添加到列表中
