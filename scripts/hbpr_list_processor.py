@@ -12,7 +12,6 @@ from typing import List, Tuple, Optional
 from collections import defaultdict
 
 
-
 class HBPRProcessor:
     """HBPR数据处理器"""
 
@@ -47,7 +46,7 @@ class HBPRProcessor:
         while i < len(lines):
             line = lines[i].strip()
             # 检查完整HBPR记录
-            if line.startswith('>HBPR:'):
+            if line.startswith('>HBPR:') or line.startswith('HBPR:'):
                 hbnb_num, record_content, next_index = self.parse_full_record(lines, i)
                 if hbnb_num:
                     self.flight_data[self.flight_id]['hbnb_numbers'].add(hbnb_num)
@@ -73,7 +72,7 @@ class HBPRProcessor:
         #for flight_id, data in self.flight_data.items():
         #    print(f"Flight {flight_id}: {len(data['hbnb_numbers'])} HBNB numbers, "
         #          f"{len(data['full_records'])} full records, {len(data['simple_records'])} simple records")
-            
+
 
     def _assign_simple_records(self) -> None:
         """将简单记录分配到航班（简化版本：整个文件只有一个航班）"""
@@ -93,7 +92,7 @@ class HBPRProcessor:
                 flight_data['simple_records'][hbnb_num] = record_line
 
 
-    def parse_full_record(self, lines: List[str], start_index: int) -> Tuple[Optional[str], Optional[int], str, int]:
+    def parse_full_record(self, lines: List[str], start_index: int) -> Tuple[Optional[int], str, int]:
         """
         解析完整HBPR记录并提取航班信息和HBNB号码
         如果解析成功，则设置self.flight_id 
@@ -111,12 +110,12 @@ class HBPRProcessor:
         # 格式: >HBPR: CA984/25JUL25*LAX,{NUMBER}
         match = re.search(r'>HBPR:\s*([^*,]+)', line)
         if not match:
-            return None, None, "", start_index + 1
+            return None, "", start_index + 1
         flight_info = match.group(1).strip()
-        # 提取HBNB号码
+        # 提取HBNB号码 - 允许逗号后有空格和其他文本
         hbnb_match = re.search(r'>HBPR:\s*[^,]+,(\d+)', line)
         if not hbnb_match:
-            return None, None, "", start_index + 1
+            return None, "", start_index + 1
         hbnb_num = int(hbnb_match.group(1))
         # 解析航班号和日期
         if not self.flight_id:
@@ -133,7 +132,7 @@ class HBPRProcessor:
                 break
         record_content = '\n'.join(record_lines)
         return hbnb_num, record_content, i
-    
+
 
     def _parse_flight_info(self, flight_info: str) -> str:
         """解析航班信息并生成航班ID"""
@@ -151,7 +150,7 @@ class HBPRProcessor:
         else:
             self.flight_info[flight_parts] = (flight_info, "UNKNOWN")
         return flight_parts
-    
+
 
     def _parse_simple_record(self, line: str) -> Optional[int]:
         """解析简单hbpr记录提取HBNB号码"""
@@ -160,7 +159,7 @@ class HBPRProcessor:
         if match:
             return int(match.group(1))
         return None
-    
+
 
     def find_missing_numbers(self, flight_id: str) -> List[int]:
         """查找指定航班的缺失HBNB号码（真正不存在的号码）"""
@@ -175,15 +174,14 @@ class HBPRProcessor:
         #print(f"Flight {flight_id} HBNB range: {min_num} to {max_num}")
         #print(f"Missing {len(missing)} numbers: {missing}")
         return missing
-    
-    
+
+
     def create_database(self, flight_id: str) -> str:
         """为指定航班创建SQLite数据库"""
         # 确保databases文件夹存在
         databases_folder = "databases"
         if not os.path.exists(databases_folder):
             os.makedirs(databases_folder)
-        
         # 生成数据库文件名（在databases文件夹中）
         db_file = os.path.join(databases_folder, f"{flight_id}.db")
         # 删除已存在的数据库（带重试机制）
@@ -236,7 +234,7 @@ class HBPRProcessor:
         conn.close()
         #print(f"Created database: {db_file}")
         return db_file
-    
+
 
     def store_records(self, flight_id: str, db_file: str) -> None:
         """将指定航班的记录存储到数据库"""
@@ -278,11 +276,11 @@ class HBPRProcessor:
 
 
     def _clean_duplicate_headers(self, content: str) -> str:
-        """清理记录内容中的重复>HBPR:标题"""
+        """清理记录内容中的重复>HBPR:标题和分页标记"""
         lines = content.split('\n')
         cleaned_lines = []
         header_seen = False
-        # 遍历所有行，过滤重复标题
+        # 遍历所有行，过滤重复标题和分页标记
         for line in lines:
             if line.strip().startswith('>HBPR:'):
                 if not header_seen:
@@ -290,9 +288,11 @@ class HBPRProcessor:
                     header_seen = True
                 # 跳过重复标题
             else:
-                cleaned_lines.append(line)
+                # 删除行末的分页标记"+"（通常在index79位置）
+                cleaned_line = line.rstrip('+')
+                cleaned_lines.append(cleaned_line)
         return '\n'.join(cleaned_lines)
-    
+
 
     def generate_report(self, flight_id: str) -> None:
         """生成指定航班的处理报告"""
@@ -353,3 +353,4 @@ def main():
 
 if __name__ == "__main__":
     main() 
+

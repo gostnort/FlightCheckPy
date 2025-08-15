@@ -33,13 +33,11 @@ def show_simple_record():
 def _handle_simple_record_input(db):
     """处理简单HBNB记录输入"""
     st.subheader("🔢 Simple HBNB Record Input")
-    
     hbnb_input = st.text_input(
         "HBNB Numbers:",
         placeholder="e.g., 400-410,412,415-420",
         help="Enter HBNB numbers to create simple records. Supports:\n• Single number: 400\n• Range: 400-410\n• Comma-separated list: 400,412,415\n• Mixed: 400-410,412,415-420"
     )
-    
     # 解析HBNB输入
     hbnb_numbers = []
     if hbnb_input.strip():
@@ -49,7 +47,6 @@ def _handle_simple_record_input(db):
                 st.warning("⚠️ No valid HBNB numbers found in input")
         except ValueError as e:
             st.error(f"❌ Invalid input format: {str(e)}")
-    
     # 显示HBNB状态预览（仅显示前5个）
     if hbnb_numbers:
         st.subheader("📋 HBNB Status Preview")
@@ -63,10 +60,8 @@ def _handle_simple_record_input(db):
                     st.warning(f"⚠️ HBNB {hbnb_num}: Simple record exists")
             else:
                 st.success(f"✅ HBNB {hbnb_num}: Available")
-        
         if len(hbnb_numbers) > 5:
             st.info(f"ℹ️ ... and {len(hbnb_numbers) - 5} more HBNB numbers")
-    
     # 创建简单记录的按钮
     if st.button("➕ Create Simple Records", use_container_width=True):
         _create_simple_records(db, hbnb_numbers)
@@ -77,15 +72,12 @@ def _create_simple_records(db, hbnb_numbers):
     if not hbnb_numbers:
         st.warning("⚠️ Please enter valid HBNB numbers first")
         return
-    
     try:
         # 获取当前数据库的flight_info
         flight_info = db.get_flight_info()
-        
         # 显示处理前的状态信息
         st.subheader("📋 Processing Information")
         col1, col2 = st.columns(2)
-        
         with col1:
             st.write("**Database Flight Info:**")
             if flight_info:
@@ -93,25 +85,19 @@ def _create_simple_records(db, hbnb_numbers):
                 st.write(f"Date: {flight_info['flight_date']}")
             else:
                 st.write("No flight info available")
-        
         with col2:
             st.write(f"**HBNB Numbers to Process:** {len(hbnb_numbers)}")
-        
         # 处理每个HBNB数字
         created_count = 0
         skipped_count = 0
         error_count = 0
-        
         progress_bar = st.progress(0)
         status_text = st.empty()
-        
         for i, hbnb_num in enumerate(hbnb_numbers):
             status_text.text(f"Processing HBNB {hbnb_num}... ({i+1}/{len(hbnb_numbers)})")
-            
             try:
                 # 检查HBNB是否存在
                 hbnb_exists = db.check_hbnb_exists(hbnb_num)
-                
                 if hbnb_exists['exists']:
                     if hbnb_exists['full_record']:
                         st.warning(f"⚠️ Skipped HBNB {hbnb_num}: Full record already exists")
@@ -125,14 +111,11 @@ def _create_simple_records(db, hbnb_numbers):
                     db.create_simple_record(hbnb_num, record_line)
                     st.success(f"✅ Created simple record for HBNB {hbnb_num}")
                     created_count += 1
-            
             except Exception as e:
                 st.error(f"❌ Error processing HBNB {hbnb_num}: {str(e)}")
                 error_count += 1
-            
             # 更新进度条
             progress_bar.progress((i + 1) / len(hbnb_numbers))
-        
         # 显示最终结果
         st.subheader("📊 Processing Summary")
         col1, col2, col3 = st.columns(3)
@@ -142,16 +125,12 @@ def _create_simple_records(db, hbnb_numbers):
             st.metric("Skipped", skipped_count)
         with col3:
             st.metric("Errors", error_count, delta=f"-{error_count}" if error_count > 0 else None)
-        
         if created_count > 0:
             st.success(f"✅ Successfully created {created_count} simple records!")
-            
             # 更新missing_numbers表
             _update_missing_numbers(db)
-            
             # 设置刷新标志
             st.session_state.refresh_home = True
-        
     except Exception as e:
         st.error(f"❌ Error creating simple records: {str(e)}")
 
@@ -172,7 +151,6 @@ def _show_simple_records_view(db):
         # 创建DataFrame显示简单记录
         simple_df = pd.DataFrame(simple_records)
         st.dataframe(simple_df, use_container_width=True, height=200)
-        
         # 显示统计信息
         summary = db.get_record_summary()
         col1, col2, col3, col4 = st.columns(4)
@@ -195,3 +173,4 @@ def _update_missing_numbers(db):
         st.info("🔄 Updated missing numbers table")
     except Exception as e:
         st.warning(f"⚠️ Warning: Could not update missing numbers table: {str(e)}")
+
