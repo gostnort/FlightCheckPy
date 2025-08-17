@@ -6,7 +6,7 @@ API编码器模块
 """
 
 from .api_encoder import APIEncoder
-from .gemma3_client import generate_mood_description, calculate_mood_category, clean_chinese_text
+from .gemma3_client import generate_mood_description, clean_chinese_text, process_gemma_response
 
 __version__ = "1.0.0"
 __author__ = "FlightCheckPy"
@@ -14,7 +14,7 @@ __author__ = "FlightCheckPy"
 __all__ = [
     "APIEncoder",
     "generate_mood_description", 
-    "calculate_mood_category",
-    "clean_chinese_text"
+    "clean_chinese_text",
+    "process_gemma_response"
 ]
 

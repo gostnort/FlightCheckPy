@@ -6,7 +6,6 @@ Excel处理页面 - 导入Excel文件并根据TKNE和CKIN CCRD生成输出文件
 import streamlit as st
 import pandas as pd
 import os
-import random
 from ui.common import apply_global_settings, get_current_database
 from scripts.hbpr_info_processor import HbprDatabase
 from scripts.excel_processor import (
@@ -128,40 +127,28 @@ def show_excel_processor():
                         except Exception as e:
                             st.warning(f"生成心情描述时出错: {e}")
                             mood_description = "复杂"
-                    
                     # 生成包含心情描述的文件名，处理重名情况
+                    # 重新获取全局变量，确保获取到最新值
+                    from scripts.excel_processor import FLIGHT_NUMBER, FLIGHT_DATE
                     fn = FLIGHT_NUMBER or 'FLIGHT'
                     fd = format_date_ddmmmyy(FLIGHT_DATE) if FLIGHT_DATE else 'DATE'
-                    
-                    # 文件重名检测和重新生成逻辑
-                    max_attempts = 5  # 最大尝试次数，防止无限循环
+                    # 生成文件名，如果重名则添加数字后缀
+                    base_mood = mood_description
                     attempt = 0
                     
-                    while attempt < max_attempts:
-                        filename = f"{fn}_{fd}_EMD_{mood_description}.xlsx"
+                    while attempt < 100:  # 最多尝试100次
+                        if attempt == 0:
+                            filename = f"{fn}_{fd}_EMD_{mood_description}.xlsx"
+                        else:
+                            filename = f"{fn}_{fd}_EMD_{base_mood}{attempt}.xlsx"
+                        
                         output_file = get_output_file_path(filename)
                         
                         # 检查文件是否已存在
                         if not os.path.exists(output_file):
                             break  # 文件不存在，可以使用这个文件名
                         
-                        # 文件已存在，重新生成心情描述
                         attempt += 1
-                        if cash_total > 0 and total_amount > 0 and username != 'unknown':
-                            try:
-                                mood_description = generate_mood_description(cash_total, total_amount, username)
-                            except Exception:
-                                # 如果重新生成失败，使用备用名称
-                                mood_description = f"复杂{attempt}"
-                        else:
-                            mood_description = f"平静{attempt}"
-                    
-                    # 如果达到最大尝试次数，添加随机后缀
-                    if attempt >= max_attempts:
-                        random_suffix = random.randint(1000, 9999)
-                        mood_description = f"{mood_description}{random_suffix}"
-                        filename = f"{fn}_{fd}_EMD_{mood_description}.xlsx"
-                        output_file = get_output_file_path(filename)
                     try:
                         core_generate_output_excel(result_df, unprocessed_records, output_file, cash_total)
                     except Exception as e:

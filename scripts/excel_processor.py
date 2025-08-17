@@ -23,6 +23,7 @@ import pandas as pd
 # 数据源列名与固定列序号定义（1-based）
 # =============================
 EXPECTED_COLUMNS: Dict[int, str] = {
+    1: "NO.",
     2: "EMD",
     3: "关联ET",
     4: "旅客姓名",
@@ -62,14 +63,49 @@ def validate_input_columns(df_input: pd.DataFrame) -> None:
     触发失败时抛出 ValueError 异常，消息包含第一个不匹配的位置。
     """
     columns = list(df_input.columns)
+    
+    # 添加调试信息
+    print(f"DEBUG: 读取到的列名: {columns}")
+    print(f"DEBUG: 总列数: {len(columns)}")
+    
+    # 处理Unnamed列的情况 - 可能是Excel文件格式问题
+    cleaned_columns = []
+    for i, col in enumerate(columns):
+        if str(col).startswith('Unnamed'):
+            # 尝试从Excel文件中的实际位置推断列名
+            if i == 0:  # 第1列
+                cleaned_columns.append('NO.')
+            elif i == 1:  # 第2列  
+                cleaned_columns.append('EMD')
+            elif i == 2:  # 第3列
+                cleaned_columns.append('关联ET')
+            elif i == 3:  # 第4列
+                cleaned_columns.append('旅客姓名')
+            elif i == 4:  # 第5列
+                cleaned_columns.append('航班号')
+            elif i == 5:  # 第6列
+                cleaned_columns.append('航程')
+            elif i == 6:  # 第7列
+                cleaned_columns.append('航班日期')
+            else:
+                cleaned_columns.append(str(col))
+        else:
+            cleaned_columns.append(str(col).strip())
+    
+    # 更新DataFrame的列名
+    df_input.columns = cleaned_columns
+    columns = cleaned_columns
+    
+    print(f"DEBUG: 清理后的列名: {columns}")
+    
     for col_idx_1_based, expected_name in EXPECTED_COLUMNS.items():
         pos = col_idx_1_based - 1
         if pos >= len(columns):
-            raise ValueError(f"列总数不足，缺少第{col_idx_1_based}列：应为“{expected_name}”")
+            raise ValueError(f"列总数不足，缺少第{col_idx_1_based}列：应为'{expected_name}'")
         actual_name = str(columns[pos]).strip()
         if actual_name != expected_name:
             raise ValueError(
-                f"第{col_idx_1_based}列列名不匹配：检测到“{actual_name}”，应为“{expected_name}”"
+                f"第{col_idx_1_based}列列名不匹配：检测到'{actual_name}'，应为'{expected_name}'"
             )
 
 
@@ -394,6 +430,34 @@ def process_excel_file(df_input: pd.DataFrame, db, debug: bool = False) -> Tuple
     """
     # 校验表头
     validate_input_columns(df_input)
+    # 预扫描设置全局航班信息
+    global FLIGHT_NUMBER, FLIGHT_DATE
+    FLIGHT_NUMBER = ''
+    FLIGHT_DATE = None
+    # 从第一行有数据的行中提取航班信息
+    for _, row in df_input.iterrows():
+        # 尝试设置航班号
+        if not FLIGHT_NUMBER:
+            flight_number = str(row.get('航班号', '') or '').strip()
+            if flight_number and flight_number != 'nan':
+                FLIGHT_NUMBER = flight_number
+        
+        # 尝试设置航班日期
+        if FLIGHT_DATE is None:
+            try:
+                parsed_date = pd.to_datetime(row.get('航班日期', ''), errors='coerce')
+                if parsed_date is not None and not pd.isna(parsed_date):
+                    FLIGHT_DATE = parsed_date.date()
+            except Exception:
+                pass
+        
+        # 如果两个都已经设置，就可以退出循环
+        if FLIGHT_NUMBER and FLIGHT_DATE is not None:
+            break
+    
+    # 添加调试信息
+    print(f"DEBUG: 预扫描完成 - FLIGHT_NUMBER: {FLIGHT_NUMBER}, FLIGHT_DATE: {FLIGHT_DATE}")
+    
     output_data: List[Dict] = []
     unprocessed_records: List[Dict] = []
     debug_logs: List[Dict] = []
@@ -449,6 +513,9 @@ def process_excel_file(df_input: pd.DataFrame, db, debug: bool = False) -> Tuple
             'tkne': remaining_hbnb.get('tkne', '未知'),
             'ckin_ccrd': remaining_hbnb['ckin_msg']
         })
+    # 添加调试信息
+    print(f"DEBUG: 函数结束前 - FLIGHT_NUMBER: {FLIGHT_NUMBER}, FLIGHT_DATE: {FLIGHT_DATE}")
+    
     if output_data:
         result_df = pd.DataFrame(output_data)
         return result_df, unprocessed_records, debug_logs
