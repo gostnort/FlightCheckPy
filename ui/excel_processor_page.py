@@ -6,13 +6,18 @@ Excel处理页面 - 导入Excel文件并根据TKNE和CKIN CCRD生成输出文件
 import streamlit as st
 import pandas as pd
 import os
+import random
 from ui.common import apply_global_settings, get_current_database
 from scripts.hbpr_info_processor import HbprDatabase
 from scripts.excel_processor import (
     process_excel_file as core_process_excel_file,
     generate_output_excel as core_generate_output_excel,
     calculate_cash_and_total_amounts,
+    FLIGHT_NUMBER, 
+    FLIGHT_DATE, 
+    format_date_ddmmmyy
 )
+from scripts.api_encoder.gemma3_client import generate_mood_description
 
 
 def show_excel_processor():
@@ -109,7 +114,6 @@ def show_excel_processor():
                             st.warning(f"乘客: {record['name']}, TKNE: {record['tkne']}, CKIN CCRD: {record['ckin_ccrd']}")
                     # 生成输出文件
                     # 使用全局航班信息（由核心处理在首次行设置）
-                    from scripts.excel_processor import FLIGHT_NUMBER, FLIGHT_DATE, format_date_ddmmmyy
                     
                     # 计算现金和总金额
                     cash_total, total_amount = calculate_cash_and_total_amounts(df_input)
@@ -120,7 +124,6 @@ def show_excel_processor():
                     
                     if cash_total > 0 and total_amount > 0 and username != 'unknown':
                         try:
-                            from scripts.api_encoder.gemma3_client import generate_mood_description
                             mood_description = generate_mood_description(cash_total, total_amount, username)
                         except Exception as e:
                             st.warning(f"生成心情描述时出错: {e}")
@@ -155,10 +158,9 @@ def show_excel_processor():
                     
                     # 如果达到最大尝试次数，添加随机后缀
                     if attempt >= max_attempts:
-                        import random
                         random_suffix = random.randint(1000, 9999)
                         mood_description = f"{mood_description}{random_suffix}"
-                        filename = f"{fn}_{fd}__EMD_{mood_description}.xlsx"
+                        filename = f"{fn}_{fd}_EMD_{mood_description}.xlsx"
                         output_file = get_output_file_path(filename)
                     try:
                         core_generate_output_excel(result_df, unprocessed_records, output_file, cash_total)

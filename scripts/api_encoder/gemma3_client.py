@@ -8,8 +8,7 @@
 import google.generativeai as genai
 import re
 import threading
-import time
-from api_encoder import APIEncoder
+from scripts.api_encoder.api_encoder import APIEncoder
 
 
 class TimeoutException(Exception):
