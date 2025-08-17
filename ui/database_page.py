@@ -169,11 +169,15 @@ def show_database_info():
 
 def show_database_maintenance():
     """显示数据库维护选项"""
-    st.warning("⚠️ Maintenance operations are irreversible!")
-    # 获取当前选中的数据库
     selected_db = get_current_database()
     if selected_db:
-        col1, col2 = st.columns(2)
+        st.subheader("🗄️ Database Operations")
+        
+        # 数据库清理选项
+        st.subheader("🧹 Data Cleaning")
+        st.info("💡 如果导出数据时遇到错误，可以尝试清理数据库中的问题字符")
+        
+        col1, col2, col3 = st.columns(3)
         with col1:
             # 删除数据库按钮
             if st.button("🗑️ Delete Database", use_container_width=True):
@@ -183,6 +187,7 @@ def show_database_maintenance():
                     st.rerun()
                 except Exception as e:
                     st.error(f"❌ Error deleting database: {str(e)}")
+        
         with col2:
             # 更新missing_numbers表按钮
             if st.button("🔄 Update Missing Numbers", use_container_width=True):
@@ -192,8 +197,41 @@ def show_database_maintenance():
                     st.success("✅ Missing numbers table updated successfully!")
                 except Exception as e:
                     st.error(f"❌ Error updating missing numbers table: {str(e)}")
+        
+        with col3:
+            # 数据库清理按钮
+            if st.button("🧹 Clean Database Data", use_container_width=True):
+                try:
+                    clean_database_data(selected_db)
+                except Exception as e:
+                    st.error(f"❌ Error cleaning database: {str(e)}")
     else:
         st.info("ℹ️ No database selected. Please select a database from the sidebar or create one first.")
+
+
+def clean_database_data(db_file: str):
+    """清理数据库中的问题数据"""
+    try:
+        st.info("🔄 正在清理数据库数据...")
+        
+        # 导入清理函数
+        from scripts.clean_database_data import clean_database_file
+        
+        # 执行清理
+        success = clean_database_file(db_file, backup=True)
+        
+        if success:
+            st.success("✅ 数据库数据清理完成！")
+            st.info("💡 现在可以尝试导出数据了")
+            st.rerun()
+        else:
+            st.error("❌ 数据库数据清理失败")
+            
+    except ImportError:
+        st.error("❌ 清理工具未找到，请确保 scripts/clean_database_data.py 文件存在")
+    except Exception as e:
+        st.error(f"❌ 清理过程中发生错误: {str(e)}")
+        st.error("💡 请检查错误信息并重试")
 
 
 def show_statistics():

@@ -10,6 +10,7 @@ import sqlite3
 import os
 from typing import List, Tuple, Optional
 from collections import defaultdict
+from .data_cleaner import clean_hbpr_record_content, validate_and_clean_file_content
 
 
 class HBPRProcessor:
@@ -38,9 +39,18 @@ class HBPRProcessor:
     def parse_file(self) -> None:
         """解析HBPR文本文件并按航班提取所有记录"""
         print(f"Parsing file: {self.input_file}")
-        # 读取文件内容
-        with open(self.input_file, 'r', encoding='utf-8', errors='ignore') as file:
-            lines = file.readlines()
+        
+        # 使用数据清理工具读取和清理文件内容
+        try:
+            lines, was_cleaned = validate_and_clean_file_content(self.input_file)
+            if was_cleaned:
+                print("⚠️  File contained problematic characters and has been cleaned")
+            else:
+                print("✅ File content is clean")
+        except Exception as e:
+            print(f"❌ Error reading file: {e}")
+            return
+        
         # 逐行解析处理
         i = 0
         while i < len(lines):
@@ -131,7 +141,13 @@ class HBPRProcessor:
             if i < len(lines) and lines[i].strip().startswith('>'):
                 break
         record_content = '\n'.join(record_lines)
-        return hbnb_num, record_content, i
+        
+        # 清理记录内容，移除问题字符
+        cleaned_content = clean_hbpr_record_content(record_content)
+        if cleaned_content != record_content:
+            print(f"⚠️  HBNB {hbnb_num} record content cleaned: {len(record_content)} -> {len(cleaned_content)} characters")
+        
+        return hbnb_num, cleaned_content, i
 
 
     def _parse_flight_info(self, flight_info: str) -> str:
@@ -207,12 +223,48 @@ class HBPRProcessor:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
-        # 创建完整记录表
+        # 创建完整记录表 - 包含所有必要的列
         cursor.execute('''
             CREATE TABLE hbpr_full_records (
                 hbnb_number INTEGER PRIMARY KEY,
                 record_content TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                is_validated BOOLEAN DEFAULT 0,
+                is_valid BOOLEAN,
+                boarding_number INTEGER,
+                pnr TEXT,
+                name TEXT,
+                seat TEXT,
+                class TEXT,
+                destination TEXT,
+                bag_piece INTEGER,
+                bag_weight INTEGER,
+                bag_allowance INTEGER,
+                ff TEXT,
+                pspt_name TEXT,
+                pspt_exp_date TEXT,
+                ckin_msg TEXT,
+                asvc_msg TEXT,
+                expc_piece INTEGER,
+                expc_weight INTEGER,
+                asvc_piece INTEGER,
+                fba_piece INTEGER,
+                ifba_piece INTEGER,
+                has_infant BOOLEAN DEFAULT 0,
+                flyer_benefit INTEGER,
+                is_ca_flyer BOOLEAN,
+                inbound_flight TEXT,
+                outbound_flight TEXT,
+                properties TEXT,
+                tkne TEXT,
+                error_count INTEGER,
+                error_baggage TEXT,
+                error_passport TEXT,
+                error_name TEXT,
+                error_visa TEXT,
+                error_other TEXT,
+                validated_at TIMESTAMP,
+                bol_duplicate BOOLEAN DEFAULT 0
             )
         ''')
         # 创建简单记录表
@@ -232,7 +284,7 @@ class HBPRProcessor:
         ''')
         conn.commit()
         conn.close()
-        #print(f"Created database: {db_file}")
+        print(f"Created database with complete schema: {db_file}")
         return db_file
 
 
@@ -250,15 +302,19 @@ class HBPRProcessor:
         # 存储完整记录（清理重复标题）
         for hbnb_num, content in flight_data['full_records'].items():
             cleaned_content = self._clean_duplicate_headers(content)
+            # 进一步清理内容，移除问题字符
+            final_content = clean_hbpr_record_content(cleaned_content)
             cursor.execute(
                 'INSERT INTO hbpr_full_records (hbnb_number, record_content) VALUES (?, ?)',
-                (hbnb_num, cleaned_content)
+                (hbnb_num, final_content)
             )
         # 存储简单记录
         for hbnb_num, line in flight_data['simple_records'].items():
+            # 清理简单记录内容
+            cleaned_line = clean_hbpr_record_content(line)
             cursor.execute(
                 'INSERT INTO hbpr_simple_records (hbnb_number, record_line) VALUES (?, ?)',
-                (hbnb_num, line)
+                (hbnb_num, cleaned_line)
             )
         # 存储缺失号码
         missing_numbers = self.find_missing_numbers(flight_id)

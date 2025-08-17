@@ -14,6 +14,7 @@ from typing import Any, Optional
 from .general_func import CArgs
 from .hbpr_list_processor import HBPRProcessor
 import pandas as pd
+from .data_cleaner import clean_hbpr_record_content
 
 
 class StatisticsManager:
@@ -302,7 +303,7 @@ class CHbpr:
 
 
     def __DetectInfant(self):
-        """检测是否有婴儿信息（以“INF-”开头的行）"""
+        """检测是否有婴儿信息（以"INF-"开头的行）"""
         try:
             # 优先依据以 INF- 开头的行
             if re.search(r"^\s*INF-", self.__Hbpr, flags=re.MULTILINE):
@@ -1358,6 +1359,11 @@ class HbprDatabase:
         if not self.db_file:
             self.find_database()
         try:
+            # 清理记录内容，移除问题字符
+            cleaned_line = clean_hbpr_record_content(record_line)
+            if cleaned_line != record_line:
+                print(f"⚠️  HBNB {hbnb_number} simple record cleaned before saving: {len(record_line)} -> {len(cleaned_line)} characters")
+            
             conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
             # 确保hbpr_simple_records表存在
@@ -1371,7 +1377,7 @@ class HbprDatabase:
             # 插入简单记录
             cursor.execute(
                 'INSERT OR REPLACE INTO hbpr_simple_records (hbnb_number, record_line) VALUES (?, ?)',
-                (hbnb_number, record_line)
+                (hbnb_number, cleaned_line)
             )
             conn.commit()
             conn.close()
@@ -1389,12 +1395,17 @@ class HbprDatabase:
         if not self.db_file:
             self.find_database()
         try:
+            # 清理记录内容，移除问题字符
+            cleaned_content = clean_hbpr_record_content(record_content)
+            if cleaned_content != record_content:
+                print(f"⚠️  HBNB {hbnb_number} record content cleaned before saving: {len(record_content)} -> {len(cleaned_content)} characters")
+            
             conn = sqlite3.connect(self.db_file)
             cursor = conn.cursor()
             # 插入完整记录
             cursor.execute(
                 'INSERT OR REPLACE INTO hbpr_full_records (hbnb_number, record_content) VALUES (?, ?)',
-                (hbnb_number, record_content)
+                (hbnb_number, cleaned_content)
             )
             # 如果存在简单记录，删除它
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='hbpr_simple_records'")

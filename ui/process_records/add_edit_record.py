@@ -262,10 +262,23 @@ def validate_full_hbpr_record(hbpr_content):
         'chbpr_errors': {},
         'corrected_content': hbpr_content
     }
+    
     # Check if content is not empty
     if not hbpr_content or not hbpr_content.strip():
         result['errors'].append("Input content is empty")
         return result
+    
+    # 第一步：清理输入内容，移除问题字符
+    try:
+        from scripts.data_cleaner import clean_hbpr_record_content
+        cleaned_content = clean_hbpr_record_content(hbpr_content)
+        if cleaned_content != hbpr_content:
+            st.info(f"⚠️  Input content cleaned: {len(hbpr_content)} -> {len(cleaned_content)} characters")
+            hbpr_content = cleaned_content
+            result['corrected_content'] = cleaned_content
+    except ImportError:
+        st.warning("⚠️  Data cleaning utility not available, using original content")
+    
     # Handle special character replacement before "HBPR:" if ">HBPR:" is not found
     if '>HBPR:' not in hbpr_content:
         # Look for DLE character (ASCII 16, \x10) before "HBPR:" and replace with ">"
@@ -289,6 +302,7 @@ def validate_full_hbpr_record(hbpr_content):
         elif re.search(r'^HBPR:', hbpr_content, re.MULTILINE):
             hbpr_content = re.sub(r'^HBPR:', '>HBPR:', hbpr_content, flags=re.MULTILINE)
             st.info("ℹ️ Detected 'HBPR:' without prefix - automatically added '>' prefix")
+    
     # Store the corrected content for further processing
     corrected_content = hbpr_content
     result['corrected_content'] = corrected_content
