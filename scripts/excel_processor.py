@@ -19,7 +19,6 @@ from typing import Dict, List, Optional, Tuple
 from datetime import date
 import pandas as pd
 
-
 # =============================
 # 数据源列名与固定列序号定义（1-based）
 # =============================
@@ -256,6 +255,45 @@ def number_to_english(amount: float) -> str:
         return f"${amount:.2f}"
 
 
+def calculate_cash_and_total_amounts(df_input: pd.DataFrame) -> Tuple[float, float]:
+    """
+    从输入表第一列计算现金金额和总金额
+    
+    Args:
+        df_input: 输入的DataFrame
+        
+    Returns:
+        Tuple[cash_total, total_amount]: 现金金额和总金额
+    """
+    cash_total = 0.0
+    total_amount = 0.0
+    # 从输入表第一列查找"实收"开头和包含"现金"的单元格来获取金额
+    if not df_input.empty and len(df_input.columns) > 0:
+        first_column_name = df_input.columns[0]
+        for _, row in df_input.iterrows():
+            cell_value = str(row.get(first_column_name, '')).strip()
+            if cell_value and cell_value != 'nan':
+                # 查找以"实收"开头的单元格（总金额）
+                if cell_value.startswith('实收'):
+                    # 提取数字
+                    numbers = re.findall(r'\d+\.?\d*', cell_value)
+                    if numbers:
+                        try:
+                            total_amount = float(numbers[0])
+                        except ValueError:
+                            pass
+                # 查找包含"现金"的单元格（现金金额）
+                elif '现金' in cell_value:
+                    # 提取数字
+                    numbers = re.findall(r'\d+\.?\d*', cell_value)
+                    if numbers:
+                        try:
+                            cash_total = float(numbers[0])
+                        except ValueError:
+                            pass
+    return cash_total, total_amount
+
+
 def get_all_ckin_ccrd_hbnb(db) -> List[Dict]:
     """查询所有包含CKIN CCRD的HBNB记录"""
     conn = sqlite3.connect(db.db_file)
@@ -417,7 +455,7 @@ def process_excel_file(df_input: pd.DataFrame, db, debug: bool = False) -> Tuple
     return None, unprocessed_records, debug_logs
 
 
-def generate_output_excel(result_df: pd.DataFrame, unprocessed_records: List[Dict], output_file: str) -> str:
+def generate_output_excel(result_df: pd.DataFrame, unprocessed_records: List[Dict], output_file: str, cash_total: float = 0.0) -> str:
     """根据模板生成输出Excel文件，返回保存路径。
     使用全局 FLIGHT_NUMBER/FLIGHT_DATE 写入 SUM 表。
     """
@@ -494,15 +532,8 @@ def generate_output_excel(result_df: pd.DataFrame, unprocessed_records: List[Dic
             row_idx += 1
     if 'RECEIPT' in wb.sheetnames:
         ws_receipt = wb['RECEIPT']
-        cash_total = 0.0
-        for _, row in result_df.iterrows():
-            l_value = row.get('L', '')
-            if l_value and str(l_value).strip() and str(l_value).strip() != 'nan':
-                try:
-                    cash_amount = float(str(l_value).strip())
-                    cash_total += cash_amount
-                except ValueError:
-                    continue
+        # 使用传入的现金总额（已预计算）
+        
         if cash_total > 0:
             english_amount = number_to_english(cash_total)
             ws_receipt.cell(row=8, column=3, value=english_amount)

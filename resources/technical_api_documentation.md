@@ -14,6 +14,7 @@ The Flight Data Processing System is a comprehensive Python application for proc
 - Excel Processor: XLS/XLSX import, strict header validation, TKNE ↔ CKIN CCRD mapping, formatted EMD Excel export
 - Command analysis: import, manual edit, view, timeline versioning, and maintenance/migration
 - TKNE-aware calculations and compatibility handling
+- **Data Cleaning & Export Solutions**: Comprehensive data sanitization at input, storage, and export stages to prevent binary/hexadecimal character issues
 
 ## 🏗️ System Architecture
 
@@ -25,7 +26,8 @@ FlightCheckPy/
 │   ├── hbpr_info_processor.py  # HBPR record processing, validation, and statistics
 │   ├── hbpr_list_processor.py  # Batch processing and database creation
 │   ├── excel_processor.py      # Excel-to-EMD processing via TKNE/CKIN CCRD mapping
-│   └── general_func.py         # Utility functions and configuration
+│   ├── general_func.py         # Utility functions and configuration
+│   └── data_cleaner.py        # Data cleaning and sanitization utilities
 ├── ui/                         # Web UI components
 │   ├── main.py                 # Main UI coordinator with Windows integration
 │   ├── login_page.py           # Authentication interface
@@ -41,10 +43,140 @@ FlightCheckPy/
 │       ├── add_edit_record.py  # Single record editing
 │       ├── simple_record.py    # Simple record creation
 │       ├── sort_records.py     # Record viewing and filtering
-│       └── export_data.py      # Data export functionality
+│       └── export_data.py      # Data export functionality with cleaning
 ├── databases/                  # Default database storage directory
 └── resources/                  # Documentation and resources
 ```
+
+### Data Cleaning & Export Solutions
+
+The system implements a comprehensive approach to handle problematic binary/hexadecimal characters that can cause export failures:
+
+#### 1. Preventive Solution (Input-time Cleaning)
+**Location**: `scripts/data_cleaner.py`
+
+**Purpose**: Prevents problematic characters from entering the system by cleaning data at multiple input points.
+
+**Key Functions**:
+```python
+def clean_text_for_input(text: str, aggressive: bool = False) -> str:
+    """
+    Clean text for input operations, removing control characters and problematic symbols
+    
+    Args:
+        text (str): Input text to clean
+        aggressive (bool): Whether to use aggressive cleaning (removes extended Unicode)
+        
+    Returns:
+        str: Cleaned text safe for processing
+    """
+
+def clean_hbpr_record_content(text: str) -> str:
+    """
+    Clean HBPR record content specifically for database storage
+    
+    Args:
+        text (str): HBPR record content to clean
+        
+    Returns:
+        str: Cleaned HBPR content safe for database storage
+    """
+
+def validate_and_clean_file_content(file_path: str, encoding: str = 'utf-8') -> Tuple[List[str], bool]:
+    """
+    Read and clean file content, detecting if cleaning was needed
+    
+    Args:
+        file_path (str): Path to file to read and clean
+        encoding (str): File encoding to use
+        
+    Returns:
+        Tuple[List[str], bool]: Cleaned lines and whether cleaning was needed
+    """
+```
+
+**Integration Points**:
+- **File Reading**: `scripts/hbpr_list_processor.py` - `parse_file()` method
+- **Record Parsing**: `scripts/hbpr_list_processor.py` - `parse_full_record()` method  
+- **Database Storage**: `scripts/hbpr_list_processor.py` and `scripts/hbpr_info_processor.py`
+- **UI Input Validation**: `ui/process_records/add_edit_record.py` - `validate_full_hbpr_record()`
+
+#### 2. Export-time Fix
+**Location**: `ui/process_records/export_data.py`
+
+**Purpose**: Provides immediate solution for exporting existing problematic data by cleaning during export operations.
+
+**Key Functions**:
+```python
+def clean_text_for_export(text: str) -> str:
+    """
+    Clean text specifically for export operations (CSV/Excel)
+    
+    Args:
+        text (str): Text to clean for export
+        
+    Returns:
+        str: Text safe for CSV/Excel export
+    """
+
+def show_export_data() -> None:
+    """
+    Display export functionality with data cleaning
+    
+    Features:
+    - Export all records with cleaning
+    - Export accepted passengers only
+    - CSV and Excel format export
+    - Safe handling of problematic characters
+    - Download links for cleaned data
+    """
+```
+
+#### 3. Database Cleaning Utility
+**Location**: `scripts/clean_database_data.py`
+
+**Purpose**: Provides utility to clean existing problematic data directly in the database.
+
+**Key Functions**:
+```python
+def clean_text_for_database(text: str) -> str:
+    """
+    Clean text for database storage, removing control characters
+    
+    Args:
+        text (str): Text to clean for database
+        
+    Returns:
+        str: Text safe for database storage
+    """
+
+def clean_database_records(db_file: str) -> Dict[str, int]:
+    """
+    Clean all records in specified database
+    
+    Args:
+        db_file (str): Path to database file to clean
+        
+    Returns:
+        Dict[str, int]: Cleaning results with counts
+    """
+```
+
+**UI Integration**: Available through "Clean Database Data" button in `ui/database_page.py`
+
+#### 4. Character Cleaning Strategy
+
+**Problematic Characters Handled**:
+- **Control Characters**: ASCII 0-31 (null, bell, tab, newline, etc.)
+- **DEL Character**: ASCII 127
+- **Extended ASCII**: Characters above 127 that may cause encoding issues
+- **Binary Data**: Hex-encoded content from file reading operations
+
+**Cleaning Methods**:
+- **Replacement**: Control characters replaced with spaces
+- **Filtering**: Only printable ASCII characters (32-126) and safe whitespace preserved
+- **Normalization**: Multiple spaces collapsed, empty lines cleaned
+- **Validation**: Detection of cleaning needs for user awareness
 
 ### Platform Requirements
 
@@ -352,10 +484,14 @@ def create_simple_record(self, hbnb_number: int, record_line: str) -> bool:
     
     Args:
         hbnb_number (int): HBNB number
-        record_line (str): Simple record content
+        record_line (str): Simple record content (automatically cleaned)
         
     Returns:
         bool: True if creation successful
+        
+    Features:
+    - Automatic cleaning of record_line using cleanHbprRecordContent()
+    - Prevention of problematic characters in database storage
     """
 
 def create_full_record(self, hbnb_number: int, record_content: str, 
@@ -365,11 +501,15 @@ def create_full_record(self, hbnb_number: int, record_content: str,
     
     Args:
         hbnb_number (int): HBNB number
-        record_content (str): Full HBPR record content
+        record_content (str): Full HBPR record content (automatically cleaned)
         flight_info_match (bool): Whether to validate flight info
         
     Returns:
         bool: True if creation successful
+        
+    Features:
+    - Automatic cleaning of record_content using cleanHbprRecordContent()
+    - Prevention of problematic characters in database storage
     """
 
 def delete_simple_record(self, hbnb_number: int) -> bool:
@@ -509,7 +649,7 @@ def _fetch_accepted_passengers_stats(self) -> Dict[str, Any]:
 
 **Location**: `scripts/hbpr_list_processor.py`
 
-**Purpose**: Processes HBPR list files, extracts records, and creates flight-specific databases.
+**Purpose**: Processes HBPR list files, extracts records, and creates flight-specific databases with integrated data cleaning.
 
 #### Methods
 
@@ -523,7 +663,14 @@ def __init__(self, input_file: str) -> None:
     """
 
 def parse_file(self) -> None:
-    """Parse HBPR text file and extract all records by flight"""
+    """
+    Parse HBPR text file and extract all records by flight
+    
+    Features:
+    - Integrated data cleaning using validateAndCleanFileContent()
+    - Automatic detection of cleaning needs
+    - Safe handling of problematic characters
+    """
 
 def parse_full_record(self, lines: List[str], start_index: int) -> Tuple[Optional[int], str, int]:
     """
@@ -534,7 +681,11 @@ def parse_full_record(self, lines: List[str], start_index: int) -> Tuple[Optiona
         start_index (int): Starting line index for parsing
         
     Returns:
-        Tuple[Optional[int], str, int]: HBNB number, record content, end index
+        Tuple[Optional[int], str, int]: HBNB number, cleaned record content, end index
+        
+    Features:
+    - Automatic cleaning of record_content using cleanHbprRecordContent()
+    - Safe handling of binary/hexadecimal characters
     """
 
 def find_missing_numbers(self, flight_id: str) -> List[int]:
@@ -561,11 +712,15 @@ def create_database(self, flight_id: str) -> str:
 
 def store_records(self, flight_id: str, db_file: str) -> None:
     """
-    Store records in database
+    Store records in database with data cleaning
     
     Args:
         flight_id (str): Flight identifier
         db_file (str): Database file path
+        
+    Features:
+    - Automatic cleaning of full_records and simple_records before storage
+    - Prevention of problematic characters in database
     """
 
 def process(self) -> None:
@@ -593,7 +748,117 @@ def _parse_simple_record(self, line: str) -> Optional[int]:
     """Parse simple HBPR record to extract HBNB number"""
 ```
 
-### 5. CArgs Class - Configuration
+### 5. DataCleaner Class - Data Sanitization
+
+**Location**: `scripts/data_cleaner.py`
+
+**Purpose**: Provides comprehensive data cleaning and sanitization utilities to prevent problematic characters from entering the system and ensure safe data export.
+
+#### Methods
+
+```python
+def clean_text_for_input(text: str, aggressive: bool = False) -> str:
+    """
+    Clean text for input operations, removing control characters and problematic symbols
+    
+    Args:
+        text (str): Input text to clean
+        aggressive (bool): Whether to use aggressive cleaning (removes extended Unicode)
+        
+    Returns:
+        str: Cleaned text safe for processing
+        
+    Features:
+    - Removes ASCII control characters (0-31, 127)
+    - Configurable Unicode handling
+    - Normalizes whitespace and empty lines
+    """
+
+def clean_hbpr_record_content(text: str) -> str:
+    """
+    Clean HBPR record content specifically for database storage
+    
+    Args:
+        text (str): HBPR record content to clean
+        
+    Returns:
+        str: Cleaned HBPR content safe for database storage
+        
+    Features:
+    - Optimized for HBPR record format
+    - Preserves essential formatting
+    - Removes binary/hexadecimal artifacts
+    """
+
+def clean_text_for_export(text: str) -> str:
+    """
+    Clean text specifically for export operations (CSV/Excel)
+    
+    Args:
+        text (str): Text to clean for export
+        
+    Returns:
+        str: Text safe for CSV/Excel export
+        
+    Features:
+    - Removes characters problematic for spreadsheet applications
+    - Preserves data integrity
+    - Safe for CSV and Excel formats
+    """
+
+def clean_text_for_database(text: str) -> str:
+    """
+    Clean text for database storage, removing control characters
+    
+    Args:
+        text (str): Text to clean for database
+        
+    Returns:
+        str: Text safe for database storage
+        
+    Features:
+    - Database-specific cleaning rules
+    - Preserves SQL-safe characters
+    - Normalizes text formatting
+    """
+
+def validate_and_clean_file_content(file_path: str, encoding: str = 'utf-8') -> Tuple[List[str], bool]:
+    """
+    Read and clean file content, detecting if cleaning was needed
+    
+    Args:
+        file_path (str): Path to file to read and clean
+        encoding (str): File encoding to use
+        
+    Returns:
+        Tuple[List[str], bool]: Cleaned lines and whether cleaning was needed
+        
+    Features:
+    - Automatic file reading with encoding handling
+    - Line-by-line cleaning
+    - Cleaning detection for user awareness
+    - Safe fallback for encoding errors
+    """
+
+def clean_database_records(db_file: str) -> Dict[str, int]:
+    """
+    Clean all records in specified database
+    
+    Args:
+        db_file (str): Path to database file to clean
+        
+    Returns:
+        Dict[str, int]: Cleaning results with counts
+        
+    Features:
+    - Batch cleaning of existing database records
+    - Progress tracking and reporting
+    - Safe database operations
+    - Transaction-based updates
+    """
+```
+
+### 6. CArgs Class - Configuration
 
 **Location**: `scripts/general_func.py`
 
@@ -772,14 +1037,34 @@ def show_database_info() -> None:
     """Show database information and statistics"""
 
 def show_database_maintenance() -> None:
-    """Show database maintenance operations"""
+    """
+    Show database maintenance operations
+    
+    Features:
+    - Database integrity checks
+    - Record validation
+    - Data cleaning operations
+    - Performance optimization
+    """
+
+def show_data_cleaning() -> None:
+    """
+    Display data cleaning interface
+    
+    Features:
+    - Clean existing database records
+    - Remove problematic characters
+    - Cleaning progress tracking
+    - Results reporting
+    - Integration with clean_database_data.py utility
+    """
 ```
 
 ### 5. Process Records Page
 
 **Location**: `ui/process_records_page.py`
 
-**Purpose**: Provides interface for processing individual HBPR records and manual input.
+**Purpose**: Provides interface for processing individual HBPR records and manual input with integrated data cleaning.
 
 ```python
 def show_process_records_page() -> None:
@@ -792,6 +1077,23 @@ def show_process_records_page() -> None:
     - Manual input for full and simple records
     - Validation results display
     - Error handling and user feedback
+    - Integrated data cleaning for user input
+    """
+
+def validate_full_hbpr_record(record_content: str) -> Tuple[bool, List[str]]:
+    """
+    Validate full HBPR record with automatic data cleaning
+    
+    Args:
+        record_content (str): Raw HBPR record content
+        
+    Returns:
+        Tuple[bool, List[str]]: Validation result and error messages
+        
+    Features:
+    - Automatic cleaning of user input using cleanHbprRecordContent()
+    - Prevention of problematic characters in manual input
+    - Comprehensive validation after cleaning
     """
 ```
 
@@ -852,13 +1154,15 @@ def show_accepted_passengers() -> None:
 
 def show_export_data() -> None:
     """
-    Display export functionality
+    Display export functionality with integrated data cleaning
     
     Features:
-    - Export all records
-    - Export accepted passengers only
-    - CSV format export
-    - Download links
+    - Export all records with automatic cleaning
+    - Export accepted passengers only with cleaning
+    - CSV and Excel format export
+    - Safe handling of problematic characters
+    - Download links for cleaned data
+    - Cleaning status reporting
     """
 ```
 
@@ -1027,13 +1331,23 @@ main()
 
 ### 1. File Processing Pipeline
 ```
-Input File → HBPRProcessor → Database Creation → CHbpr Validation → Statistics Caching → UI Display
+Input File → Data Cleaning → HBPRProcessor → Database Creation → CHbpr Validation → Statistics Caching → UI Display
 ```
+
+**Data Cleaning Integration**:
+- **File Reading**: `validateAndCleanFileContent()` removes problematic characters during file parsing
+- **Record Processing**: `cleanHbprRecordContent()` sanitizes individual records before database storage
+- **Storage**: Clean data stored in database, preventing future export issues
 
 ### 2. Manual Input Pipeline
 ```
-UI Input → Validation → Database Storage → Cache Invalidation → Statistics Refresh → UI Update
+UI Input → Data Cleaning → Validation → Database Storage → Cache Invalidation → Statistics Refresh → UI Update
 ```
+
+**Data Cleaning Integration**:
+- **User Input**: `cleanHbprRecordContent()` sanitizes manual input immediately
+- **Validation**: Clean data validated before database storage
+- **Storage**: Sanitized data stored, preventing future issues
 
 ### 3. Statistics Caching Pipeline
 ```
@@ -1059,6 +1373,16 @@ Database Query → Filter by boarding_number IS NOT NULL → Apply Filters → P
 ```
 Database Query → Count records with TKNE IS NOT NULL AND TKNE != '' → Count accepted passengers → Calculate rate → UI Display
 ```
+
+### 8. Data Export Pipeline with Cleaning
+```
+Database Query → Data Extraction → Data Cleaning → Format Conversion → File Generation → Download
+```
+
+**Data Cleaning Integration**:
+- **Export Preparation**: `cleanTextForExport()` sanitizes data before CSV/Excel creation
+- **Format Safety**: Ensures compatibility with spreadsheet applications
+- **Data Integrity**: Preserves essential information while removing problematic characters
 
 ## 🗄️ Database Schema
 
@@ -1217,6 +1541,23 @@ processor.process()
 report = processor.generate_report()
 ```
 
+### Data Cleaning Operations
+```python
+# Import data cleaning utilities
+from scripts.data_cleaner import clean_hbpr_record_content, validate_and_clean_file_content
+
+# Clean individual HBPR record
+cleaned_content = clean_hbpr_record_content(raw_hbpr_content)
+
+# Clean file content with validation
+cleaned_lines, needs_cleaning = validate_and_clean_file_content("input_file.txt")
+if needs_cleaning:
+    print("File was cleaned during processing")
+
+# Clean text for export
+export_safe_text = clean_text_for_export(database_content)
+```
+
 ### Enhanced Database Discovery
 ```python
 # Get databases from multiple sources
@@ -1295,6 +1636,8 @@ if st.button("🔄 Refresh Statistics"):
 - `sqlite3.Error`: Database operation errors
 - `sqlite3.OperationalError`: Column not found (for TKNE compatibility)
 - `Exception`: General processing errors
+- `UnicodeDecodeError`: File encoding issues during reading
+- `DataCleaningError`: Data cleaning operation failures
 
 ### Error Categories
 - **Baggage**: Weight/piece validation errors
@@ -1302,6 +1645,8 @@ if st.button("🔄 Refresh Statistics"):
 - **Name**: Name matching inconsistencies  
 - **Visa**: Visa information problems
 - **Other**: General processing errors
+- **Data Cleaning**: Character encoding and sanitization issues
+- **Export**: Format compatibility problems
 
 ### TKNE Compatibility Handling
 ```python
@@ -1344,4 +1689,10 @@ except sqlite3.OperationalError:
 - **Pagination**: Large datasets displayed in manageable chunks
 - **Background processing**: Heavy operations don't block UI
 
-This technical documentation provides comprehensive information about the system's functions, their parameters, return types, and relationships for developers working with the HBPR Processing System, including all recent enhancements for statistics management, accepted passengers tracking, and TKNE-based calculations.
+### Data Cleaning Performance
+- **Efficient regex patterns**: Optimized character replacement operations
+- **Batch processing**: Database cleaning operations use transactions
+- **Memory management**: Line-by-line processing for large files
+- **Caching**: Cleaning results cached where appropriate
+
+This technical documentation provides comprehensive information about the system's functions, their parameters, return types, and relationships for developers working with the HBPR Processing System, including all recent enhancements for statistics management, accepted passengers tracking, TKNE-based calculations, and comprehensive data cleaning solutions for preventing and resolving binary/hexadecimal character issues.

@@ -11,6 +11,7 @@ from scripts.hbpr_info_processor import HbprDatabase
 from scripts.excel_processor import (
     process_excel_file as core_process_excel_file,
     generate_output_excel as core_generate_output_excel,
+    calculate_cash_and_total_amounts,
 )
 
 
@@ -107,17 +108,60 @@ def show_excel_processor():
                         for record in unprocessed_records:
                             st.warning(f"乘客: {record['name']}, TKNE: {record['tkne']}, CKIN CCRD: {record['ckin_ccrd']}")
                     # 生成输出文件
-                    from datetime import datetime
-                    timestamp = datetime.now().strftime("%H%M%S")
-                    base_name = os.path.splitext(uploaded_file.name)[0]
                     # 使用全局航班信息（由核心处理在首次行设置）
                     from scripts.excel_processor import FLIGHT_NUMBER, FLIGHT_DATE, format_date_ddmmmyy
+                    
+                    # 计算现金和总金额
+                    cash_total, total_amount = calculate_cash_and_total_amounts(df_input)
+                    
+                    # 获取当前用户名并生成心情描述
+                    username = st.session_state.get('username', 'unknown')
+                    mood_description = "平静"  # 默认值
+                    
+                    if cash_total > 0 and total_amount > 0 and username != 'unknown':
+                        try:
+                            from scripts.api_encoder.gemma3_client import generate_mood_description
+                            mood_description = generate_mood_description(cash_total, total_amount, username)
+                        except Exception as e:
+                            st.warning(f"生成心情描述时出错: {e}")
+                            mood_description = "复杂"
+                    
+                    # 生成包含心情描述的文件名，处理重名情况
                     fn = FLIGHT_NUMBER or 'FLIGHT'
                     fd = format_date_ddmmmyy(FLIGHT_DATE) if FLIGHT_DATE else 'DATE'
-                    filename = f"{fn}_{fd}_EMD{timestamp}.xlsx"
-                    output_file = get_output_file_path(filename)
+                    
+                    # 文件重名检测和重新生成逻辑
+                    max_attempts = 5  # 最大尝试次数，防止无限循环
+                    attempt = 0
+                    
+                    while attempt < max_attempts:
+                        filename = f"{fn}_{fd}_EMD_{mood_description}.xlsx"
+                        output_file = get_output_file_path(filename)
+                        
+                        # 检查文件是否已存在
+                        if not os.path.exists(output_file):
+                            break  # 文件不存在，可以使用这个文件名
+                        
+                        # 文件已存在，重新生成心情描述
+                        attempt += 1
+                        if cash_total > 0 and total_amount > 0 and username != 'unknown':
+                            try:
+                                mood_description = generate_mood_description(cash_total, total_amount, username)
+                            except Exception:
+                                # 如果重新生成失败，使用备用名称
+                                mood_description = f"复杂{attempt}"
+                        else:
+                            mood_description = f"平静{attempt}"
+                    
+                    # 如果达到最大尝试次数，添加随机后缀
+                    if attempt >= max_attempts:
+                        import random
+                        random_suffix = random.randint(1000, 9999)
+                        mood_description = f"{mood_description}{random_suffix}"
+                        filename = f"{fn}_{fd}__EMD_{mood_description}.xlsx"
+                        output_file = get_output_file_path(filename)
                     try:
-                        core_generate_output_excel(result_df, unprocessed_records, output_file)
+                        core_generate_output_excel(result_df, unprocessed_records, output_file, cash_total)
                     except Exception as e:
                         st.error(f"❌ 生成输出文件失败: {str(e)}")
                         return
@@ -131,7 +175,7 @@ def show_excel_processor():
                         st.download_button(
                             label="📥 下载",
                             data=f.read(),
-                            file_name=f"processed_{base_name}.xlsx",
+                            file_name=filename,
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                             use_container_width=True
                         )
