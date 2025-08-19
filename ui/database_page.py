@@ -67,18 +67,14 @@ def build_database_ui(input_file):
         progress_bar.progress(100)
         status_text.text("✅ Database built successfully!")
         st.success(f"🎉 Database created: `{db.db_file}`")
-        # 显示构建结果 - 重点关注缺失号码
-        range_info = db.get_hbnb_range_info()
-        missing_numbers = db.get_missing_hbnb_numbers()
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("HBNB Range", f"{range_info['min']} - {range_info['max']}")
-        with col2:
-            st.metric("Total Expected", range_info['total_expected'])
-        with col3:
-            st.metric("Total Found", range_info['total_found'])
-        with col4:
-            st.metric("Missing Numbers", len(missing_numbers))
+        # Display main statistics using reusable component
+        from ui.components.main_stats import get_and_display_main_statistics, display_detailed_range_info
+        all_stats = get_and_display_main_statistics(db)
+        
+        # Display detailed range information specific to database page
+        if all_stats:
+            display_detailed_range_info(all_stats)
+            missing_numbers = all_stats.get('missing_numbers', [])
         # 显示缺失号码表格
         if missing_numbers:
             st.subheader("🚫 Missing HBNB Numbers")
@@ -137,29 +133,26 @@ def show_database_info():
                     # 如果是HBPR数据库，显示详细统计
                     if "hbpr_full_records" in [t[0] for t in tables]:
                         db_instance = HbprDatabase(db_file)
-                        range_info = db_instance.get_hbnb_range_info()
-                        missing_numbers = db_instance.get_missing_hbnb_numbers()
-                        st.write("**HBNB Range Information:**")
-                        metrics_col1, metrics_col2, metrics_col3, metrics_col4 = st.columns(4)
-                        with metrics_col1:
-                            st.metric("HBNB Range", f"{range_info['min']} - {range_info['max']}")
-                        with metrics_col2:
-                            st.metric("Total Expected", range_info['total_expected'])
-                        with metrics_col3:
-                            st.metric("Total Found", range_info['total_found'])
-                        with metrics_col4:
-                            st.metric("Missing Numbers", len(missing_numbers))
-                        # 显示缺失号码
-                        if missing_numbers:
-                            st.write("**Missing HBNB Numbers:**")
-                            # 限制显示前20个缺失号码
-                            display_missing = missing_numbers[:20]
-                            missing_text = ", ".join(map(str, display_missing))
-                            if len(missing_numbers) > 20:
-                                missing_text += f" ... and {len(missing_numbers) - 20} more"
-                            st.text(missing_text)
-                        else:
-                            st.success("✅ No missing HBNB numbers found!")
+                        # Use reusable components for consistent display
+                        from ui.components.main_stats import get_and_display_main_statistics, display_detailed_range_info
+                        all_stats = get_and_display_main_statistics(db_instance)
+                        
+                        # Display detailed range information
+                        if all_stats:
+                            display_detailed_range_info(all_stats)
+                            missing_numbers = all_stats.get('missing_numbers', [])
+                            
+                            # Show missing numbers details
+                            if missing_numbers:
+                                st.write("**Missing HBNB Numbers:**")
+                                # 限制显示前20个缺失号码
+                                display_missing = missing_numbers[:20]
+                                missing_text = ", ".join(map(str, display_missing))
+                                if len(missing_numbers) > 20:
+                                    missing_text += f" ... and {len(missing_numbers) - 20} more"
+                                st.text(missing_text)
+                            else:
+                                st.success("✅ No missing HBNB numbers found!")
                     conn.close()
                 except Exception as e:
                     st.error(f"Error reading database: {str(e)}")
@@ -171,10 +164,6 @@ def show_database_maintenance():
     """显示数据库维护选项"""
     selected_db = get_current_database()
     if selected_db:
-        st.subheader("🗄️ Database Operations")
-        
-        # 数据库清理选项
-        st.subheader("🧹 Data Cleaning")
         st.info("💡 如果导出数据时遇到错误，可以尝试清理数据库中的问题字符")
         
         col1, col2, col3 = st.columns(3)
@@ -258,29 +247,15 @@ def show_statistics():
         
         # 显示调试信息（如果触发）
         if debug_trigger:
-            from scripts.home_metrics import get_debug_summary
+            from ui.components.home_metrics import get_debug_summary
             debug_info = get_debug_summary(selected_db_file)
             st.info(debug_info)
-        # 使用新的统计管理系统获取所有统计信息
-        all_stats = db.get_all_statistics()
-        range_info = all_stats['hbnb_range_info']
-        missing_numbers = all_stats['missing_numbers']
-        accepted_stats = all_stats['accepted_passengers_stats']
-
-        # 仅保留三项指标：Max HBNB, Missing Count, Accepted Passengers（成人+婴儿Inf，Delta显示C/Y）
-        m1, m2, m3 = st.columns(3)
-        with m1:
-            st.metric("Max HBNB", range_info['max'])
-        with m2:
-            st.metric("Missing Count", len(missing_numbers))
-        with m3:
-            adult = accepted_stats.get('total_accepted', 0)
-            infant = accepted_stats.get('infant_count', 0)
-            b = accepted_stats.get('accepted_business', 0)
-            y = accepted_stats.get('accepted_economy', 0)
-            value = f"{adult}+{infant}Inf"
-            delta = f"{b}/{y}"
-            st.metric("Accepted Passengers", value, delta)
+        # Use reusable components for consistent display
+        from ui.components.main_stats import get_and_display_main_statistics
+        all_stats = get_and_display_main_statistics(db)
+        
+        # Extract missing numbers for the detailed display below
+        missing_numbers = all_stats.get('missing_numbers', []) if all_stats else []
         # 显示缺失号码表格
         if missing_numbers:
             st.subheader("🚫 Missing HBNB Numbers")

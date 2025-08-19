@@ -1741,6 +1741,285 @@ class HbprDatabase:
             raise Exception(f"Database error: {e}")
 
 
+    def get_deleted_passengers_stats(self):
+        """获取删除乘客统计信息"""
+        if not self.db_file:
+            self.find_database()
+        # Use statistics manager for caching
+        if self.stats_manager:
+            return self.stats_manager.get_cached_or_fetch(
+                "deleted_passengers_stats",
+                self._fetch_deleted_passengers_stats
+            )
+        else:
+            return self._fetch_deleted_passengers_stats()
+
+
+    def _fetch_deleted_passengers_stats(self):
+        """内部方法，从数据库获取删除乘客统计数据"""
+        try:
+            # 确保is_deleted字段存在
+            self.add_is_deleted_field_if_not_exists()
+            
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            
+            # 检查是否有is_deleted字段
+            cursor.execute("PRAGMA table_info(hbpr_full_records)")
+            columns = [col[1] for col in cursor.fetchall()]
+            has_is_deleted = 'is_deleted' in columns
+            
+            if has_is_deleted:
+                # 使用is_deleted字段
+                # 计算总删除乘客数量 (is_deleted >= 1)
+                cursor.execute(
+                    """
+                    SELECT COUNT(*) 
+                    FROM hbpr_full_records 
+                    WHERE is_deleted >= 1
+                    """
+                )
+                total_deleted = cursor.fetchone()[0]
+                
+                # 计算带XRES属性的删除乘客数量 (is_deleted >= 1 AND properties LIKE '%XRES%')
+                cursor.execute(
+                    """
+                    SELECT COUNT(*) 
+                    FROM hbpr_full_records 
+                    WHERE is_deleted >= 1 AND properties LIKE '%XRES%'
+                    """
+                )
+                deleted_with_xres = cursor.fetchone()[0]
+                
+                # 计算不带XRES属性的删除乘客数量 (is_deleted >= 1 AND (properties NOT LIKE '%XRES%' OR properties IS NULL))
+                cursor.execute(
+                    """
+                    SELECT COUNT(*) 
+                    FROM hbpr_full_records 
+                    WHERE is_deleted >= 1 AND (properties NOT LIKE '%XRES%' OR properties IS NULL)
+                    """
+                )
+                deleted_without_xres = cursor.fetchone()[0]
+                
+                # 获取不带XRES的删除乘客的原始登机号
+                cursor.execute(
+                    """
+                    SELECT is_deleted 
+                    FROM hbpr_full_records 
+                    WHERE is_deleted >= 1 AND (properties NOT LIKE '%XRES%' OR properties IS NULL)
+                    ORDER BY is_deleted
+                    """
+                )
+                original_boarding_numbers = [row[0] for row in cursor.fetchall()]
+                
+                # 获取带XRES的删除乘客的原始登机号
+                cursor.execute(
+                    """
+                    SELECT is_deleted 
+                    FROM hbpr_full_records 
+                    WHERE is_deleted >= 1 AND properties LIKE '%XRES%'
+                    ORDER BY is_deleted
+                    """
+                )
+                xres_boarding_numbers = [row[0] for row in cursor.fetchall()]
+                
+            else:
+                # 使用旧方式计算
+                # 计算总删除乘客数量（boarding_number = 0 且record_content中包含"DELETED"）
+                cursor.execute(
+                    """
+                    SELECT COUNT(*) 
+                    FROM hbpr_full_records 
+                    WHERE boarding_number = 0 AND record_content LIKE '%DELETED%'
+                    """
+                )
+                total_deleted = cursor.fetchone()[0]
+                
+                # 计算带XRES属性的删除乘客数量
+                cursor.execute(
+                    """
+                    SELECT COUNT(*) 
+                    FROM hbpr_full_records 
+                    WHERE boarding_number = 0 AND record_content LIKE '%DELETED%' AND properties LIKE '%XRES%'
+                    """
+                )
+                deleted_with_xres = cursor.fetchone()[0]
+                
+                # 计算不带XRES属性的删除乘客数量
+                cursor.execute(
+                    """
+                    SELECT COUNT(*) 
+                    FROM hbpr_full_records 
+                    WHERE boarding_number = 0 AND record_content LIKE '%DELETED%' AND (properties NOT LIKE '%XRES%' OR properties IS NULL)
+                    """
+                )
+                deleted_without_xres = cursor.fetchone()[0]
+                original_boarding_numbers = []
+                
+                # 尝试提取不带XRES的删除乘客的原始登机号
+                cursor.execute(
+                    """
+                    SELECT record_content 
+                    FROM hbpr_full_records 
+                    WHERE boarding_number = 0 AND record_content LIKE '%DELETED%' AND (properties NOT LIKE '%XRES%' OR properties IS NULL)
+                    """
+                )
+                import re
+                boarding_numbers = []
+                for (content,) in cursor.fetchall():
+                    match = re.search(r'\n\s+DEL\s+.*?/BN(\d+)\s', content)
+                    if match:
+                        boarding_numbers.append(int(match.group(1)))
+                original_boarding_numbers = sorted(boarding_numbers)
+                # 更新删除乘客统计：只计算能找到原始登机号的删除乘客
+                deleted_without_xres = len(original_boarding_numbers)
+                
+                # 尝试提取带XRES的删除乘客的原始登机号
+                cursor.execute(
+                    """
+                    SELECT record_content 
+                    FROM hbpr_full_records 
+                    WHERE boarding_number = 0 AND record_content LIKE '%DELETED%' AND properties LIKE '%XRES%'
+                    """
+                )
+                xres_boarding_numbers = []
+                for (content,) in cursor.fetchall():
+                    match = re.search(r'\n\s+DEL\s+.*?/BN(\d+)\s', content)
+                    if match:
+                        xres_boarding_numbers.append(int(match.group(1)))
+                xres_boarding_numbers = sorted(xres_boarding_numbers)
+                # 更新删除乘客统计：只计算能找到原始登机号的删除乘客
+                deleted_with_xres = len(xres_boarding_numbers)
+                total_deleted = deleted_with_xres + deleted_without_xres
+            
+            conn.close()
+            
+            return {
+                'total_deleted': total_deleted,
+                'deleted_with_xres': deleted_with_xres,
+                'deleted_without_xres': deleted_without_xres,
+                'original_boarding_numbers': original_boarding_numbers,
+                'xres_boarding_numbers': xres_boarding_numbers
+            }
+        except sqlite3.Error as e:
+            raise Exception(f"Database error: {e}")
+
+
+    def add_is_deleted_field_if_not_exists(self):
+        """添加is_deleted字段到数据库（如果不存在）并更新现有记录"""
+        if not self.db_file:
+            self.find_database()
+        try:
+            conn = sqlite3.connect(self.db_file)
+            cursor = conn.cursor()
+            
+            # 检查字段是否已存在
+            cursor.execute("PRAGMA table_info(hbpr_full_records)")
+            columns = [col[1] for col in cursor.fetchall()]
+            field_exists = 'is_deleted' in columns
+            
+            if not field_exists:
+                # 添加is_deleted字段(整型)
+                cursor.execute("ALTER TABLE hbpr_full_records ADD COLUMN is_deleted INTEGER DEFAULT 0")
+                
+                # 获取所有删除记录
+                cursor.execute(
+                    """
+                    SELECT hbnb_number, record_content 
+                    FROM hbpr_full_records 
+                    WHERE boarding_number = 0 AND record_content LIKE '%DELETED%'
+                    """
+                )
+                deleted_records = cursor.fetchall()
+                
+                # 更新每条记录
+                update_count = 0
+                import re
+                for hbnb, record_content in deleted_records:
+                    # 查找原始登机号
+                    # 查找DEL行
+                    del_pattern = r'\n\s+DEL\s+.*?/BN(\d+)\s'
+                    match = re.search(del_pattern, record_content)
+                    
+                    if match:
+                        original_bn = int(match.group(1))
+                        cursor.execute(
+                            """
+                            UPDATE hbpr_full_records 
+                            SET is_deleted = ? 
+                            WHERE hbnb_number = ?
+                            """, (original_bn, hbnb)
+                        )
+                        update_count += 1
+                    # 如果找不到原始登机号，不设置is_deleted（保持为0，不计入统计）
+                
+                conn.commit()
+                print(f"Added is_deleted field and updated {update_count} records")
+            else:
+                # 字段存在，检查是否需要重新填充数据
+                # 检查是否有deleted记录但is_deleted为0
+                cursor.execute(
+                    """
+                    SELECT COUNT(*) FROM hbpr_full_records 
+                    WHERE boarding_number = 0 AND record_content LIKE '%DELETED%'
+                    """
+                )
+                total_deleted_records = cursor.fetchone()[0]
+                
+                cursor.execute(
+                    """
+                    SELECT COUNT(*) FROM hbpr_full_records 
+                    WHERE is_deleted > 0
+                    """
+                )
+                processed_deleted_records = cursor.fetchone()[0]
+                
+                need_update = total_deleted_records > 0 and processed_deleted_records == 0
+                
+                if need_update:
+                    print(f"Resetting and recalculating deleted records...")
+                    # 获取需要更新的删除记录
+                    cursor.execute(
+                        """
+                        SELECT hbnb_number, record_content 
+                        FROM hbpr_full_records 
+                        WHERE boarding_number = 0 AND record_content LIKE '%DELETED%'
+                        """
+                    )
+                    deleted_records = cursor.fetchall()
+                    
+                    # 重置所有is_deleted字段为0
+                    cursor.execute("UPDATE hbpr_full_records SET is_deleted = 0")
+                    
+                    # 更新每条记录
+                    update_count = 0
+                    import re
+                    for hbnb, record_content in deleted_records:
+                        # 查找原始登机号
+                        del_pattern = r'\n\s+DEL\s+.*?/BN(\d+)\s'
+                        match = re.search(del_pattern, record_content)
+                        
+                        if match:
+                            original_bn = int(match.group(1))
+                            cursor.execute(
+                                """
+                                UPDATE hbpr_full_records 
+                                SET is_deleted = ? 
+                                WHERE hbnb_number = ?
+                                """, (original_bn, hbnb)
+                            )
+                            update_count += 1
+                        # 如果找不到原始登机号，不设置is_deleted（保持为0，不计入统计）
+                    
+                    conn.commit()
+                    print(f"Updated {update_count} existing deleted records")
+            
+            conn.close()
+            return True
+        except sqlite3.Error as e:
+            raise Exception(f"Database error: {e}")
+
+
     def invalidate_statistics_cache(self, cache_key: Optional[str] = None):
         """Invalidate statistics cache manually"""
         if self.stats_manager:
@@ -1755,6 +2034,8 @@ class HbprDatabase:
             return self.stats_manager.force_refresh(cache_key, self._fetch_record_summary)
         elif cache_key == "accepted_passengers_stats":
             return self.stats_manager.force_refresh(cache_key, self._fetch_accepted_passengers_stats)
+        elif cache_key == "deleted_passengers_stats":
+            return self.stats_manager.force_refresh(cache_key, self._fetch_deleted_passengers_stats)
         else:
             raise ValueError(f"Unknown cache key: {cache_key}")
 
@@ -1770,6 +2051,8 @@ class HbprDatabase:
         stats['hbnb_range_info'] = self.get_hbnb_range_info()
         # Get missing numbers
         stats['missing_numbers'] = self.get_missing_hbnb_numbers()
+        # Get deleted passengers stats
+        stats['deleted_passengers_stats'] = self.get_deleted_passengers_stats()
         return stats
 
 
