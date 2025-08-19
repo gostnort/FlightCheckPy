@@ -28,24 +28,13 @@ def clean_text_for_input(text: str, aggressive: bool = False) -> str:
     
     original_text = text
     cleaned = text
-    
-    # 第一阶段：移除或替换控制字符（ASCII 0-31, 127）
     # 这些字符在大多数情况下都是有害的
-    cleaned = re.sub(r'[\x00-\x1f\x7f]', ' ', cleaned)
-    
-    # 第二阶段：处理其他问题字符
-    if aggressive:
-        # 激进模式：只保留基本的可打印字符
-        cleaned = re.sub(r'[^\x20-\x7e\n\r\t]', ' ', cleaned)
-    else:
-        # 保守模式：保留更多字符，但移除明显有问题的
-        # 移除非标准Unicode字符
-        cleaned = re.sub(r'[^\x20-\x7e\n\r\t\u00a0-\uffff]', ' ', cleaned)
-    
-    # 第三阶段：清理空白字符
-    cleaned = re.sub(r' +', ' ', cleaned)  # 多个空格合并为一个
-    cleaned = re.sub(r'\n\s*\n', '\n', cleaned)  # 空行清理
-    cleaned = cleaned.strip()
+    # 处理ASCII控制字符，但保留CR(\r)和LF(\n)和TAB(\t)
+    cleaned = re.sub(r'[\x00-\x09]', ' ', cleaned)  # 0-9 (保留LF \x0a)
+    cleaned = re.sub(r'[\x0b\x0c]', ' ', cleaned)  # 11-12 (保留TAB \x09)
+    cleaned = re.sub(r'[\x0e-\x1f]', ' ', cleaned)  # 14-31 (保留CR \x0d)
+    cleaned = re.sub(r'[\x7f]', ' ', cleaned)  # DEL字符
+ 
     
     # 记录清理情况
     if cleaned != original_text:
