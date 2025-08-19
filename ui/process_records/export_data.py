@@ -157,7 +157,9 @@ def show_export_data():
         
         # 显示导出预览
         st.subheader("👀 Export Preview")
-        st.dataframe(export_df.head(10), use_container_width=True)
+        st.dataframe(export_df, 
+                     use_container_width=True,
+                     hide_index=True)  # 隐藏自动序列号
         st.info(f"📊 Total records ready for export: {len(export_df)}")
         
         # 添加说明信息

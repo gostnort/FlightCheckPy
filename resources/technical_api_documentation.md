@@ -15,6 +15,8 @@ The Flight Data Processing System is a comprehensive Python application for proc
 - Command analysis: import, manual edit, view, timeline versioning, and maintenance/migration
 - TKNE-aware calculations and compatibility handling
 - **Data Cleaning & Export Solutions**: Comprehensive data sanitization at input, storage, and export stages to prevent binary/hexadecimal character issues
+- **Deleted Passenger Analytics**: Comprehensive tracking of deleted passengers with XRES property classification and original boarding number extraction
+- **Reusable UI Components**: Modular component architecture for consistent statistics display across multiple pages
 
 ## 🏗️ System Architecture
 
@@ -38,6 +40,10 @@ FlightCheckPy/
 │   ├── excel_processor_page.py # Excel upload and EMD export UI
 │   ├── settings_page.py        # System configuration and about info
 │   ├── common.py               # Shared utilities with enhanced database discovery
+│   ├── components/             # Reusable UI components
+│   │   ├── main_stats.py       # Main statistics display component
+│   │   ├── deleted_stats.py    # Deleted passenger statistics component
+│   │   └── home_metrics.py     # Home page metrics and flight summary
 │   └── process_records/        # Sub-modules for record processing
 │       ├── process_all.py      # Batch processing functionality
 │       ├── add_edit_record.py  # Single record editing
@@ -163,6 +169,204 @@ def clean_database_records(db_file: str) -> Dict[str, int]:
 ```
 
 **UI Integration**: Available through "Clean Database Data" button in `ui/database_page.py`
+
+### Deleted Passenger Analytics
+
+The system provides comprehensive tracking and analysis of deleted passengers with automatic classification and original boarding number extraction.
+
+**Location**: `scripts/hbpr_info_processor.py`
+
+**Purpose**: Identifies and categorizes deleted passengers by XRES property and extracts their original boarding numbers from DEL command lines.
+
+#### Key Components
+
+**Database Schema Enhancement**:
+- **`is_deleted` field**: INTEGER field storing original boarding numbers of deleted passengers
+- **Value meanings**:
+  - `0`: Not deleted (normal passenger)
+  - `≥1`: Deleted passenger, value represents original boarding number
+
+**Identification Logic**:
+```python
+# Deleted passengers are identified by:
+boarding_number = 0 AND record_content LIKE '%DELETED%'
+
+# Classification:
+# - XRES deleted: properties LIKE '%XRES%'  
+# - Non-XRES deleted: properties NOT LIKE '%XRES%' OR properties IS NULL
+
+# Original boarding number extraction from DEL lines:
+# Pattern: '\n\s+DEL\s+.*?/BN(\d+)\s'
+# Example: "     DEL LAX7527 AGT47185/25JUL2316/BN89 SNR60D 60D" → boarding number 89
+```
+
+#### Functions
+
+```python
+def get_deleted_passengers_stats(self) -> Dict[str, Any]:
+    """
+    Get comprehensive deleted passenger statistics (cached)
+    
+    Returns:
+        Dict[str, Any]: Statistics including:
+            - total_deleted: Total number of deleted passengers
+            - deleted_with_xres: Count of deleted passengers with XRES property
+            - deleted_without_xres: Count of deleted passengers without XRES property
+            - xres_boarding_numbers: List of original boarding numbers for XRES deleted passengers
+            - original_boarding_numbers: List of original boarding numbers for non-XRES deleted passengers
+    """
+
+def add_is_deleted_field_if_not_exists(self) -> bool:
+    """
+    Add is_deleted field to database schema if not exists and populate with original boarding numbers
+    
+    Returns:
+        bool: True if operation successful
+        
+    Features:
+        - Automatic database schema migration
+        - Parsing of DEL command lines for boarding number extraction
+        - Handles existing databases without field
+        - Automatic detection and processing of deleted records
+    """
+
+def _fetch_deleted_passengers_stats(self) -> Dict[str, Any]:
+    """
+    Internal method to fetch deleted passenger statistics with automatic field creation
+    
+    Returns:
+        Dict[str, Any]: Raw deleted passenger statistics
+        
+    Features:
+        - Ensures is_deleted field exists before processing
+        - Falls back to content-based detection for compatibility
+        - Extracts boarding numbers using regex pattern matching
+    """
+```
+
+#### Integration Points
+- **Statistics Caching**: Integrated with StatisticsManager for efficient retrieval
+- **UI Components**: Displayed through reusable components in main_stats.py and deleted_stats.py
+- **Database Migration**: Automatic field creation and data population on first use
+- **Cache Invalidation**: Statistics cache cleared on database modifications
+
+### Reusable UI Components
+
+The system implements a modular component architecture for consistent statistics display across multiple pages.
+
+**Location**: `ui/components/`
+
+**Purpose**: Provides reusable, maintainable UI components for statistics display with consistent formatting and behavior.
+
+#### Component Structure
+
+```
+ui/components/
+├── main_stats.py          # Main statistics display component
+├── deleted_stats.py       # Deleted passenger statistics component
+└── home_metrics.py        # Flight summary and debug metrics
+```
+
+#### Key Functions
+
+**main_stats.py**:
+```python
+def display_main_statistics(all_stats: Dict[str, Any]) -> None:
+    """
+    Display main HBPR statistics in reusable format
+    
+    Features:
+        - Max HBNB, Missing Count, Accepted Passengers metrics
+        - Deleted passenger statistics integration
+        - Consistent formatting across pages
+    """
+
+def get_and_display_main_statistics(db: HbprDatabase) -> Dict[str, Any]:
+    """
+    Get all statistics from database and display them
+    
+    Returns:
+        Dict[str, Any]: Complete statistics for additional processing
+        
+    Features:
+        - Single function call for complete statistics display
+        - Error handling and user feedback
+        - Automatic caching through database layer
+    """
+
+def display_detailed_range_info(all_stats: Dict[str, Any]) -> None:
+    """
+    Display detailed HBNB range information for database page
+    
+    Features:
+        - HBNB Range, Total Expected, Total Found, Missing Numbers
+        - Specialized display for database management interface
+    """
+```
+
+**deleted_stats.py**:
+```python
+def display_deleted_stats(deleted_stats: Dict[str, Any]) -> None:
+    """
+    Display deleted passenger statistics in reusable format
+    
+    Features:
+        - Del w XRES and Del w/o XRES metrics
+        - Boarding number lists with intelligent truncation
+        - Enhanced display limits (10 XRES, 30 non-XRES boarding numbers)
+    """
+
+def get_and_display_deleted_stats(db: HbprDatabase) -> None:
+    """
+    Get deleted passenger statistics from database and display them
+    
+    Features:
+        - Complete deleted passenger statistics retrieval and display
+        - Error handling for missing data
+        - Integration with statistics caching
+    """
+```
+
+**home_metrics.py**:
+```python
+def get_home_summary(db_file: str) -> Dict[str, Any]:
+    """
+    Get flight summary data for home page display
+    
+    Returns:
+        Dict[str, Any]: Flight summary including totals, ratios, and breakdowns
+    """
+
+def get_debug_summary(db_file: str) -> str:
+    """
+    Get debug information for database troubleshooting
+    
+    Returns:
+        str: Formatted debug information
+    """
+```
+
+#### Component Features
+- **Consistent Display**: Identical appearance and behavior across pages
+- **Intelligent Truncation**: Boarding numbers display with enhanced limits
+- **Error Handling**: Graceful fallback for missing or invalid data
+- **Modular Design**: Easy to add to new pages or modify existing displays
+- **Performance**: Leverages existing statistics caching infrastructure
+
+#### Usage Examples
+```python
+# In home page or database page
+from ui.components.main_stats import get_and_display_main_statistics
+all_stats = get_and_display_main_statistics(db)
+
+# For deleted passenger statistics only
+from ui.components.deleted_stats import get_and_display_deleted_stats
+get_and_display_deleted_stats(db)
+
+# For flight summary display
+from ui.components.home_metrics import get_home_summary
+summary = get_home_summary(db_file)
+```
 
 #### 4. Character Cleaning Strategy
 
@@ -619,7 +823,35 @@ def get_all_statistics(self) -> Dict[str, Any]:
     
     Returns:
         Dict[str, Any]: Complete statistics including hbnb_range_info, 
-                       missing_numbers, accepted_stats, record_summary
+                       missing_numbers, accepted_stats, record_summary, deleted_passengers_stats
+    """
+
+def get_deleted_passengers_stats(self) -> Dict[str, Any]:
+    """
+    Get comprehensive deleted passenger statistics (cached)
+    
+    Returns:
+        Dict[str, Any]: Statistics including:
+            - total_deleted: Total number of deleted passengers
+            - deleted_with_xres: Count of deleted passengers with XRES property
+            - deleted_without_xres: Count of deleted passengers without XRES property
+            - xres_boarding_numbers: List of original boarding numbers for XRES deleted passengers
+            - original_boarding_numbers: List of original boarding numbers for non-XRES deleted passengers
+    """
+
+def add_is_deleted_field_if_not_exists(self) -> bool:
+    """
+    Add is_deleted field to database schema if not exists and populate with original boarding numbers
+    
+    Returns:
+        bool: True if operation successful
+        
+    Features:
+        - Automatic database schema migration
+        - Parsing of DEL command lines for boarding number extraction using regex pattern \\n\\s+DEL\\s+.*?/BN(\\d+)\\s
+        - Handles existing databases without field
+        - Automatic detection and processing of deleted records
+        - Reprocessing protection for databases after rebuilds
     """
 
 def invalidate_statistics_cache(self) -> None:
@@ -1429,7 +1661,9 @@ CREATE TABLE hbpr_full_records (
     error_visa TEXT,
     error_other TEXT,
     validated_at TIMESTAMP,
-    tkne TEXT
+    tkne TEXT,
+    is_deleted INTEGER DEFAULT 0,
+    has_infant BOOLEAN DEFAULT 0
 );
 ```
 
