@@ -8,12 +8,13 @@ import pandas as pd
 from ui.common import apply_global_settings, get_current_database
 from scripts.hbpr_info_processor import HbprDatabase
 import os
+from ui.components.home_metrics import get_home_summary
+
 
 def show_home_page():
     """显示主页"""
     # Apply settings
     apply_global_settings()
-    
     # 检查是否需要刷新
     if 'refresh_home' in st.session_state and st.session_state.refresh_home:
         st.session_state.refresh_home = False
@@ -25,7 +26,6 @@ def show_home_page():
         try:
             # 获取当前选中的数据库
             selected_db_file = get_current_database()
-            
             if not selected_db_file:
                 st.error("❌ No database selected!")
                 st.info("💡 Please select a database from the sidebar or build one first using the Database Management page.")
@@ -33,35 +33,12 @@ def show_home_page():
             # 使用选中的数据库
             db = HbprDatabase(selected_db_file)
             st.success(f"DB connected: {os.path.basename(selected_db_file)}")
-            # 获取所有统计信息（使用新的统计管理系统）
-            all_stats = db.get_all_statistics()
-            range_info = all_stats['hbnb_range_info']
-            missing_numbers = all_stats['missing_numbers']
+            # Display main statistics using reusable component
+            from ui.components.main_stats import get_and_display_main_statistics
+            all_stats = get_and_display_main_statistics(db)
             
-            # 显示HBNB范围信息
-            metrics_col1, metrics_col2, metrics_col3, metrics_col4 = st.columns(4)
-            with metrics_col1:
-                st.metric("HBNB Range", f"{range_info['min']} - {range_info['max']}")
-            with metrics_col2:
-                st.metric("Total Expected", range_info['total_expected'])
-            with metrics_col3:
-                st.metric("Total Found", range_info['total_found'])
-            with metrics_col4:
-                st.metric("Missing Numbers", len(missing_numbers))
-            
-            # 显示已接受乘客统计
-            try:
-                accepted_stats = all_stats['accepted_passengers_stats']
-                validation_col1, validation_col2 = st.columns(2)
-                with validation_col1:
-                    st.metric("Accepted Passengers", accepted_stats['total_accepted'])
-                with validation_col2:
-                    if accepted_stats['total_accepted'] > 0:
-                        st.metric("Boarding Range", f"{accepted_stats['min_boarding']} - {accepted_stats['max_boarding']}")
-                    else:
-                        st.metric("Boarding Range", "N/A")
-            except Exception as e:
-                st.warning(f"⚠️ Accepted passenger data not available: {str(e)}")
+            # Extract data for additional sections
+            missing_numbers = all_stats.get('missing_numbers', []) if all_stats else []
             # 显示缺失号码表格
             if missing_numbers:
                 st.subheader("🚫 Missing HBNB Numbers")
@@ -89,30 +66,75 @@ def show_home_page():
             st.info("💡 Please build a database first using the Database Management page.")
     with col2:
         st.subheader("🚀 Quick Actions")
-        if st.button("🔍 Process HBPR Record", use_container_width=True):
+        if st.button("✏️ Add/Edit HBPR Record", use_container_width=True):
             st.session_state.current_page = "🔍 Process Records"
+            st.session_state.process_records_tab = "✏️ Add/Edit Record"
             st.rerun()
-        if st.button("📄 Manual Input", use_container_width=True):
-            st.session_state.current_page = "🔍 Process Records"
+        if st.button("✒️ Add/Edit Command", use_container_width=True):
+            st.session_state.current_page = "📋 Other Commands"
+            st.session_state.command_analysis_tab = "✒️ Add/Edit Data"
             st.rerun()
         if st.button("🔄 Refresh Statistics", use_container_width=True):
             # 强制刷新所有统计信息
             db.invalidate_statistics_cache()
             st.rerun()
-        if st.button("🔄 Refresh Home Page", use_container_width=True):
-            st.rerun()
+        # 航班摘要信息折叠块
+        try:
+            summary = get_home_summary(selected_db_file)
+            title = f"{summary['flight_number']} / {summary['flight_date']}"
+            with st.expander(title, expanded=True):
+                total_line = f"TOTAL {summary['total_accepted']} + {summary['infant_count']} INF"
+                j_y_line = f"J_{summary['accepted_business']} / Y_{summary['accepted_economy']}"
+                ratio_display = f"{summary['ratio']}%" if summary['ratio'] is not None else "N/A"
+                ratio_line = f"RATIO: {ratio_display}"
+                id_line = f"ID_J: {summary['id_j']}  ID_Y: {summary['id_y']}"
+                noshow_line = f"NOSHOW: J_{summary['noshow_j']} / Y_{summary['noshow_y']}"
+                inad_line = f"INAD: {summary['inad_total']}"
+                msg = "\n".join([
+                    title,
+                    total_line,
+                    j_y_line,
+                    ratio_line,
+                    id_line,
+                    noshow_line,
+                    inad_line,
+                ])
+                st.code(msg)
+        except Exception as e:
+            st.info(f"Summary not available: {str(e)}")
     st.markdown("---")
     # 最近活动
-    st.subheader("📝 How to Use")
-    st.markdown("""
-    1. **Database Management**: Build your database from HBPR list files
-    2. **Process Records**: Select and process individual HBPR records or manually input new records
-    3. **View Results**: Browse validation results and export data
-    4. **Settings**: Configure system preferences
-    
-    **Manual Input Features:**
-    - Select database from dropdown
-    - Input full HBPR records with flight info validation
-    - Create simple HBNB records for placeholders
-    - Automatic replacement of simple records with full records
-    """)
+    st.subheader("📝 导航指南")
+    col_left, col_right = st.columns(2)
+    with col_left:
+        st.markdown("""
+        使用左侧边栏中的导航按钮访问不同功能：
+        ## 🗄️ **数据库管理**
+        - 从HBPR列表文件构建数据库
+        - 导入和处理HBPR列表数据
+        - 管理数据库文件并查看航班信息
+        ## 🔍 **处理记录** 
+        - 手动添加/编辑单个HBPR记录
+        - 验证和处理所有记录
+        - 创建简单的HBNB占位符
+        - 将处理后的数据导出到Excel
+        - 对记录进行排序和筛选
+        ## 📊 **Excel处理器**
+        - 导入包含TKNE数据的Excel文件
+        - 处理EMD销售日报
+        - 生成格式化的输出文件
+        - 自动匹配CKIN CCRD记录
+        """)
+    with col_right:
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        st.markdown("""
+        ## 📋 **其他指令**
+        - 添加/编辑指令分析数据  
+        - 处理EMD（电子杂费单）记录
+        - 分析指令模式和验证
+        ## ⚙️ **设置**
+        - 配置字体族和大小偏好
+        
+        **💡 开始使用：** 从边栏下拉菜单中选择数据库，然后使用导航按钮访问所需功能。
+        """)
+

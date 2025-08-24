@@ -3,4 +3,5 @@ __pycache__/
 sample*
 *.db
 uploaded*.txt
+sample_xlsx_vba/
 /sample*
