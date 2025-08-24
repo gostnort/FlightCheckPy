@@ -136,25 +136,62 @@ class APIEncoder:
 
 
 def main():
-    """主函数示例"""
-    encoder = APIEncoder()
-    print("API密钥预编码器")
+    """主函数 - 提供多种功能选择"""
+    print("FlightCheckPy API工具集")
     print("=" * 50)
-    # 显示预编码的伪码
-    pseudo_code = encoder.get_pseudo_code()
-    print(f"预编码的伪码: {pseudo_code}")
-    print("注意：这个伪码不包含任何用户名或真实API密钥信息！")
-    # 测试解码功能
-    print("\n请输入用户名进行测试:")
-    username = input("用户名: ").strip()
-    if username:
-        decoded_key = encoder.decode_api_key(username)
-        if decoded_key:
-            print(f"✓ 解码成功: {decoded_key[:10]}...")
+    print("请选择要使用的功能:")
+    print()
+    print("1. API密钥编码器测试 (原功能)")
+    print("2. Gemma3聊天命令行界面 (新功能)")
+    print("3. 退出")
+    print()
+    
+    while True:
+        choice = input("请选择功能 (1-3): ").strip()
+        
+        if choice == "1":
+            # 原有的API编码器测试功能
+            encoder = APIEncoder()
+            print("\nAPI密钥预编码器测试")
+            print("=" * 40)
+            # 显示预编码的伪码列表
+            pseudo_codes = encoder.get_pseudo_codes()
+            print("预编码的伪码列表:")
+            for i, pseudo_code in enumerate(pseudo_codes, 1):
+                print(f"{i}. {pseudo_code}")
+            print("注意：这些伪码不包含任何用户名或真实API密钥信息！")
+            # 测试解码功能
+            print("\n请输入用户名进行测试:")
+            username = input("用户名: ").strip()
+            if username:
+                decoded_key = encoder.decode_api_key(username)
+                if decoded_key:
+                    print(f"✓ 解码成功: {decoded_key[:10]}...")
+                else:
+                    print("✗ 解码失败，用户名可能不正确")
+            else:
+                print("用户名不能为空")
+            break
+            
+        elif choice == "2":
+            # 启动Gemma3聊天界面
+            try:
+                from scripts.api_encoder.gemma_chat_cli import ChatInterface
+                print("\n正在启动Gemma3聊天界面...")
+                chat = ChatInterface()
+                chat.run()
+            except ImportError as e:
+                print(f"❌ 无法导入聊天界面模块: {e}")
+            except Exception as e:
+                print(f"❌ 启动聊天界面失败: {e}")
+            break
+            
+        elif choice == "3":
+            print("👋 再见！")
+            break
+            
         else:
-            print("✗ 解码失败，用户名可能不正确")
-    else:
-        print("用户名不能为空")
+            print("❌ 无效选择，请输入1-3之间的数字")
 
 
 if __name__ == "__main__":

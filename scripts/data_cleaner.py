@@ -30,6 +30,8 @@ def clean_text_for_input(text: str, aggressive: bool = False) -> str:
     cleaned = text
     # 这些字符在大多数情况下都是有害的
     # 处理ASCII控制字符，但保留CR(\r)和LF(\n)和TAB(\t)
+    # 特殊处理 U+0010 (\x10) —— 将其替换为 '>' 而不是简单删除
+    cleaned = cleaned.replace('\x10', '>')
     cleaned = re.sub(r'[\x00-\x09]', ' ', cleaned)  # 0-9 (保留LF \x0a)
     cleaned = re.sub(r'[\x0b\x0c]', ' ', cleaned)  # 11-12 (保留TAB \x09)
     cleaned = re.sub(r'[\x0e-\x1f]', ' ', cleaned)  # 14-31 (保留CR \x0d)
@@ -229,24 +231,15 @@ def preview_cleaning_effect(text: str, max_length: int = 100) -> dict:
 
 if __name__ == "__main__":
     # 测试功能
-    test_cases = [
-        "Normal text",
-        "Text with \x00\x01\x02 control chars",
-        "Text with \x7f DEL char",
-        ">HBPR: CA984/15AUG25*LAX,67 PNR RL MZBX",
-        "Mixed: >HBPR: CA984/15AUG25*LAX,67 PNR RL MZBX with \x1f\x1e\x1d control chars"
-    ]
-    
-    print("🧪 Testing Data Cleaning Utility")
-    print("=" * 50)
-    
-    for i, test_case in enumerate(test_cases, 1):
-        print(f"\nTest {i}:")
-        preview = preview_cleaning_effect(test_case)
-        print(f"  Original: {preview['original']}")
-        print(f"  Cleaned:  {preview['cleaned']}")
-        print(f"  Changed:   {preview['changed']}")
-        print(f"  Length:    {preview['original_length']} -> {preview['cleaned_length']}")
-        print(f"  Stats:     {preview['statistics']}")
-    
-    print("\n🎉 Testing completed!")
+
+
+    # 读取并处理 sample_hbpr.txt（如果存在）
+    try:
+        sample_path = "sample_hbpr.txt"
+        cleaned_lines, changed = validate_and_clean_file_content(sample_path)
+        joined = "".join(cleaned_lines)
+        print("\n📄 Processed sample_hbpr.txt content:\n")
+        print(joined)
+        print(f"\n🔁 Changes applied: {changed}")
+    except Exception as e:
+        logger.error(f"Failed to process sample_hbpr.txt: {e}")
