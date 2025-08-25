@@ -93,14 +93,14 @@ class DatabaseMigrator:
 
     def migrate_hbpr_table(self, db_file: str) -> bool:
         """迁移HBPR表"""
-        print(f"   🔄 迁移HBPR表...")
+        print("   🔄 迁移HBPR表...")
         
         # 检查表是否存在
         conn = sqlite3.connect(db_file)
         cursor = conn.cursor()
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='hbpr_full_records'")
         if not cursor.fetchone():
-            print(f"     ⚠️  hbpr_full_records表不存在，跳过")
+            print("     ⚠️  hbpr_full_records表不存在，跳过")
             conn.close()
             return True
         
@@ -115,7 +115,7 @@ class DatabaseMigrator:
                 missing_columns.append((column_name, column_type))
         
         if not missing_columns:
-            print(f"     ✅ HBPR表结构完整，无需迁移")
+            print("     ✅ HBPR表结构完整，无需迁移")
             conn.close()
             return True
         
@@ -128,7 +128,7 @@ class DatabaseMigrator:
                 print(f"       ➕ 添加列: {column_name}")
             
             conn.commit()
-            print(f"     ✅ HBPR表迁移成功")
+            print("     ✅ HBPR表迁移成功")
             return True
             
         except sqlite3.Error as e:
@@ -141,14 +141,14 @@ class DatabaseMigrator:
 
     def migrate_commands_table(self, db_file: str) -> bool:
         """迁移Commands表"""
-        print(f"   🔄 迁移Commands表...")
+        print("   🔄 迁移Commands表...")
         
         # 检查表是否存在
         conn = sqlite3.connect(db_file)
         cursor = conn.cursor()
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='commands'")
         if not cursor.fetchone():
-            print(f"     ⚠️  commands表不存在，跳过")
+            print("     ⚠️  commands表不存在，跳过")
             conn.close()
             return True
         
@@ -163,7 +163,7 @@ class DatabaseMigrator:
                 missing_columns.append((column_name, column_type))
         
         if not missing_columns:
-            print(f"     ✅ Commands表结构完整，无需迁移")
+            print("     ✅ Commands表结构完整，无需迁移")
             conn.close()
             return True
         
@@ -176,18 +176,18 @@ class DatabaseMigrator:
                 print(f"       ➕ 添加列: {column_name}")
             
             # 创建必要的索引
-            print(f"       🔧 创建索引...")
+            print("       🔧 创建索引...")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_commands_timeline ON commands(command_full, version)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_commands_parent ON commands(parent_id)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_commands_latest ON commands(command_full, is_latest)")
             
             # 更新现有记录的默认值
-            print(f"       🔄 更新现有记录...")
+            print("       🔄 更新现有记录...")
             cursor.execute("UPDATE commands SET version = 1 WHERE version IS NULL")
             cursor.execute("UPDATE commands SET is_latest = TRUE WHERE is_latest IS NULL")
             
             conn.commit()
-            print(f"     ✅ Commands表迁移成功")
+            print("     ✅ Commands表迁移成功")
             return True
             
         except sqlite3.Error as e:
@@ -254,7 +254,7 @@ class DatabaseMigrator:
                 print(f"   ❌ HBPR表缺少列: {list(missing_columns)}")
                 all_valid = False
             else:
-                print(f"   ✅ HBPR表所有必需列都存在")
+                print("   ✅ HBPR表所有必需列都存在")
         
         # 验证Commands表
         columns = self.get_table_structure(db_file, "commands")
@@ -267,7 +267,7 @@ class DatabaseMigrator:
                 print(f"   ❌ Commands表缺少列: {list(missing_columns)}")
                 all_valid = False
             else:
-                print(f"   ✅ Commands表所有必需列都存在")
+                print("   ✅ Commands表所有必需列都存在")
         
         return all_valid
 

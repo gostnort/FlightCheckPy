@@ -29,7 +29,7 @@ def create_or_refresh_views(db_file: str) -> None:
     """Create views used by the home page. Idempotent.
     Views:
     - vw_home_accepted_counts: totals for accepted pax (adults), infants, J/Y adult split
-    - vw_home_flags: ID (SA) counts by class, NOSHOW by class, INAD total
+    - vw_home_flags: ID staff (SA, PAD-2, PAD-SA) counts by class, NOSHOW by class, INAD total
     """
     conn = _connect(db_file)
     cur = conn.cursor()
@@ -55,29 +55,44 @@ def create_or_refresh_views(db_file: str) -> None:
         """
         CREATE VIEW vw_home_flags AS
         SELECT
-            -- SA indicates ID staff tickets (match as token, not substring like in USA)
-            SUM(CASE WHEN boarding_number IS NOT NULL AND boarding_number > 0 AND class IN ('F','C') AND (
-                      INSTR(','||IFNULL(properties,'')||',', ',SA') > 0
-                    ) THEN 1 ELSE 0 END) AS id_j,
-            SUM(CASE WHEN boarding_number IS NOT NULL AND boarding_number > 0 AND class = 'Y' AND (
-                      INSTR(','||IFNULL(properties,'')||',', ',SA') > 0
-                    ) THEN 1 ELSE 0 END) AS id_y,
-            -- NOSHOW: total - XRES - SA - BN - empty_properties
-            SUM(CASE WHEN class IN ('F','C')
+            -- ID staff tickets: SA, PAD-2, PAD-SA (deduplicated by hbnb_number)
+            (SELECT COUNT(DISTINCT hbnb_number) 
+             FROM hbpr_full_records 
+             WHERE boarding_number IS NOT NULL AND boarding_number > 0 AND class IN ('F','C') AND (
+                      INSTR(','||IFNULL(properties,'')||',', ',SA') > 0 OR
+                      INSTR(','||IFNULL(properties,'')||',', ',PAD-2') > 0 OR
+                      INSTR(','||IFNULL(properties,'')||',', ',PAD-SA') > 0
+                    )) AS id_j,
+            (SELECT COUNT(DISTINCT hbnb_number) 
+             FROM hbpr_full_records 
+             WHERE boarding_number IS NOT NULL AND boarding_number > 0 AND class = 'Y' AND (
+                      INSTR(','||IFNULL(properties,'')||',', ',SA') > 0 OR
+                      INSTR(','||IFNULL(properties,'')||',', ',PAD-2') > 0 OR
+                      INSTR(','||IFNULL(properties,'')||',', ',PAD-SA') > 0
+                    )) AS id_y,
+            -- NOSHOW: total - XRES - ID staff (SA, PAD-2, PAD-SA) - BN - empty_properties (deduplicated)
+            (SELECT COUNT(DISTINCT hbnb_number) 
+             FROM hbpr_full_records 
+             WHERE class IN ('F','C')
                       AND (boarding_number IS NULL OR boarding_number = 0)
                       AND INSTR(','||IFNULL(properties,'')||',', ',XRES') = 0
                       AND INSTR(','||IFNULL(properties,'')||',', ',SA') = 0
-                      AND LENGTH(TRIM(IFNULL(properties,''))) > 0
-                THEN 1 ELSE 0 END) AS noshow_j,
-            SUM(CASE WHEN class = 'Y'
+                      AND INSTR(','||IFNULL(properties,'')||',', ',PAD-2') = 0
+                      AND INSTR(','||IFNULL(properties,'')||',', ',PAD-SA') = 0
+                      AND LENGTH(TRIM(IFNULL(properties,''))) > 0) AS noshow_j,
+            (SELECT COUNT(DISTINCT hbnb_number) 
+             FROM hbpr_full_records 
+             WHERE class = 'Y'
                       AND (boarding_number IS NULL OR boarding_number = 0)
                       AND INSTR(','||IFNULL(properties,'')||',', ',XRES') = 0
                       AND INSTR(','||IFNULL(properties,'')||',', ',SA') = 0
-                      AND LENGTH(TRIM(IFNULL(properties,''))) > 0
-                THEN 1 ELSE 0 END) AS noshow_y,
-            -- INAD: any record with INAD property
-            SUM(CASE WHEN IFNULL(properties,'') LIKE '%INAD%' THEN 1 ELSE 0 END) AS inad_total
-        FROM hbpr_full_records
+                      AND INSTR(','||IFNULL(properties,'')||',', ',PAD-2') = 0
+                      AND INSTR(','||IFNULL(properties,'')||',', ',PAD-SA') = 0
+                      AND LENGTH(TRIM(IFNULL(properties,''))) > 0) AS noshow_y,
+            -- INAD: any record with INAD property (deduplicated)
+            (SELECT COUNT(DISTINCT hbnb_number) 
+             FROM hbpr_full_records 
+             WHERE IFNULL(properties,'') LIKE '%INAD%') AS inad_total
         """
     )
     conn.commit()
@@ -190,34 +205,36 @@ def get_debug_data(db_file: str) -> Dict[str, object]:
     conn = _connect(db_file)
     cur = conn.cursor()
     debug_data = {}
-    # Get total counts by class
+    # Get total counts by class - using COUNT(DISTINCT) for consistency
     cur.execute("""
-        SELECT class, COUNT(*) as total_count,
+        SELECT class, COUNT(DISTINCT hbnb_number) as total_count,
                SUM(CASE WHEN boarding_number IS NOT NULL AND boarding_number > 0 THEN 1 ELSE 0 END) as with_bn,
                SUM(CASE WHEN boarding_number IS NULL OR boarding_number = 0 THEN 1 ELSE 0 END) as without_bn
         FROM hbpr_full_records 
         GROUP BY class
     """)
     debug_data['class_breakdown'] = cur.fetchall()
-    # Get XRES counts
+    # Get XRES counts - using COUNT(DISTINCT) for consistency
     cur.execute("""
-        SELECT class, COUNT(*) as xres_count
+        SELECT class, COUNT(DISTINCT hbnb_number) as xres_count
         FROM hbpr_full_records 
         WHERE INSTR(','||IFNULL(properties,'')||',', ',XRES') > 0
         GROUP BY class
     """)
     debug_data['xres_counts'] = cur.fetchall()
-    # Get SA counts
+    # Get ID staff counts (SA, PAD-2, PAD-SA) - deduplicated by hbnb_number
     cur.execute("""
-        SELECT class, COUNT(*) as sa_count
+        SELECT class, COUNT(DISTINCT hbnb_number) as id_staff_count
         FROM hbpr_full_records 
         WHERE INSTR(','||IFNULL(properties,'')||',', ',SA') > 0
+           OR INSTR(','||IFNULL(properties,'')||',', ',PAD-2') > 0
+           OR INSTR(','||IFNULL(properties,'')||',', ',PAD-SA') > 0
         GROUP BY class
     """)
-    debug_data['sa_counts'] = cur.fetchall()
-    # Get empty properties counts
+    debug_data['id_staff_counts'] = cur.fetchall()
+    # Get empty properties counts - using COUNT(DISTINCT) for consistency
     cur.execute("""
-        SELECT class, COUNT(*) as empty_props_count
+        SELECT class, COUNT(DISTINCT hbnb_number) as empty_props_count
         FROM hbpr_full_records 
         WHERE LENGTH(TRIM(IFNULL(properties,''))) = 0
         GROUP BY class
@@ -235,15 +252,19 @@ def get_debug_data(db_file: str) -> Dict[str, object]:
         SELECT hbnb_number, class, boarding_number, properties
         FROM hbpr_full_records 
         WHERE INSTR(','||IFNULL(properties,'')||',', ',SA') > 0
+           OR INSTR(','||IFNULL(properties,'')||',', ',PAD-2') > 0
+           OR INSTR(','||IFNULL(properties,'')||',', ',PAD-SA') > 0
         LIMIT 5
     """)
-    debug_data['sa_samples'] = cur.fetchall()
+    debug_data['id_staff_samples'] = cur.fetchall()
     cur.execute("""
         SELECT hbnb_number, class, boarding_number, properties
         FROM hbpr_full_records 
         WHERE (boarding_number IS NULL OR boarding_number = 0)
           AND INSTR(','||IFNULL(properties,'')||',', ',XRES') = 0
           AND INSTR(','||IFNULL(properties,'')||',', ',SA') = 0
+          AND INSTR(','||IFNULL(properties,'')||',', ',PAD-2') = 0
+          AND INSTR(','||IFNULL(properties,'')||',', ',PAD-SA') = 0
           AND LENGTH(TRIM(IFNULL(properties,''))) > 0
         LIMIT 5
     """)
@@ -268,10 +289,10 @@ def get_debug_summary(db_file: str) -> str:
         summary.append("**XRES Counts:**")
         for row in debug_data['xres_counts']:
             summary.append(f"- Class {row[0]}: {row[1]} records")
-        # SA counts  
+        # ID staff counts  
         summary.append("")
-        summary.append("**SA Counts:**")
-        for row in debug_data['sa_counts']:
+        summary.append("**ID Staff Counts (SA, PAD-2, PAD-SA):**")
+        for row in debug_data['id_staff_counts']:
             summary.append(f"- Class {row[0]}: {row[1]} records")
         # Empty properties
         summary.append("")
@@ -284,8 +305,8 @@ def get_debug_summary(db_file: str) -> str:
         for row in debug_data['xres_samples']:
             summary.append(f"- HBNB {row[0]}, Class {row[1]}, BN {row[2]}, Props: {row[3]}")
         summary.append("")
-        summary.append("**SA Sample Records:**")
-        for row in debug_data['sa_samples']:
+        summary.append("**ID Staff Sample Records:**")
+        for row in debug_data['id_staff_samples']:
             summary.append(f"- HBNB {row[0]}, Class {row[1]}, BN {row[2]}, Props: {row[3]}")
         summary.append("")
         summary.append("**NOSHOW Sample Records:**")

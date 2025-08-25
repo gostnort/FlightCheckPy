@@ -404,7 +404,7 @@ def main():
     # 创建处理器并执行处理
     processor = HBPRProcessor(input_file)
     processor.process()
-    print(f"\nProcessing complete! Check the flight-specific database files.")
+    print("\nProcessing complete! Check the flight-specific database files.")
 
 
 if __name__ == "__main__":

@@ -152,7 +152,7 @@ class CommandsMigrator:
             print(f"❌  缺少列: {list(missing_columns)}")
             return False
         else:
-            print(f"✅  所有必需列都存在")
+            print("✅  所有必需列都存在")
             return True
 
 

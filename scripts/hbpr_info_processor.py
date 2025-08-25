@@ -1977,7 +1977,7 @@ class HbprDatabase:
                 need_update = total_deleted_records > 0 and processed_deleted_records == 0
                 
                 if need_update:
-                    print(f"Resetting and recalculating deleted records...")
+                    print("Resetting and recalculating deleted records...")
                     # 获取需要更新的删除记录
                     cursor.execute(
                         """
