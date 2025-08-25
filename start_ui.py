@@ -1,4 +1,8 @@
 import os
+# 设置环境变量以解决所有Python进程的编码问题（包括子进程）
+os.environ['PYTHONIOENCODING'] = 'utf-8'
+os.environ['PYTHONUTF8'] = '1'  # Python 3.7+ 强制使用UTF-8模式
+
 import webbrowser
 import subprocess
 from pystray import Icon, MenuItem
@@ -7,6 +11,12 @@ from winotify import Notification, audio
 import time
 import requests
 import threading
+import sys
+# 确保当前进程的标准流使用UTF-8编码
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+if hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8')
 
 streamlit_proc = None
 
@@ -128,9 +138,15 @@ def start_streamlit():
         "--server.headless", "false"
     ]
     print(f"执行命令: {' '.join(cmd)}")
+    # 确保环境变量传递给子进程，并使用UTF-8处理
+    env = os.environ.copy()
+    env['PYTHONIOENCODING'] = 'utf-8'
+    env['PYTHONUTF8'] = '1'
+    
     streamlit_proc = subprocess.Popen(cmd,
-                                      stdout=subprocess.DEVNULL,
-                                      stderr=subprocess.DEVNULL)
+                                     stdout=subprocess.DEVNULL,
+                                     stderr=subprocess.DEVNULL,
+                                     env=env)
     def watch_and_notify():
         if wait_for_streamlit():
             notify_winotify("Streamlit Launcher", "Streamlit is ready!", icon_path=icon_path)
@@ -191,6 +207,9 @@ if __name__ == "__main__":
     # 设置正确的工作目录
     project_dir = setup_working_directory()
     print(f"工作目录: {project_dir}")
+    # 显示环境变量设置情况
+    print(f"PYTHONIOENCODING环境变量: {os.environ.get('PYTHONIOENCODING', '未设置')}")
+    print(f"PYTHONUTF8环境变量: {os.environ.get('PYTHONUTF8', '未设置')}")
     # 显示检测到的Python执行文件路径
     python_path, is_venv = get_python_executable()
     print(f"检测到的Python执行文件: {python_path}")
@@ -204,4 +223,3 @@ if __name__ == "__main__":
     # Start the tray icon event loop
     tray = build_tray()
     tray.run()
-
