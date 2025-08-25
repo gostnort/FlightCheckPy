@@ -1,0 +1,39 @@
+{
+  "description": "数据过滤配置文件 - 控制CKIN类型和Properties在筛选界面中的显示",
+  "description_en": "Data filter configuration - Controls display of CKIN types and Properties in filtering interface",
+  "excluded_ckin_types": [
+    "FABS",
+    "BRND",
+    "LKCK",
+    "CCQT",
+    "CCAX",
+    "CCVI"
+  ],
+  "excluded_properties": [
+    "ADV",
+    "IDOCS",
+    "PEK",
+    "LAX",
+    "ASR",
+    "RES", 
+    "OSR",
+    "ABP",
+    "M1/0",
+    "F1/0",
+    "API",
+    "AQQ"
+  ],
+  "excluded_property_patterns": [
+    "ESTA*",
+    "TKNE*",
+    "FBA*",
+    "IFBA*",
+    "BAG*",
+    "FOID/*",
+    "TMC*"
+  ],
+  "notes": "可根据需要添加或删除CKIN类型和Properties。修改后需要重新运行程序。",
+  "notes_en": "Add or remove CKIN types and Properties as needed. Restart the application after making changes.",
+  "property_normalization_notes": "Properties会自动标准化：去除数字和斜杠后缀（如INF1/0变为INF）",
+  "property_normalization_notes_en": "Properties are automatically normalized: remove numeric and slash suffixes (e.g., INF1/0 becomes INF)"
+}

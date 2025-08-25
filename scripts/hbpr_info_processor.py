@@ -801,37 +801,29 @@ class CHbpr:
             properties.extend(current_property)
         # 提取TKNE数据
         self.ExtractTKNE(properties)
-        #删除没用的属性
+        # 删除特定的属性（其他筛选交给UI层处理）
         properties_to_remove = []
         for property in properties:
             if any([
                 len(property) == 1,  # 删除舱位
                 property.startswith("R"),  # 删除座位
-                property.startswith("ESTA"),  # 删除ESTA
-                property in ['PEK', 'LAX'],  # 删除目的地
-                property.startswith("TKNE"),  # 删除TKNE (already extracted)
-                property.startswith("FF/"),  # 删除FF属性
-                property.startswith("FBA"),  # 删除FBA的变化
-                property.startswith("IFBA"),  # 删除IFBA的变化
-                property == "ASR",  # 删除ASR
-                property == "RES",  # 删除RES
-                property == "OSR",  # 删除OSR
-                property == "ABP",  # 删除ABP
                 property.startswith("SNR"),  # 删除SNR的座位
-                property in ["M1/0", "F1/0"],  # 删除性别
-                property.startswith("BAG"),  # 删除BAG
-                property.startswith("FOID/"),  # 删除FOID
-                property.startswith("OSR"),  # 删除OSR
-                property.startswith("TMC")  # 删除TMC
+                property.startswith("FF/"),  # 删除FF属性（保留会员号）
+                property.startswith("FR/"),  # 删除FR属性（保留会员号）
             ]):
                 properties_to_remove.append(property)
         # 删除不需要的属性
         for property in properties_to_remove:
             if property in properties:
-                if property.startswith("FF/"):#FF号码后面一个属性是FF的会员号
+                if property.startswith("FF/"):  # FF号码后面一个属性是FF的会员号
                     index = properties.index(property)
                     properties.remove(property) 
-                    properties.remove(properties[index]) #紧跟其后的FF会员号会马上替代原来的index
+                    properties.remove(properties[index])  # 紧跟其后的FF会员号会马上替代原来的index
+                    continue
+                elif property.startswith("FR/"):  # FR号码后面一个属性是FR的会员号
+                    index = properties.index(property)
+                    properties.remove(property) 
+                    properties.remove(properties[index])  # 紧跟其后的FR会员号会马上替代原来的index
                     continue
                 else:
                     properties.remove(property)

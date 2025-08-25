@@ -329,20 +329,90 @@ def get_and_display_deleted_stats(db: HbprDatabase) -> None:
 
 **home_metrics.py**:
 ```python
+def create_or_refresh_views(db_file: str) -> None:
+    """
+    Create views used by the home page. Idempotent.
+    
+    Views:
+    - vw_home_accepted_counts: totals for accepted pax (adults), infants, J/Y adult split
+    - vw_home_flags: ID staff (SA, PAD-2, PAD-SA) counts by class, NOSHOW by class, INAD total
+    
+    Features:
+    - Deduplication using COUNT(DISTINCT hbnb_number) to prevent duplicate counting
+    - ID staff identification for SA, PAD-2, and PAD-SA properties
+    - NOSHOW calculation excluding XRES and all ID staff types
+    """
+
+def get_sy_compartments(db_file: str) -> Optional[Tuple[int, int]]:
+    """
+    Find the latest SY command matching current flight in DB and parse CNF.
+    
+    Returns:
+        Optional[Tuple[int, int]]: (j_compartment, y_compartment) if found
+        
+    Features:
+    - Looks up flight in table flight_info
+    - Finds newest matching command in table commands where command_type = 'SY' and is_latest = 1
+    - Parses CNF/JxYy patterns from command text
+    """
+
 def get_home_summary(db_file: str) -> Dict[str, Any]:
     """
     Get flight summary data for home page display
     
     Returns:
-        Dict[str, Any]: Flight summary including totals, ratios, and breakdowns
+        Dict[str, Any]: Complete flight summary including:
+            - flight_number, flight_date: Flight identification
+            - total_accepted, infant_count: Passenger totals
+            - accepted_business, accepted_economy: Class breakdown
+            - id_j, id_y: ID staff counts by class (SA, PAD-2, PAD-SA)
+            - noshow_j, noshow_y: No-show counts by class
+            - inad_total: INAD passenger count
+            - j_cnf, y_cnf: Compartment configuration from SY commands
+            - ratio: Load factor percentage
+            
+    Features:
+    - Ensures views exist before querying
+    - Deduplication logic prevents double-counting passengers with multiple ID staff properties
+    - Integrates with command analysis for compartment configuration
+    """
+
+def get_debug_data(db_file: str) -> Dict[str, object]:
+    """
+    Return debug data for manual verification of statistics
+    
+    Returns:
+        Dict[str, object]: Debug data including:
+            - class_breakdown: Total counts by class with boarding number status
+            - xres_counts: XRES counts by class (deduplicated)
+            - id_staff_counts: ID staff counts by class (SA, PAD-2, PAD-SA, deduplicated)
+            - empty_properties: Empty properties counts by class
+            - xres_samples: Sample XRES records
+            - id_staff_samples: Sample ID staff records
+            - noshow_samples: Sample no-show records
+            
+    Features:
+    - Consistent use of COUNT(DISTINCT hbnb_number) for accurate counts
+    - Sample records for manual verification
+    - Comprehensive breakdown for troubleshooting
     """
 
 def get_debug_summary(db_file: str) -> str:
     """
-    Get debug information for database troubleshooting
+    Get formatted debug summary string for manual verification
     
     Returns:
-        str: Formatted debug information
+        str: Formatted debug information including:
+            - Class breakdown with boarding number statistics
+            - XRES, ID staff, and empty properties counts
+            - Sample records for each category
+            - Error handling for database issues
+            
+    Features:
+    - Human-readable formatting
+    - Comprehensive statistics breakdown
+    - Sample data for verification
+    - Exception handling with error reporting
     """
 ```
 
@@ -1137,6 +1207,84 @@ def ForeignGoldFlyerBagWeight(self) -> int:
         int: Foreign gold flyer baggage weight (23 kg)
     """
 ```
+
+## 📋 Data Filtering & Configuration System
+
+### Filter Configuration
+
+**Location**: `resources/filter_config.json`
+
+**Purpose**: Centralized configuration for controlling data filtering in the UI layer, managing which CKIN types and Properties are displayed in filtering interfaces.
+
+#### Configuration Structure
+
+The filter configuration uses a simplified two-tier approach:
+
+```json
+{
+  "description": "数据过滤配置文件 - 控制CKIN类型和Properties在筛选界面中的显示",
+  "description_en": "Data filter configuration - Controls display of CKIN types and Properties in filtering interface",
+  "excluded_ckin_types": [
+    "FABS", "BRND", "LKCK", "CCQT", "CCAX", "CCVI"
+  ],
+  "excluded_properties": [
+    "ADV", "IDOCS", "PEK", "LAX", "ASR", "RES", "OSR", "ABP", "M1/0", "F1/0", "API", "AQQ"
+  ],
+  "excluded_property_patterns": [
+    "ESTA*", "TKNE*", "FBA*", "IFBA*", "BAG*", "FOID/*", "TMC*"
+  ]
+}
+```
+
+#### Configuration Components
+
+1. **`excluded_ckin_types`**: List of CKIN types to hide from filtering interfaces
+   - Contains system/administrative CKIN types not relevant for user filtering
+   - Examples: `FABS`, `BRND`, `LKCK`
+
+2. **`excluded_properties`**: List of specific properties to exclude from filtering
+   - Contains system-specific properties, destination codes, gender markers, etc.
+   - Examples: `PEK`, `LAX`, `M1/0`, `F1/0`, `API`
+
+3. **`excluded_property_patterns`**: Pattern-based exclusion rules using wildcards
+   - Uses `*` wildcard for prefix matching
+   - Examples: `ESTA*` (excludes all ESTA-prefixed properties), `TKNE*`, `BAG*`
+
+#### Integration Points
+
+**UI Layer Processing**: `ui/process_records/sort_records.py`
+
+```python
+def load_filter_config():
+    """Load filtering configuration from resources/filter_config.json"""
+    config_path = os.path.join('resources', 'filter_config.json')
+    # Returns: excluded_ckin_types, excluded_properties, excluded_patterns
+
+def should_exclude_property(prop, excluded_props, excluded_patterns):
+    """Check if property should be excluded from UI filtering"""
+    # Handles single-character filtering, exact matching, and pattern matching
+```
+
+**Data Layer Processing**: `scripts/hbpr_info_processor.py`
+
+The core data processor handles only essential business logic filtering:
+- `FF/` and `FR/` attributes (frequent flyer information with member number removal)
+- `R` attributes (seat information)
+- `SNR` attributes (special seat requests)
+
+#### Filtering Logic
+
+1. **Single Character Exclusion**: Automatically excludes single-character properties (cabin classes)
+2. **Exact Match**: Properties in `excluded_properties` list are filtered out
+3. **Pattern Matching**: Properties matching `excluded_property_patterns` wildcards are excluded
+4. **Property Normalization**: Properties are standardized (e.g., `INF1/0` → `INF`) before filtering
+
+#### Benefits
+
+- **Separation of Concerns**: Core processing vs. UI filtering logic separated
+- **User Experience**: Only meaningful, user-relevant properties displayed in filters
+- **Maintainability**: Centralized configuration easy to modify
+- **Performance**: Reduced UI complexity with fewer filter options
 
 ## 🌐 UI Components
 
