@@ -16,7 +16,8 @@ The Flight Data Processing System is a comprehensive Python application for proc
 - TKNE-aware calculations and compatibility handling
 - **Data Cleaning & Export Solutions**: Comprehensive data sanitization at input, storage, and export stages to prevent binary/hexadecimal character issues
 - **Deleted Passenger Analytics**: Comprehensive tracking of deleted passengers with XRES property classification and original boarding number extraction
-- **Reusable UI Components**: Modular component architecture for consistent statistics display across multiple pages
+- **Missing Boarding Number Detection**: Intelligent detection of discontinuous boarding numbers with automatic exclusion of deleted passengers to prevent duplicate reporting
+- **Reusable UI Components**: Modular component architecture for consistent statistics display with separated calculation and presentation logic
 
 ## 🏗️ System Architecture
 
@@ -41,9 +42,9 @@ FlightCheckPy/
 │   ├── settings_page.py        # System configuration and about info
 │   ├── common.py               # Shared utilities with enhanced database discovery
 │   ├── components/             # Reusable UI components
-│   │   ├── main_stats.py       # Main statistics display component
-│   │   ├── deleted_stats.py    # Deleted passenger statistics component
-│   │   └── home_metrics.py     # Home page metrics and flight summary
+│   │   ├── main_stats.py       # Main statistics display and UI logic
+│   │   ├── deleted_stats.py    # Deleted/missing passenger calculation functions
+│   │   └── home_metrics.py     # Home page metrics and debug information
 │   └── process_records/        # Sub-modules for record processing
 │       ├── process_all.py      # Batch processing functionality
 │       ├── add_edit_record.py  # Single record editing
@@ -170,13 +171,16 @@ def clean_database_records(db_file: str) -> Dict[str, int]:
 
 **UI Integration**: Available through "Clean Database Data" button in `ui/database_page.py`
 
-### Deleted Passenger Analytics
+### Deleted Passenger Analytics & Missing Boarding Number Detection
 
-The system provides comprehensive tracking and analysis of deleted passengers with automatic classification and original boarding number extraction.
+The system provides comprehensive tracking and analysis of deleted passengers with automatic classification and original boarding number extraction, plus intelligent detection of missing boarding numbers with duplicate prevention.
 
-**Location**: `scripts/hbpr_info_processor.py`
+**Locations**: 
+- `scripts/hbpr_info_processor.py` - Deleted passenger identification and statistics
+- `ui/components/deleted_stats.py` - Missing boarding number calculation
+- `ui/components/main_stats.py` - Unified display logic
 
-**Purpose**: Identifies and categorizes deleted passengers by XRES property and extracts their original boarding numbers from DEL command lines.
+**Purpose**: Identifies and categorizes deleted passengers by XRES property, extracts their original boarding numbers from DEL command lines, and detects truly missing boarding numbers by excluding deleted passengers to prevent duplicate reporting.
 
 #### Key Components
 
@@ -198,6 +202,18 @@ boarding_number = 0 AND record_content LIKE '%DELETED%'
 # Original boarding number extraction from DEL lines:
 # Pattern: '\n\s+DEL\s+.*?/BN(\d+)\s'
 # Example: "     DEL LAX7527 AGT47185/25JUL2316/BN89 SNR60D 60D" → boarding number 89
+```
+
+**Missing Boarding Number Detection**:
+```python
+# Step 1: Find all discontinuous boarding numbers
+missing_numbers = expected_range - existing_numbers
+
+# Step 2: Exclude deleted passenger boarding numbers
+deleted_boarding_numbers = xres_boarding_numbers + non_xres_boarding_numbers
+truly_missing_numbers = missing_numbers - deleted_boarding_numbers
+
+# Result: Only truly missing boarding numbers (not deleted passengers)
 ```
 
 #### Functions
@@ -242,88 +258,133 @@ def _fetch_deleted_passengers_stats(self) -> Dict[str, Any]:
         - Falls back to content-based detection for compatibility
         - Extracts boarding numbers using regex pattern matching
     """
+
+def get_missing_boarding_numbers(db) -> List[int]:
+    """
+    Calculate truly missing boarding numbers excluding deleted passengers
+    
+    Args:
+        db: HbprDatabase instance
+        
+    Returns:
+        List[int]: Truly missing boarding numbers (not including deleted passengers)
+        
+    Features:
+        - Detects discontinuous boarding number sequences
+        - Excludes deleted passenger boarding numbers to prevent duplication
+        - Returns sorted list of genuinely missing numbers
+        - Integrates with deleted passenger statistics
+    """
 ```
 
 #### Integration Points
 - **Statistics Caching**: Integrated with StatisticsManager for efficient retrieval
-- **UI Components**: Displayed through reusable components in main_stats.py and deleted_stats.py
+- **UI Components**: Separated calculation (deleted_stats.py) and display (main_stats.py) logic
 - **Database Migration**: Automatic field creation and data population on first use
 - **Cache Invalidation**: Statistics cache cleared on database modifications
+- **Debug Information**: Complete boarding number lists included in debug output (home_metrics.py)
+- **Unified Display**: Deleted passengers and missing boarding numbers shown together in two-column layout
 
 ### Reusable UI Components
 
-The system implements a modular component architecture for consistent statistics display across multiple pages.
+The system implements a modular component architecture with separated calculation and presentation logic for consistent statistics display across multiple pages.
 
 **Location**: `ui/components/`
 
-**Purpose**: Provides reusable, maintainable UI components for statistics display with consistent formatting and behavior.
+**Purpose**: Provides reusable, maintainable UI components with clear separation of concerns - calculation functions separated from display logic for better maintainability and testability.
 
 #### Component Structure
 
 ```
 ui/components/
-├── main_stats.py          # Main statistics display component
-├── deleted_stats.py       # Deleted passenger statistics component
-└── home_metrics.py        # Flight summary and debug metrics
+├── main_stats.py          # UI display logic and presentation (all display functions)
+├── deleted_stats.py       # Calculation functions only (deleted/missing passenger calculations)
+└── home_metrics.py        # Flight summary and comprehensive debug information
 ```
 
 #### Key Functions
 
 **main_stats.py**:
 ```python
-def display_main_statistics(all_stats: Dict[str, Any]) -> None:
+def display_main_statistics(all_stats: Dict[str, Any], db: HbprDatabase = None) -> None:
     """
-    Display main HBPR statistics in reusable format
+    Display main HBPR statistics in reusable format with unified deleted/missing passenger display
+    
+    Args:
+        all_stats: Complete statistics dictionary
+        db: Database instance for missing boarding number calculation (optional)
     
     Features:
         - Max HBNB, Missing Count, Accepted Passengers metrics
-        - Deleted passenger statistics integration
+        - Unified deleted passenger and missing boarding number display in two-column layout
         - Consistent formatting across pages
+        - Intelligent display logic (info message when no data, columns when data exists)
     """
 
 def get_and_display_main_statistics(db: HbprDatabase) -> Dict[str, Any]:
     """
-    Get all statistics from database and display them
+    Get all statistics from database and display them with missing boarding numbers
     
     Returns:
         Dict[str, Any]: Complete statistics for additional processing
         
     Features:
         - Single function call for complete statistics display
+        - Integrated missing boarding number calculation and display
         - Error handling and user feedback
         - Automatic caching through database layer
     """
 
-def display_detailed_range_info(all_stats: Dict[str, Any]) -> None:
+def display_deleted_stats(deleted_stats: Dict[str, Any]) -> None:
     """
-    Display detailed HBNB range information for database page
+    Display merged deleted passenger statistics
     
     Features:
-        - HBNB Range, Total Expected, Total Found, Missing Numbers
-        - Specialized display for database management interface
+        - Combined XRES and non-XRES deleted passengers in single metric
+        - Intelligent boarding number list truncation (40 numbers max)
+        - Consistent "Del in Records" metric display
+    """
+
+def display_missing_boarding_numbers(missing_numbers: List[int]) -> None:
+    """
+    Display missing boarding number statistics
+    
+    Features:
+        - Missing boarding number count and list display
+        - Intelligent truncation for large lists (40 numbers max)
+        - Integration with deleted passenger exclusion logic
+    """
+
+def get_and_display_deleted_stats(db: HbprDatabase) -> None:
+    """
+    Get and display comprehensive deleted passenger statistics with missing boarding numbers
+    
+    Features:
+        - Complete deleted passenger statistics retrieval and display
+        - Missing boarding number calculation and display
+        - Error handling for missing data
+        - Integration with statistics caching
     """
 ```
 
 **deleted_stats.py**:
 ```python
-def display_deleted_stats(deleted_stats: Dict[str, Any]) -> None:
+def get_missing_boarding_numbers(db: HbprDatabase) -> List[int]:
     """
-    Display deleted passenger statistics in reusable format
+    Calculate truly missing boarding numbers excluding deleted passengers (pure calculation)
     
+    Args:
+        db: HbprDatabase instance
+        
+    Returns:
+        List[int]: Truly missing boarding numbers (not including deleted passengers)
+        
     Features:
-        - Del w XRES and Del w/o XRES metrics
-        - Boarding number lists with intelligent truncation
-        - Enhanced display limits (10 XRES, 30 non-XRES boarding numbers)
-    """
-
-def get_and_display_deleted_stats(db: HbprDatabase) -> None:
-    """
-    Get deleted passenger statistics from database and display them
-    
-    Features:
-        - Complete deleted passenger statistics retrieval and display
-        - Error handling for missing data
-        - Integration with statistics caching
+        - Detects discontinuous boarding number sequences
+        - Excludes deleted passenger boarding numbers to prevent duplication
+        - Returns sorted list of genuinely missing numbers
+        - Pure calculation function with no UI dependencies
+        - Integrates with deleted passenger statistics for exclusion logic
     """
 ```
 
@@ -399,43 +460,67 @@ def get_debug_data(db_file: str) -> Dict[str, object]:
 
 def get_debug_summary(db_file: str) -> str:
     """
-    Get formatted debug summary string for manual verification
+    Get formatted debug summary string for manual verification with complete boarding number information
     
     Returns:
         str: Formatted debug information including:
+            - Complete deleted passenger boarding number lists (XRES and non-XRES)
+            - Complete missing boarding number lists (excluding deleted passengers)
             - Class breakdown with boarding number statistics
             - XRES, ID staff, and empty properties counts
             - Sample records for each category
             - Error handling for database issues
             
     Features:
-    - Human-readable formatting
+    - Human-readable formatting with complete boarding number visibility
     - Comprehensive statistics breakdown
+    - Complete boarding number lists in debug mode (no truncation)
     - Sample data for verification
+    - Integration with deleted passenger and missing boarding number calculations
     - Exception handling with error reporting
     """
 ```
 
 #### Component Features
+- **Separation of Concerns**: Clear division between calculation logic and UI presentation
 - **Consistent Display**: Identical appearance and behavior across pages
-- **Intelligent Truncation**: Boarding numbers display with enhanced limits
+- **Intelligent Truncation**: Boarding numbers display with enhanced limits (40 numbers max in UI)
+- **Complete Debug Information**: Full boarding number lists available in debug mode without truncation
+- **Duplicate Prevention**: Missing boarding numbers exclude deleted passengers automatically
 - **Error Handling**: Graceful fallback for missing or invalid data
 - **Modular Design**: Easy to add to new pages or modify existing displays
 - **Performance**: Leverages existing statistics caching infrastructure
+- **Unified Layout**: Deleted passengers and missing boarding numbers displayed together in two-column format
 
 #### Usage Examples
 ```python
-# In home page or database page
+# In home page or database page - unified display with missing boarding numbers
 from ui.components.main_stats import get_and_display_main_statistics
 all_stats = get_and_display_main_statistics(db)
 
-# For deleted passenger statistics only
-from ui.components.deleted_stats import get_and_display_deleted_stats
+# For deleted passenger statistics with missing boarding numbers
+from ui.components.main_stats import get_and_display_deleted_stats
 get_and_display_deleted_stats(db)
+
+# For missing boarding number calculation only (pure function)
+from ui.components.deleted_stats import get_missing_boarding_numbers
+missing_numbers = get_missing_boarding_numbers(db)
 
 # For flight summary display
 from ui.components.home_metrics import get_home_summary
 summary = get_home_summary(db_file)
+
+# For complete debug information with full boarding number lists
+from ui.components.home_metrics import get_debug_summary
+debug_info = get_debug_summary(db_file)
+# Contains complete deleted passenger and missing boarding number lists
+
+# Separated calculation and display approach
+from ui.components.deleted_stats import get_missing_boarding_numbers
+from ui.components.main_stats import display_missing_boarding_numbers
+
+missing_numbers = get_missing_boarding_numbers(db)  # Pure calculation
+display_missing_boarding_numbers(missing_numbers)  # UI display
 ```
 
 #### 4. Character Cleaning Strategy
