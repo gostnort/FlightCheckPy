@@ -280,6 +280,56 @@ def get_debug_summary(db_file: str) -> str:
         summary = []
         summary.append("🔍 Debug Data for Manual Verification")
         summary.append("")
+        
+        # 添加deleted passengers和missing boarding numbers的完整信息
+        try:
+            # 获取deleted passengers完整信息
+            from scripts.hbpr_info_processor import HbprDatabase
+            from ui.components.deleted_stats import get_missing_boarding_numbers
+            
+            db = HbprDatabase(db_file)
+            all_stats = db.get_all_statistics()
+            deleted_stats = all_stats.get('deleted_passengers_stats', {})
+            
+            if deleted_stats and deleted_stats.get('total_deleted', 0) > 0:
+                summary.append("**🗑️ Deleted Passengers (Complete List):**")
+                summary.append(f"- Total Deleted: {deleted_stats.get('total_deleted', 0)}")
+                
+                xres_nums = deleted_stats.get('xres_boarding_numbers', [])
+                non_xres_nums = deleted_stats.get('original_boarding_numbers', [])
+                
+                if xres_nums:
+                    summary.append(f"- XRES Deleted BN: {', '.join(map(str, sorted(xres_nums)))}")
+                if non_xres_nums:
+                    summary.append(f"- Non-XRES Deleted BN: {', '.join(map(str, sorted(non_xres_nums)))}")
+                
+                all_deleted = sorted(xres_nums + non_xres_nums)
+                if all_deleted:
+                    summary.append(f"- All Deleted BN: {', '.join(map(str, all_deleted))}")
+                summary.append("")
+            
+            # 获取missing boarding numbers完整信息
+            class DBWrapper:
+                def __init__(self, real_db):
+                    self.db_file = real_db.db_file
+                    self._real_db = real_db
+                def find_database(self):
+                    pass
+                def get_all_statistics(self):
+                    return self._real_db.get_all_statistics()
+            
+            wrapped_db = DBWrapper(db)
+            missing_numbers = get_missing_boarding_numbers(wrapped_db)
+            
+            if missing_numbers:
+                summary.append("**🔢 Missing Boarding Numbers (Complete List):**")
+                summary.append(f"- Total Missing: {len(missing_numbers)}")
+                summary.append(f"- Missing BN: {', '.join(map(str, missing_numbers))}")
+                summary.append("")
+        except Exception as e:
+            summary.append(f"**Error getting deleted/missing data: {str(e)}**")
+            summary.append("")
+        
         # Class breakdown
         summary.append("**Class Breakdown:**")
         for row in debug_data['class_breakdown']:

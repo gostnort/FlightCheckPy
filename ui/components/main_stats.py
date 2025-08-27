@@ -4,15 +4,16 @@ Reusable component for displaying main HBPR statistics
 """
 
 import streamlit as st
-from ui.components.deleted_stats import display_deleted_stats
+from ui.components.deleted_stats import get_missing_boarding_numbers
 
 
-def display_main_statistics(all_stats):
+def display_main_statistics(all_stats, db=None):
     """
     Display main HBPR statistics in a reusable format
     
     Args:
         all_stats: Dictionary containing all statistics from get_all_statistics()
+        db: HbprDatabase instance (optional, for missing BN calculation)
     """
     if not all_stats:
         st.error("❌ No statistics available")
@@ -45,12 +46,24 @@ def display_main_statistics(all_stats):
         delta = f"{b}/{y}"
         st.metric("Accepted Passengers", value, delta)
     
-    # Second row: Deleted passenger statistics
-    if deleted_stats and deleted_stats.get('total_deleted', 0) > 0:
-        st.subheader("🗑️ Deleted Passengers")
-        display_deleted_stats(deleted_stats)
+    # Second row: Deleted passenger statistics and Missing BN
+    st.subheader("🗑️ Deleted Passengers")
+    missing_numbers = []
+    if db:
+        missing_numbers = get_missing_boarding_numbers(db)
+    # 检查是否有任何数据需要显示
+    has_deleted = deleted_stats and deleted_stats.get('total_deleted', 0) > 0
+    has_missing = missing_numbers and len(missing_numbers) > 0
+    if not has_deleted and not has_missing:
+        st.info("✅ No deleted passengers or missing boarding numbers found")
     else:
-        st.info("✅ No deleted passengers found")
+        d1, d2 = st.columns(2)
+        with d1:
+            display_deleted_stats(deleted_stats)   
+        with d2:
+            # 显示缺失的boarding_number统计（在同一个section下）
+            display_missing_boarding_numbers(missing_numbers)  
+
 
 
 def get_and_display_main_statistics(db):
@@ -62,7 +75,8 @@ def get_and_display_main_statistics(db):
     """
     try:
         all_stats = db.get_all_statistics()
-        display_main_statistics(all_stats)
+        display_main_statistics(all_stats, db)
+        
         return all_stats  # Return for additional processing if needed
     except Exception as e:
         st.error(f"❌ Error loading statistics: {e}")
@@ -100,3 +114,79 @@ def display_detailed_range_info(all_stats):
     with col4:
         missing_count = len(missing_numbers)
         st.metric("Missing Numbers", missing_count)
+
+
+
+def display_deleted_stats(deleted_stats):
+    """
+    Display deleted passenger statistics in a reusable format
+    
+    Args:
+        deleted_stats: Dictionary containing deleted passenger statistics
+    """
+    if not deleted_stats:
+        st.info("No deleted passenger statistics available")
+        return
+    
+    # 合并所有删除乘客的登机号
+    xres_nums = deleted_stats.get('xres_boarding_numbers', [])
+    non_xres_nums = deleted_stats.get('original_boarding_numbers', [])
+    all_deleted_nums = sorted(xres_nums + non_xres_nums)
+    
+    # 合并为一个统计项，但保持原有显示格式
+    total_deleted = deleted_stats.get('total_deleted', 0)
+    
+    # 显示合并的删除乘客统计
+    if all_deleted_nums:
+        if len(all_deleted_nums) <= 40:
+            delta = f"BN: {', '.join(map(str, all_deleted_nums))}"
+        else:
+            delta = f"BN: {', '.join(map(str, all_deleted_nums[:40]))}..."
+    else:
+        delta = "No Del BN"
+    
+    st.metric("Del in Records", total_deleted, delta)
+
+
+
+def display_missing_boarding_numbers(missing_numbers):
+    """
+    显示缺失的boarding_number统计
+    
+    Args:
+        missing_numbers: 缺失的boarding_number列表
+    """
+    if not missing_numbers:
+        st.info("✅ No missing boarding numbers found")
+        return
+        
+    missing_count = len(missing_numbers)
+    
+    # 显示缺失的登机号数量和号码列表
+    if missing_count <= 40:
+        delta = f"BN: {', '.join(map(str, missing_numbers))}"
+    else:
+        delta = f"BN: {', '.join(map(str, missing_numbers[:40]))}..."
+    
+    st.metric("Missing BN", missing_count, delta)
+
+
+
+def get_and_display_deleted_stats(db):
+    """
+    Get deleted passenger statistics from database and display them
+    
+    Args:
+        db: HbprDatabase instance
+    """
+    try:
+        all_stats = db.get_all_statistics()
+        deleted_stats = all_stats.get('deleted_passengers_stats', {})
+        
+        if deleted_stats and deleted_stats.get('total_deleted', 0) > 0:
+            st.subheader("🗑️ Deleted Passengers")
+            display_deleted_stats(deleted_stats) 
+        else:
+            st.info("✅ No deleted passengers found")
+    except Exception as e:
+        st.error(f"❌ Error loading deleted passenger statistics: {e}")

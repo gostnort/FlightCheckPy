@@ -546,12 +546,13 @@ class CHbpr:
                     f"{self.BAG_WEIGHT - max_bag['weight']} KGs."
                 )
                 bol_ckin_exbg = True
-        elif self.__ChkBagAverageWeight > (max_bag["weight"] / max_bag["piece"]):
+        elif max_bag["piece"] > 0 and self.__ChkBagAverageWeight > (max_bag["weight"] / max_bag["piece"]):
             if self.__ChkBagAverageWeight > args.ClassBagWeight(self.CLASS):
                 if self.BAG_WEIGHT > self.EXPC_WEIGHT:
+                    avg_allowance = max_bag["weight"] / max_bag["piece"] if max_bag["piece"] > 0 else 0
                     self.error_msg["Baggage"].append(
                         f"HBPR{self.HbnbNumber},the baggage average weight is overweight "
-                        f"{self.__ChkBagAverageWeight - (max_bag['weight'] / max_bag['piece'])} KGs."
+                        f"{self.__ChkBagAverageWeight - avg_allowance} KGs."
                     )
                     bol_ckin_exbg = True
         if bol_ckin_exbg:
@@ -619,6 +620,12 @@ class CHbpr:
         """姓名匹配模式2"""
         distance = self.__levenshtein_distance(s1, s2)
         max_length = max(len(s1), len(s2))
+        
+        # 防止除零错误
+        if max_length == 0:
+            # 如果两个字符串都为空，认为匹配
+            return True
+        
         difference_percentage = 1 - distance / max_length
         if difference_percentage > 0.95:
             return True
