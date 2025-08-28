@@ -313,8 +313,18 @@ class ChatInterface:
   - Gemma会记住整个对话历史
   - 支持文本生成和图像文本转换模型
 
+📝 多行输入:
+  方式1: 在行末输入 \\ 然后按回车，自动切换到多行模式
+  方式2: 输入 /multi 命令启动多行输入模式
+  
+  多行模式中:
+  - 输入多行内容，每行按回车继续
+  - 输入 'END' 单独一行结束输入
+  - 或者连续按两次回车结束输入
+
 特殊命令:
   /help     - 显示此帮助信息
+  /multi    - 启动多行输入模式
   /clear    - 清空对话历史
   /tokens   - 显示当前token使用情况
   /history  - 显示对话历史摘要
@@ -331,6 +341,7 @@ class ChatInterface:
   - 当token使用过多时建议使用 /clear 清理历史
   - 使用中文或英文都可以与Gemma对话
   - 不同模型有不同的优化特性，选择适合的模型
+  - 长篇代码、文章等建议使用多行输入模式
         """
         print(help_text)
 
@@ -368,11 +379,88 @@ class ChatInterface:
         print(f"💬 对话轮次: {len(self.conversation_history)}")
 
 
+    def get_multiline_input(self, prompt: str) -> str:
+        """
+        获取多行输入
+        Args:
+            prompt: 提示文本
+        Returns:
+            用户输入的多行文本
+        """
+        print(f"{prompt}")
+        print("💡 多行输入模式:")
+        print("  - 输入多行内容，每行按回车")
+        print("  - 输入 'END' 单独一行结束输入")
+        print("  - 或者连续按两次回车结束输入")
+        print("-" * 40)
+        
+        lines = []
+        empty_line_count = 0
+        
+        while True:
+            try:
+                line = input()
+                
+                # 检查结束条件
+                if line.strip().upper() == 'END':
+                    break
+                    
+                # 检查连续空行
+                if not line.strip():
+                    empty_line_count += 1
+                    if empty_line_count >= 2:
+                        break
+                else:
+                    empty_line_count = 0
+                    
+                lines.append(line)
+                
+            except KeyboardInterrupt:
+                print("\n❌ 输入被取消")
+                return ""
+                
+        # 移除末尾的空行
+        while lines and not lines[-1].strip():
+            lines.pop()
+            
+        return '\n'.join(lines).strip()
+
+    def get_user_input(self, prompt: str) -> str:
+        """
+        获取用户输入（支持单行和多行）
+        Args:
+            prompt: 提示文本
+        Returns:
+            用户输入内容
+        """
+        try:
+            # 尝试单行输入
+            user_input = input(prompt).strip()
+            
+            # 检查是否需要多行输入
+            if user_input.endswith('\\'):
+                # 用户在行末输入反斜杠表示要继续多行输入
+                print("🔄 切换到多行输入模式...")
+                multiline_input = self.get_multiline_input(f"👤 {self.username} (多行):")
+                return user_input[:-1] + '\n' + multiline_input  # 移除反斜杠并添加多行内容
+            elif user_input.lower() == '/multi':
+                # 用户输入 /multi 命令启动多行模式
+                return self.get_multiline_input(f"👤 {self.username} (多行):")
+            else:
+                return user_input
+                
+        except KeyboardInterrupt:
+            raise
+        except Exception as e:
+            print(f"❌ 输入错误: {e}")
+            return ""
+
     def start_chat(self):
         """开始聊天循环"""
         print("🚀 聊天界面已启动！")
         print("💡 输入 /help 查看可用命令")
         print("💡 输入 /exit 退出聊天")
+        print("💡 多行输入: 行末加 \\ 或输入 /multi 启动多行模式")
         print("=" * 50)
         
         while True:
@@ -381,8 +469,8 @@ class ChatInterface:
                 if len(self.conversation_history) % 10 == 0 and len(self.conversation_history) > 0:
                     self.display_token_info()
                 
-                # 获取用户输入
-                user_input = input(f"\n👤 {self.username}: ").strip()
+                # 获取用户输入（支持多行）
+                user_input = self.get_user_input(f"\n👤 {self.username}: ")
                 
                 if not user_input:
                     continue
@@ -397,6 +485,14 @@ class ChatInterface:
                     elif command == '/help':
                         self.show_help()
                         continue
+                    elif command == '/multi':
+                        # /multi 命令已经在 get_user_input 中处理了
+                        # 这里不应该到达，但为了安全起见还是处理一下
+                        multiline_input = self.get_multiline_input(f"👤 {self.username} (多行):")
+                        if multiline_input:
+                            user_input = multiline_input
+                        else:
+                            continue
                     elif command == '/clear':
                         self.clear_history()
                         continue
