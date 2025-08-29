@@ -10,17 +10,11 @@ Excel处理核心逻辑模块
 用户习惯：中文注释；函数之间空两行；函数内不留空行。
 """
 
-from __future__ import annotations
-
-import os
 import re
-import sqlite3
-from typing import Dict, List, Optional, Tuple
+from typing import Dict
 from datetime import date
 import pandas as pd
-import sys
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'ui'))
-from ui.common import db_manager, GlobalDatabaseManager
+from ui.db_management import db_manager
 
 # =============================
 # 数据源列名与固定列序号定义（1-based）

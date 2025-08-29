@@ -140,10 +140,11 @@ def clean_database_content_before_save(content: str, field_name: str = "unknown"
     original_content = content
     cleaned_content = clean_text_for_input(content)
     
-    if cleaned_content != original_content:
-        logger.info(f"Field '{field_name}' cleaned before database save: {len(original_content)} -> {len(cleaned_content)} characters")
+    # Standardize line endings to \\n
+    cleaned_content = cleaned_content.replace('\\r\\n', '\\n').replace('\\r', '\\n')
     
-    return cleaned_content
+    # Remove leading/trailing newlines and whitespace from the entire block, but preserve indentation
+    return cleaned_content.strip()
 
 
 def batch_clean_text_data(text_list: List[str], field_name: str = "unknown") -> List[str]:

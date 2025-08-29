@@ -5,12 +5,13 @@ Home page for HBPR UI - System overview and quick actions
 
 import streamlit as st
 import pandas as pd
-from ui.common import apply_global_settings, get_current_database
-from scripts.hbpr_info_processor import HbprDatabase
+from ui.db_management import apply_global_settings, get_current_database, db_manager, require_database_loaded
 import os
 from ui.components.home_metrics import get_home_summary
+from ui.components.main_stats import get_and_display_main_statistics
 
 
+@require_database_loaded()
 def show_home_page():
     """显示主页"""
     # Apply settings
@@ -30,11 +31,10 @@ def show_home_page():
                 st.error("❌ No database selected!")
                 st.info("💡 Please select a database from the sidebar or build one first using the Database Management page.")
                 return
-            # 使用选中的数据库
-            db = HbprDatabase(selected_db_file)
-            st.success(f"DB connected: {os.path.basename(selected_db_file)}")
+            # 使用内存数据库
+            db = db_manager.get_database()
+            st.success(f"DB connected: {os.path.basename(st.session_state.get('current_db_name',''))}")
             # Display main statistics using reusable component
-            from ui.components.main_stats import get_and_display_main_statistics
             all_stats = get_and_display_main_statistics(db)
             
             # Extract data for additional sections
@@ -76,11 +76,11 @@ def show_home_page():
             st.rerun()
         if st.button("🔄 Refresh Statistics", use_container_width=True):
             # 强制刷新所有统计信息
-            db.invalidate_statistics_cache()
+            # Caching is disabled for memory db, so this button just reruns.
             st.rerun()
         # 航班摘要信息折叠块
         try:
-            summary = get_home_summary(selected_db_file)
+            summary = get_home_summary()
             title = f"{summary['flight_number']} / {summary['flight_date']}"
             with st.expander(title, expanded=True):
                 total_line = f"TOTAL {summary['total_accepted']} + {summary['infant_count']} INF"

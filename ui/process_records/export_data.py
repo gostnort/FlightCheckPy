@@ -9,8 +9,7 @@ import sqlite3
 import re
 from datetime import datetime
 from io import BytesIO
-from scripts.hbpr_info_processor import HbprDatabase
-from ui.common import get_current_database
+from ui.db_management import db_manager
 
 
 def clean_text_for_export(text: str) -> str:
@@ -88,15 +87,13 @@ def safe_export_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 def show_export_data():
     """显示导出选项"""
     try:
-        # 获取当前选中的数据库
-        selected_db_file = get_current_database()
-        if not selected_db_file:
+        if not db_manager.is_available():
             st.error("❌ No database selected.")
             st.info("💡 Please select a database from the sidebar or build one first in the Database Management page.")
             return
-        db = HbprDatabase(selected_db_file)
+
         st.subheader("📤 Export Data")
-        conn = sqlite3.connect(db.db_file)
+        conn = db_manager.get_database().get_connection()
         
         # 获取所有已处理的记录，但排除可能有问题的record_content字段
         df = pd.read_sql_query("""
@@ -112,7 +109,6 @@ def show_export_data():
             WHERE is_validated = 1
             ORDER BY hbnb_number
         """, conn)
-        conn.close()
         
         if df.empty:
             st.info("ℹ️ No processed records to export.")
@@ -146,7 +142,7 @@ def show_export_data():
             )
         with col3:
             # 原始文本导出
-            origin_txt_data = export_as_origin_txt(db.db_file)
+            origin_txt_data = export_as_origin_txt(conn)
             st.download_button(
                 label="📄 Download as Orig Txt",
                 data=origin_txt_data,
@@ -170,45 +166,27 @@ def show_export_data():
         st.error("💡 如果错误与数据格式相关，请尝试使用'Download as Orig Txt'选项导出原始数据。")
 
 
-def export_as_origin_txt(db_file: str) -> str:
-    """
-    导出原始文本格式，包含full_record表的record_content和commands表的command_type、command_full
-    Args:
-        db_file (str): 数据库文件路径   
-    Returns:
-        str: 格式化的原始文本内容
-    """
-    content_parts = []
+def export_as_origin_txt(conn: sqlite3.Connection) -> str:
+    """导出为原始txt格式"""
     try:
-        conn = sqlite3.connect(db_file)
-        # 导出full_record表的record_content
-        cursor = conn.execute("""
-            SELECT hbnb_number, record_content 
+        # 只导出is_validated = 1的记录
+        df = pd.read_sql_query("""
+            SELECT record_content 
             FROM hbpr_full_records 
+            WHERE is_validated = 1
             ORDER BY hbnb_number
-        """)
-        full_records = cursor.fetchall()
-        if full_records:
-            for hbnb_number, record_content in full_records:
-                # 清理文本内容
-                cleaned_content = clean_text_for_export(record_content)
-                content_parts.append(cleaned_content)
-                content_parts.append("")
-        # 导出commands表的command_type和command_full
-        cursor = conn.execute("""
-            SELECT command_full, content
-            FROM commands 
-            ORDER BY command_full, content
-        """)
-        commands = cursor.fetchall()
-        if commands:
-            for command_full, content in commands:
-                # 清理命令内容
-                cleaned_content = clean_text_for_export(content)
-                content_parts.append(f">{command_full}\n{cleaned_content}")
-                content_parts.append("")
-        conn.close()
-        return "\n".join(content_parts)
+        """, conn)
+        
+        if df.empty:
+            return "No records to export."
+        
+        # 处理每条记录，将文字'\\n'替换为真正的换行符
+        processed_records = df['record_content'].astype(str).apply(lambda x: x.replace('\\n', '\n'))
+        
+        # 直接合并所有处理后的记录内容，并在记录之间添加两个换行符
+        full_text = "\n\n".join(processed_records)
+        return full_text
+        
     except Exception as e:
         return f"Error exporting data: {str(e)}"
 

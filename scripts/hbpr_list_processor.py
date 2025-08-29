@@ -7,23 +7,23 @@ finds missing numbers, and stores data in flight-specific SQLite databases.
 
 import re
 import sqlite3
-import os
-from typing import List, Tuple, Optional
 from collections import defaultdict
-from .data_cleaner import clean_hbpr_record_content, validate_and_clean_file_content
+from .data_cleaner import clean_hbpr_record_content
 
 
 class HBPRProcessor:
     """HBPR数据处理器"""
 
 
-    def __init__(self, input_file: str):
+    def __init__(self, conn: sqlite3.Connection):
         """
         初始化HBPR处理器
         Args:
-            input_file: 输入的HBPR文本文件路径
+            conn: 数据库连接对象
         """
-        self.input_file = input_file
+        if not conn:
+            raise ValueError("A valid database connection must be provided.")
+        self.conn = conn
         # flight_data[flight_id] 航班数据，包括HBNB号码、完整记录和简单记录
         # 使用defaultdict，如果flight_id不存在，则创建一个默认值为{hbnb_numbers: set(), full_records: {}, simple_records: {}}的航班数据
         self.flight_data = defaultdict(lambda: {
@@ -36,20 +36,11 @@ class HBPRProcessor:
         self.all_simple_records = {}  # 全局简单记录：HBNB -> 记录内容
 
 
-    def parse_file(self) -> None:
-        """解析HBPR文本文件并按航班提取所有记录"""
-        print(f"Parsing file: {self.input_file}")
+    def parse_file_content(self, file_content: str) -> None:
+        """解析HBPR文本内容并按航班提取所有记录"""
+        print("Parsing file content...")
         
-        # 使用数据清理工具读取和清理文件内容
-        try:
-            lines, was_cleaned = validate_and_clean_file_content(self.input_file)
-            if was_cleaned:
-                print("⚠️  File contained problematic characters and has been cleaned")
-            else:
-                print("✅ File content is clean")
-        except Exception as e:
-            print(f"❌ Error reading file: {e}")
-            return
+        lines = file_content.splitlines()
         
         # 逐行解析处理
         i = 0
@@ -102,7 +93,7 @@ class HBPRProcessor:
                 flight_data['simple_records'][hbnb_num] = record_line
 
 
-    def parse_full_record(self, lines: List[str], start_index: int) -> Tuple[Optional[int], str, int]:
+    def parse_full_record(self, lines: list[str], start_index: int) -> tuple[int | None, str, int]:
         """
         解析完整HBPR记录并提取航班信息和HBNB号码
         如果解析成功，则设置self.flight_id 
@@ -168,7 +159,7 @@ class HBPRProcessor:
         return flight_parts
 
 
-    def _parse_simple_record(self, line: str) -> Optional[int]:
+    def _parse_simple_record(self, line: str) -> int | None:
         """解析简单hbpr记录提取HBNB号码"""
         # 格式: hbpr *,{NUMBER} 或 HBPR *,{NUMBER}
         match = re.search(r'hbpr\s*[^,]*,(\d+)', line, re.IGNORECASE)
@@ -177,7 +168,7 @@ class HBPRProcessor:
         return None
 
 
-    def find_missing_numbers(self, flight_id: str) -> List[int]:
+    def find_missing_numbers(self, flight_id: str) -> list[int]:
         """查找指定航班的缺失HBNB号码（真正不存在的号码）"""
         hbnb_numbers = self.flight_data[flight_id]['hbnb_numbers']
         if not hbnb_numbers:
@@ -192,31 +183,12 @@ class HBPRProcessor:
         return missing
 
 
-    def create_database(self, flight_id: str) -> str:
-        """为指定航班创建SQLite数据库"""
-        # 确保databases文件夹存在
-        databases_folder = "databases"
-        if not os.path.exists(databases_folder):
-            os.makedirs(databases_folder)
-        # 生成数据库文件名（在databases文件夹中）
-        db_file = os.path.join(databases_folder, f"{flight_id}.db")
-        # 删除已存在的数据库（带重试机制）
-        if os.path.exists(db_file):
-            try:
-                os.remove(db_file)
-            except PermissionError:
-                print(f"Warning: Cannot remove existing {db_file}, it may be in use. Creating new tables anyway.")
-        # 创建新数据库和表结构
-        conn = sqlite3.connect(db_file)
-        cursor = conn.cursor()
-        # 删除现有表（如果存在）
-        cursor.execute('DROP TABLE IF EXISTS flight_info')
-        cursor.execute('DROP TABLE IF EXISTS hbpr_full_records')
-        cursor.execute('DROP TABLE IF EXISTS hbpr_simple_records')
-        cursor.execute('DROP TABLE IF EXISTS missing_numbers')
+    def create_tables_if_not_exist(self) -> None:
+        """为指定航班创建SQLite数据库表（如果不存在）"""
+        cursor = self.conn.cursor()
         # 创建航班信息表
         cursor.execute('''
-            CREATE TABLE flight_info (
+            CREATE TABLE IF NOT EXISTS flight_info (
                 flight_id TEXT PRIMARY KEY,
                 flight_number TEXT NOT NULL,
                 flight_date TEXT NOT NULL,
@@ -225,7 +197,7 @@ class HBPRProcessor:
         ''')
         # 创建完整记录表 - 包含所有必要的列
         cursor.execute('''
-            CREATE TABLE hbpr_full_records (
+            CREATE TABLE IF NOT EXISTS hbpr_full_records (
                 hbnb_number INTEGER PRIMARY KEY,
                 record_content TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -269,7 +241,7 @@ class HBPRProcessor:
         ''')
         # 创建简单记录表
         cursor.execute('''
-            CREATE TABLE hbpr_simple_records (
+            CREATE TABLE IF NOT EXISTS hbpr_simple_records (
                 hbnb_number INTEGER PRIMARY KEY,
                 record_line TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -277,21 +249,18 @@ class HBPRProcessor:
         ''')
         # 创建缺失号码表
         cursor.execute('''
-            CREATE TABLE missing_numbers (
+            CREATE TABLE IF NOT EXISTS missing_numbers (
                 hbnb_number INTEGER PRIMARY KEY,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
-        conn.commit()
-        conn.close()
-        print(f"Created database with complete schema: {db_file}")
-        return db_file
+        self.conn.commit()
+        print("Database tables ensured to exist.")
 
 
-    def store_records(self, flight_id: str, db_file: str) -> None:
+    def store_records(self, flight_id: str) -> None:
         """将指定航班的记录存储到数据库"""
-        conn = sqlite3.connect(db_file)
-        cursor = conn.cursor()
+        cursor = self.conn.cursor()
         flight_data = self.flight_data[flight_id]
         # 存储航班信息
         flight_number, flight_date = self.flight_info[flight_id]
@@ -323,8 +292,7 @@ class HBPRProcessor:
                 'INSERT INTO missing_numbers (hbnb_number) VALUES (?)',
                 (num,)
             )
-        conn.commit()
-        conn.close()
+        self.conn.commit()
         # 输出存储统计
         #print(f"Stored {len(flight_data['full_records'])} full records")
         #print(f"Stored {len(flight_data['simple_records'])} simple records")
@@ -379,32 +347,34 @@ class HBPRProcessor:
         print("="*60)
 
 
-    def process(self) -> None:
+    def process(self, file_content: str) -> None:
         """执行完整的数据处理流水线"""
         # 解析文件内容
-        self.parse_file()
+        self.parse_file_content(file_content)
         # 为每个航班处理数据
         for flight_id in self.flight_data.keys():
             print(f"\nProcessing flight: {flight_id}")
-            # 创建航班专用数据库
-            db_file = self.create_database(flight_id)
+            # 确保表存在
+            self.create_tables_if_not_exist()
             # 存储记录到数据库
-            self.store_records(flight_id, db_file)
+            self.store_records(flight_id)
             # 生成处理报告
             self.generate_report(flight_id)
 
 
 def main():
-    """主函数运行HBPR处理器"""
-    input_file = "sample_hbpr.txt"
-    # 检查输入文件是否存在
-    if not os.path.exists(input_file):
-        print(f"Error: Input file '{input_file}' not found!")
-        return
-    # 创建处理器并执行处理
-    processor = HBPRProcessor(input_file)
-    processor.process()
-    print("\nProcessing complete! Check the flight-specific database files.")
+    """主函数 - 现在作为一个示例，展示如何使用HBPR处理器"""
+    print("🧹 HBPR List Processor Tool")
+    print("=" * 50)
+    print("该脚本现在应该作为模块导入，而不是直接运行。")
+    print("用法示例:")
+    print("  from scripts.hbpr_list_processor import HBPRProcessor")
+    print("  import sqlite3")
+    print("  conn = sqlite3.connect(':memory:')")
+    print("  processor = HBPRProcessor(conn)")
+    print("  with open('sample_hbpr_list.txt', 'r') as f:")
+    print("      content = f.read()")
+    print("  processor.process(content)")
 
 
 if __name__ == "__main__":

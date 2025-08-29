@@ -9,10 +9,8 @@ import os
 import traceback
 import io
 import re
-from ui.common import apply_global_settings
+from ui.db_management import apply_global_settings, db_manager
 from scripts.command_processor import CommandProcessor
-import sqlite3
-from datetime import datetime
 
 
 def cleanup_command_files():
@@ -32,11 +30,18 @@ def show_command_analysis():
     # 页面加载时清理文件
     cleanup_command_files()
     # Initialize command processor
-    selected_db = st.session_state.get('selected_database', None)
-    if not selected_db:
+    if not db_manager.is_available():
         st.error("❌ No database selected")
         return
-    processor = CommandProcessor(selected_db)
+    
+    try:
+        db_connection = db_manager.get_database().get_connection()
+        processor = CommandProcessor(db_connection)
+    except Exception as e:
+        st.error(f"❌ Failed to initialize Command Processor: {e}")
+        st.text(traceback.format_exc())
+        return
+
     # 定义标签页选项
     tab_options = ["📥 Import Commands", "✒️ Add/Edit Data", "📊 View Data", "📅 Timeline", "🗃️ Maintain"]
     # 初始化默认选择（如果还没有设置）
@@ -279,7 +284,7 @@ def restore_command_version(processor: CommandProcessor, command_full: str, vers
             st.error(f"❌ Version {version_num} not found")
             return
         # Mark current latest as not latest
-        conn = sqlite3.connect(processor.db_file)
+        conn = processor.conn
         # Update current latest version
         conn.execute("""
             UPDATE commands 
@@ -293,7 +298,6 @@ def restore_command_version(processor: CommandProcessor, command_full: str, vers
             WHERE id = ?
         """, (target_version['id'],))
         conn.commit()
-        conn.close()
         st.success(f"✅ Version {version_num} restored successfully!")
         st.rerun()
     except Exception as e:
@@ -523,8 +527,8 @@ def show_edit_data(processor: CommandProcessor):
 def save_edited_data(processor: CommandProcessor, original_command_full: str, edited_raw_input: str):
     """Save edited command data with versioning support"""
     try:
-        if not processor.db_file:
-            st.error("❌ No database file specified")
+        if not processor.conn:
+            st.error("❌ No database connection available")
             return
         # Step 1: 处理特殊字符替换
         corrected_input = apply_character_corrections(edited_raw_input)
@@ -553,7 +557,7 @@ def save_edited_data(processor: CommandProcessor, original_command_full: str, ed
         if not processor.validate_flight_info(new_command_info['flight_number'], new_command_info['flight_date']):
             st.warning("⚠️ 警告：新命令的航班信息与数据库不匹配")
         # Step 5: 使用版本控制系统保存命令
-        conn = sqlite3.connect(processor.db_file)
+        conn = processor.conn
         try:
             if new_command_full == original_command_full:
                 # 命令行未更改，检查内容是否改变
@@ -599,7 +603,6 @@ def save_edited_data(processor: CommandProcessor, original_command_full: str, ed
                 existing = cursor.fetchone()
                 if existing:
                     st.error(f"❌ 命令 '{new_command_full}' 已存在。请选择不同的命令。")
-                    conn.close()
                     return
                 # 创建新命令记录
                 conn.execute("""
@@ -618,8 +621,6 @@ def save_edited_data(processor: CommandProcessor, original_command_full: str, ed
         except Exception as e:
             conn.rollback()
             raise e
-        finally:
-            conn.close()
         st.rerun()
     except Exception as e:
         st.error(f"❌ Error saving changes: {e}")
@@ -630,17 +631,16 @@ def save_edited_data(processor: CommandProcessor, original_command_full: str, ed
 def delete_command_record(processor: CommandProcessor, command_full: str):
     """Delete a command record"""
     try:
-        if not processor.db_file:
-            st.error("❌ No database file specified")
+        if not processor.conn:
+            st.error("❌ No database connection available")
             return
-        conn = sqlite3.connect(processor.db_file)
+        conn = processor.conn
         cursor = conn.execute("DELETE FROM commands WHERE command_full = ?", (command_full,))
         if cursor.rowcount > 0:
             st.success(f"✅ 已删除记录: {command_full}")
         else:
             st.warning(f"⚠️ 未找到记录: {command_full}")
         conn.commit()
-        conn.close()
         st.rerun()
     except Exception as e:
         st.error(f"❌ Error deleting record: {e}")
@@ -680,22 +680,20 @@ def apply_character_corrections(raw_input: str) -> str:
 def migrate_commands_table(processor: CommandProcessor):
     """迁移现有commands表到支持时间线的版本"""
     try:
-        if not processor.db_file:
-            st.error("❌ No database file specified")
+        if not processor.conn:
+            st.error("❌ No database connection available")
             return False
-        conn = sqlite3.connect(processor.db_file)
+        conn = processor.conn
         # 检查是否已经迁移过
         cursor = conn.execute("PRAGMA table_info(commands)")
         columns = [col[1] for col in cursor.fetchall()]
         if 'version' in columns and 'parent_id' in columns and 'is_latest' in columns:
             st.info("ℹ️ Commands table already supports timeline")
-            conn.close()
             return True
         # 备份现有数据
         existing_commands = conn.execute("SELECT * FROM commands").fetchall()
         if not existing_commands:
             st.info("ℹ️ No existing commands to migrate")
-            conn.close()
             return True
         # 创建新表结构
         conn.execute("""
@@ -731,7 +729,6 @@ def migrate_commands_table(processor: CommandProcessor):
         conn.execute("CREATE INDEX idx_commands_parent ON commands(parent_id)")
         conn.execute("CREATE INDEX idx_commands_latest ON commands(command_full, is_latest)")
         conn.commit()
-        conn.close()
         st.success(f"✅ Successfully migrated {len(existing_commands)} commands to timeline system!")
         return True
     except Exception as e:
@@ -744,9 +741,10 @@ def migrate_commands_table(processor: CommandProcessor):
 def show_command_settings(processor: CommandProcessor):
     """Show command analysis settings"""
     # Check if database file exists and show file info
-    if processor.db_file:
-        if not os.path.exists(processor.db_file):
-            st.error(f"❌ Database file not found: {processor.db_file}")
+    if not processor.conn:
+        st.error("❌ Database not connected.")
+        return
+
     # Database info
     st.write("**Database Information:**")
     if processor.flight_info:
@@ -804,18 +802,17 @@ def show_command_settings(processor: CommandProcessor):
         if st.button("🗑️ Clear All Command Data", use_container_width=True):
             if st.session_state.get('confirm_clear_commands', False):
                 try:
-                    if processor.db_file:
-                        conn = sqlite3.connect(processor.db_file)
+                    if processor.conn:
+                        conn = processor.conn
                         conn.execute("DELETE FROM commands")
                         conn.commit()
-                        conn.close()
                         st.success("✅ All command data cleared!")
                         st.session_state.confirm_clear_commands = False
                         # 清除数据后清理文件
                         cleanup_command_files()
                         st.rerun()
                     else:
-                        st.error("❌ No database file specified")
+                        st.error("❌ No database connection available")
                 except Exception as e:
                         st.error(f"❌ Error clearing data: {e}")
                         st.session_state.confirm_clear_commands = False

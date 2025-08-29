@@ -10,28 +10,32 @@ Responsibilities:
 All SQL is defensive and will auto-create views if missing.
 """
 
-import os
 import re
 import sqlite3
 from typing import Dict, Optional, Tuple
+from ui.db_management import db_manager
 
 
-def _connect(db_file: str) -> sqlite3.Connection:
-    if not db_file or not os.path.exists(db_file):
-        raise FileNotFoundError(f"Database file not found: {db_file}")
-    conn = sqlite3.connect(db_file)
-    conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA busy_timeout = 30000")
+def _get_conn() -> sqlite3.Connection:
+    """Get shared in-memory DB connection from global manager."""
+    db = db_manager.get_database()
+    conn = db.get_connection()
+    # Ensure sane pragmas (no-ops if already set)
+    try:
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA busy_timeout = 30000")
+    except Exception:
+        pass
     return conn
 
 
-def create_or_refresh_views(db_file: str) -> None:
+def create_or_refresh_views() -> None:
     """Create views used by the home page. Idempotent.
     Views:
     - vw_home_accepted_counts: totals for accepted pax (adults), infants, J/Y adult split
     - vw_home_flags: ID staff (SA, PAD-2, PAD-SA) counts by class, NOSHOW by class, INAD total
     """
-    conn = _connect(db_file)
+    conn = _get_conn()
     cur = conn.cursor()
     # Drop and recreate to keep logic simple and always up-to-date
     cur.execute("DROP VIEW IF EXISTS vw_home_accepted_counts")
@@ -96,7 +100,6 @@ def create_or_refresh_views(db_file: str) -> None:
         """
     )
     conn.commit()
-    conn.close()
 
 
 def _parse_cnf_from_text(text: str) -> Optional[Tuple[int, int]]:
@@ -112,18 +115,17 @@ def _parse_cnf_from_text(text: str) -> Optional[Tuple[int, int]]:
     return None
 
 
-def get_sy_compartments(db_file: str) -> Optional[Tuple[int, int]]:
+def get_sy_compartments() -> Optional[Tuple[int, int]]:
     """Find the latest SY command matching current flight in DB and parse CNF.
     Looks up the flight in table flight_info, then finds the newest matching
     command in table commands where command_type = 'SY' and is_latest = 1.
     """
-    conn = _connect(db_file)
+    conn = _get_conn()
     cur = conn.cursor()
     # Read flight number/date
     cur.execute("SELECT flight_number, flight_date FROM flight_info LIMIT 1")
     row = cur.fetchone()
     if not row:
-        conn.close()
         return None
     flt_no, flt_date = row[0], row[1]
     # Try to find an SY command for this flight/date
@@ -141,7 +143,7 @@ def get_sy_compartments(db_file: str) -> Optional[Tuple[int, int]]:
         (flt_no, flt_date)
     )
     cmd = cur.fetchone()
-    conn.close()
+    # Do not close shared connection
     if not cmd:
         return None
     command_full, content = cmd
@@ -152,15 +154,15 @@ def get_sy_compartments(db_file: str) -> Optional[Tuple[int, int]]:
     return None
 
 
-def get_home_summary(db_file: str) -> Dict[str, object]:
+def get_home_summary() -> Dict[str, object]:
     """Return a dict with all values needed by the home page expander.
     Keys: flight_number, flight_date, total_accepted, infant_count,
           accepted_business, accepted_economy, id_j, id_y,
           noshow_j, noshow_y, inad_total, j_cnf, y_cnf, ratio
     """
     # Ensure views exist
-    create_or_refresh_views(db_file)
-    conn = _connect(db_file)
+    create_or_refresh_views()
+    conn = _get_conn()
     cur = conn.cursor()
     # Flight info
     cur.execute("SELECT flight_number, flight_date FROM flight_info LIMIT 1")
@@ -174,9 +176,9 @@ def get_home_summary(db_file: str) -> Dict[str, object]:
     cur.execute("SELECT id_j, id_y, noshow_j, noshow_y, inad_total FROM vw_home_flags")
     f = cur.fetchone() or (0, 0, 0, 0, 0)
     id_j, id_y, noshow_j, noshow_y, inad_total = f
-    conn.close()
+    # Do not close shared connection
     # CNF from SY
-    cnf = get_sy_compartments(db_file)
+    cnf = get_sy_compartments()
     j_cnf, y_cnf = (cnf if cnf else (0, 0))
     compartment_total = (j_cnf or 0) + (y_cnf or 0)
     ratio = None
@@ -200,9 +202,9 @@ def get_home_summary(db_file: str) -> Dict[str, object]:
     }
 
 
-def get_debug_data(db_file: str) -> Dict[str, object]:
+def get_debug_data() -> Dict[str, object]:
     """Return debug data for manual verification of statistics"""
-    conn = _connect(db_file)
+    conn = _get_conn()
     cur = conn.cursor()
     debug_data = {}
     # Get total counts by class - using COUNT(DISTINCT) for consistency
@@ -273,10 +275,10 @@ def get_debug_data(db_file: str) -> Dict[str, object]:
     return debug_data
 
 
-def get_debug_summary(db_file: str) -> str:
+def get_debug_summary() -> str:
     """Return a formatted debug summary string for manual verification"""
     try:
-        debug_data = get_debug_data(db_file)
+        debug_data = get_debug_data()
         summary = []
         summary.append("🔍 Debug Data for Manual Verification")
         summary.append("")
@@ -284,10 +286,8 @@ def get_debug_summary(db_file: str) -> str:
         # 添加deleted passengers和missing boarding numbers的完整信息
         try:
             # 获取deleted passengers完整信息
-            from scripts.hbpr_info_processor import HbprDatabase
             from ui.components.deleted_stats import get_missing_boarding_numbers
-            
-            db = HbprDatabase(db_file)
+            db = db_manager.get_database()
             all_stats = db.get_all_statistics()
             deleted_stats = all_stats.get('deleted_passengers_stats', {})
             

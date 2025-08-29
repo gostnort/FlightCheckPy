@@ -3,7 +3,7 @@
 Calculation functions for deleted passenger and missing boarding number statistics
 """
 
-import sqlite3
+from ui.db_management import db_manager
 
 
 
@@ -18,10 +18,8 @@ def get_missing_boarding_numbers(db):
         list: 真正缺失的boarding_number列表（不包括删除乘客的号码）
     """
     try:
-        if not db.db_file:
-            db.find_database()
-            
-        conn = sqlite3.connect(db.db_file)
+        # 使用全局内存数据库连接
+        conn = db_manager.get_database().get_connection()
         cursor = conn.cursor()
         
         # 获取所有有效的boarding_number（非空且非0）
@@ -46,7 +44,7 @@ def get_missing_boarding_numbers(db):
             non_xres_nums = deleted_stats.get('original_boarding_numbers', [])
             deleted_boarding_numbers = set(xres_nums + non_xres_nums)
         
-        conn.close()
+        # 不要关闭共享内存连接
         
         if not boarding_numbers:
             return []

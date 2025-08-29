@@ -4,7 +4,7 @@ Login and authentication page for HBPR UI
 """
 
 import streamlit as st
-from ui.common import get_icon_base64, authenticate_user
+from ui.db_management import authenticate_user, get_icon_base64
 
 
 def show_login_page():

@@ -5,28 +5,24 @@ Add/Edit Record functionality for HBPR UI - Single record editing and validation
 
 import streamlit as st
 import pandas as pd
-import sqlite3
 import re
-import traceback
 from scripts.hbpr_info_processor import CHbpr, HbprDatabase
 from scripts.hbpr_list_processor import HBPRProcessor
-from ui.common import get_current_database
+from ui.db_management import get_current_database, db_manager, require_database_loaded
 
 
+@require_database_loaded()
 def show_add_edit_record():
     """查看单个记录"""
     try:
-        db = HbprDatabase()
-        db.find_database()
+        db = db_manager.get_database()
         # 获取当前选中的数据库
         selected_db_file = get_current_database()
         if not selected_db_file:
             st.error("❌ No database selected! Please select a database from the sidebar.")
             return
-        # 如果选择了不同的数据库，重新初始化
-        if selected_db_file != db.db_file:
-            db = HbprDatabase(selected_db_file)
-        conn = sqlite3.connect(db.db_file)
+        
+        conn = db.get_connection()
         cursor = conn.cursor()
         # 检查是否有已处理的记录
         cursor.execute("""
@@ -39,7 +35,6 @@ def show_add_edit_record():
         # 获取所有记录（包括未处理的）
         cursor.execute("SELECT hbnb_number FROM hbpr_full_records ORDER BY hbnb_number")
         all_records = [row[0] for row in cursor.fetchall()]
-        conn.close()
         if not all_records:
             st.warning("⚠️ No HBPR records found in database.")
             return
@@ -161,7 +156,7 @@ def show_add_edit_record():
         elif selection_method == "TKNE":
             if processed_records:
                 # 获取TKNE数据
-                conn = sqlite3.connect(db.db_file)
+                conn = db.get_connection()
                 cursor = conn.cursor()
                 cursor.execute("""
                     SELECT hbnb_number, tkne 
@@ -170,7 +165,6 @@ def show_add_edit_record():
                     ORDER BY tkne
                 """)
                 tkne_records = cursor.fetchall()
-                conn.close()
                 if tkne_records:
                     # 按TKNE排序
                     tkne_records.sort(key=lambda x: x[1])
@@ -494,7 +488,7 @@ def find_hbnb_by_tkne(db, tkne_number):
         }
     """
     try:
-        conn = sqlite3.connect(db.db_file)
+        conn = db.get_connection()
         cursor = conn.cursor()
         # 在tkne字段中查找匹配的TKNE号码
         # TKNE格式可能是 "9992753059942/1" 或只是 "9992753059942"
@@ -504,7 +498,6 @@ def find_hbnb_by_tkne(db, tkne_number):
             WHERE tkne LIKE ? OR tkne = ?
         """, (f'{tkne_number}/%', tkne_number))
         results = cursor.fetchall()
-        conn.close()
         if results:
             # 如果找到多个，返回第一个
             hbnb_number = results[0][0]

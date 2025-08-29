@@ -5,24 +5,22 @@ Process All Records functionality for HBPR UI - Batch processing and error handl
 
 import streamlit as st
 import pandas as pd
-import sqlite3
-from scripts.hbpr_info_processor import CHbpr, HbprDatabase
-from ui.common import get_current_database
+from scripts.hbpr_info_processor import CHbpr
+from ui.db_management import get_current_database, db_manager, require_database_loaded
+from .add_edit_record import apply_font_settings
 
 
+@require_database_loaded()
 def show_process_all_records():
     """显示处理所有记录页面"""
     try:
-        db = HbprDatabase()
-        db.find_database()
+        db = db_manager.get_database()
         # 获取当前选中的数据库
         selected_db_file = get_current_database()    
         if not selected_db_file:
             st.error("❌ No database selected! Please select a database from the sidebar.")
             return
-        # 如果选择了不同的数据库，重新初始化
-        if selected_db_file != db.db_file:
-            db = HbprDatabase(selected_db_file)
+        # 使用内存数据库，无需重新初始化
         # 处理控制
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -44,12 +42,11 @@ def show_process_all_records():
 def start_processing_all_records(db, batch_size):
     """开始处理所有记录"""
     try:
-        # 获取所有记录
-        conn = sqlite3.connect(db.db_file)
+        # 获取所有记录（内存连接）
+        conn = db.get_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT hbnb_number FROM hbpr_full_records ORDER BY hbnb_number")
         records = [row[0] for row in cursor.fetchall()]
-        conn.close()
         if not records:
             st.info("ℹ️ No records found.")
             return
@@ -117,14 +114,13 @@ def erase_splited_records(db):
 def show_error_summary(db):
     """显示错误分组统计"""
     try:
-        conn = sqlite3.connect(db.db_file)
+        conn = db.get_connection()
         # 查询有错误的记录
         df = pd.read_sql_query("""
             SELECT error_baggage, error_passport, error_name, error_visa, error_other
             FROM hbpr_full_records 
             WHERE is_validated = 1 AND is_valid = 0 AND error_count > 0
         """, conn)
-        conn.close()
         if df.empty:
             st.info("ℹ️ No error messages found. All processed records are valid!")
             return
@@ -156,7 +152,7 @@ def show_error_summary(db):
 def show_error_messages(db):
     """显示错误信息"""
     try:
-        conn = sqlite3.connect(db.db_file)
+        conn = db.get_connection()
         # 查询有错误的记录
         df = pd.read_sql_query("""
             SELECT hbnb_number, name, error_count, error_baggage, error_passport, error_name, error_visa, error_other, validated_at
@@ -164,7 +160,6 @@ def show_error_messages(db):
             WHERE is_validated = 1 AND is_valid = 0 AND error_count > 0
             ORDER BY validated_at DESC, hbnb_number
         """, conn)
-        conn.close()
         if df.empty:
             st.info("ℹ️ No error messages found. All processed records are valid!")
             return
@@ -272,26 +267,4 @@ def show_record_popup(db, hbnb_number):
         )
     except Exception as e:
         st.error(f"❌ Error retrieving record: {str(e)}")
-
-
-def apply_font_settings():
-    """Apply dynamic font settings from session state"""
-    # Get font settings from session state
-    font_family = st.session_state.get('settings', {}).get('font_family', 'Courier New')
-    font_size_percent = st.session_state.get('settings', {}).get('font_size_percent', 100)
-    # Calculate font size in pixels (assuming default is 14px)
-    font_size_px = int(14 * font_size_percent / 100)
-    # Apply font settings using CSS
-    st.markdown(f"""
-    <style>
-    .stTextArea textarea {{
-        font-family: '{font_family}', monospace !important;
-        font-size: {font_size_px}px !important;
-    }}
-    .stDataFrame {{
-        font-family: '{font_family}', monospace !important;
-        font-size: {font_size_px}px !important;
-    }}
-    </style>
-    """, unsafe_allow_html=True)
 

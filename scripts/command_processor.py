@@ -6,7 +6,6 @@ Processes and analyzes commands from command text files
 
 import re
 import sqlite3
-import os
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 
@@ -15,30 +14,27 @@ class CommandProcessor:
     """Process and manage airline system commands"""
 
 
-    def __init__(self, db_file: str = None):
+    def __init__(self, conn: sqlite3.Connection):
         """
         Initialize command processor
         Args:
-            db_file (str, optional): Path to database file for flight info validation
+            conn (sqlite3.Connection): Database connection object
         """
-        self.db_file = db_file
+        if not conn:
+            raise ValueError("Database connection must be provided.")
+        self.conn = conn
         self.flight_info = None
-        if db_file:
-            self._load_flight_info()
+        self._load_flight_info()
 
 
     def _load_flight_info(self):
-        """Load flight information from HBPR database"""
-        if not self.db_file or not os.path.exists(self.db_file):
-            return
+        """Load flight information from the database connection"""
         try:
-            conn = sqlite3.connect(self.db_file)
             # 检查flight_info表是否存在
-            cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='flight_info'")
+            cursor = self.conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='flight_info'")
             if not cursor.fetchone():
-                conn.close()
                 return
-            cursor = conn.execute("SELECT flight_id, flight_number, flight_date FROM flight_info LIMIT 1")
+            cursor = self.conn.execute("SELECT flight_id, flight_number, flight_date FROM flight_info LIMIT 1")
             row = cursor.fetchone()
             if row:
                 self.flight_info = {
@@ -46,7 +42,6 @@ class CommandProcessor:
                     'flight_number': row[1], 
                     'flight_date': row[2]
                 }
-            conn.close()
         except Exception as e:
             pass
 
@@ -332,14 +327,13 @@ class CommandProcessor:
         Raises:
             Exception: If database operation fails
         """
-        if not self.db_file:
-            raise Exception("No database file specified")
+        if not self.conn:
+            raise Exception("No database connection provided")
         if not commands:
             return {'new': 0, 'updated': 0, 'skipped': 0, 'errors': 0}
         stats = {'new': 0, 'updated': 0, 'skipped': 0, 'errors': 0}
-        conn = None
+        conn = self.conn
         try:
-            conn = sqlite3.connect(self.db_file)
             # 关键：启用外键并设置超时
             conn.execute("PRAGMA foreign_keys = ON")
             conn.execute("PRAGMA busy_timeout = 30000")  # 30秒超时
@@ -437,33 +431,24 @@ class CommandProcessor:
             stats['skipped'] = len(mismatched_commands)
         except Exception as e:
             # 关键：任何错误时回滚事务
-            if conn:
-                try:
-                    conn.rollback()
-                except Exception:
-                    pass
+            try:
+                conn.rollback()
+            except Exception:
+                pass
             # 重新抛出异常供调用者处理
             raise Exception(f"Database operation failed: {e}")
-        finally:
-            # 关键：始终关闭连接
-            if conn:
-                try:
-                    conn.close()
-                except Exception:
-                    pass
         return stats
 
 
     def get_all_commands_data(self) -> List[Dict[str, Any]]:
         """Get all commands data from database"""
-        if not self.db_file:
+        if not self.conn:
             return []
         try:
-            conn = sqlite3.connect(self.db_file)
+            conn = self.conn
             # 首先检查commands表是否存在
             cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='commands'")
             if not cursor.fetchone():
-                conn.close()
                 return []
             cursor = conn.execute("""
                 SELECT id, command_full, command_type, flight_number, flight_date, 
@@ -474,7 +459,6 @@ class CommandProcessor:
             """)
             columns = [desc[0] for desc in cursor.description]
             rows = cursor.fetchall()
-            conn.close()
             return [dict(zip(columns, row)) for row in rows]
         except Exception as e:
             return []
@@ -482,13 +466,12 @@ class CommandProcessor:
 
     def get_command_types(self) -> List[str]:
         """Get all unique command types"""
-        if not self.db_file:
+        if not self.conn:
             return []
         try:
-            conn = sqlite3.connect(self.db_file)
+            conn = self.conn
             cursor = conn.execute("SELECT DISTINCT command_type FROM commands WHERE command_type IS NOT NULL AND is_latest = TRUE")
             command_types = [row[0] for row in cursor.fetchall()]
-            conn.close()
             return sorted(command_types)
         except Exception as e:
             print(f"Error getting command types: {e}")
@@ -497,10 +480,10 @@ class CommandProcessor:
 
     def get_command_timeline(self, command_full: str) -> List[Dict[str, Any]]:
         """Get timeline data for a specific command"""
-        if not self.db_file:
+        if not self.conn:
             return []
         try:
-            conn = sqlite3.connect(self.db_file)
+            conn = self.conn
             cursor = conn.execute("""
                 SELECT id, command_full, command_type, flight_number, flight_date, 
                        content, version, parent_id, is_latest, created_at, updated_at 
@@ -510,7 +493,6 @@ class CommandProcessor:
             """, (command_full,))
             columns = [desc[0] for desc in cursor.description]
             rows = cursor.fetchall()
-            conn.close()
             return [dict(zip(columns, row)) for row in rows]
         except Exception as e:
             print(f"Error getting command timeline: {e}")
@@ -519,10 +501,10 @@ class CommandProcessor:
 
     def get_all_commands_with_versions(self) -> List[Dict[str, Any]]:
         """Get all commands including all versions (for timeline view)"""
-        if not self.db_file:
+        if not self.conn:
             return []
         try:
-            conn = sqlite3.connect(self.db_file)
+            conn = self.conn
             cursor = conn.execute("""
                 SELECT id, command_full, command_type, flight_number, flight_date, 
                        content, version, parent_id, is_latest, created_at, updated_at 
@@ -531,7 +513,6 @@ class CommandProcessor:
             """)
             columns = [desc[0] for desc in cursor.description]
             rows = cursor.fetchall()
-            conn.close()
             return [dict(zip(columns, row)) for row in rows]
         except Exception as e:
             print(f"Error getting all commands with versions: {e}")
@@ -544,11 +525,10 @@ class CommandProcessor:
         Returns:
             bool: True if successful, False otherwise
         """
-        if not self.db_file or not os.path.exists(self.db_file):
+        if not self.conn:
             return False
-        conn = None
+        conn = self.conn
         try:
-            conn = sqlite3.connect(self.db_file)
             # 检查commands表是否存在
             cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='commands'")
             if not cursor.fetchone():
@@ -567,19 +547,11 @@ class CommandProcessor:
             return True
         except Exception as e:
             # 错误时回滚
-            if conn:
-                try:
-                    conn.rollback()
-                except Exception:
-                    pass
+            try:
+                conn.rollback()
+            except Exception:
+                pass
             return False
-        finally:
-            # 始终关闭连接
-            if conn:
-                try:
-                    conn.close()
-                except Exception:
-                    pass
 
 
     def close(self):
@@ -589,71 +561,21 @@ class CommandProcessor:
 
 def main():
     """
-    Comprehensive test function for CommandProcessor
-    Tests parsing sample commands, database operations, and flight info validation
+    主函数 - 现在作为一个示例，展示如何使用 CommandProcessor。
+    这个脚本现在被设计为从其他模块导入和使用。
     """
     print("🚀 COMMAND PROCESSOR TEST")
     print("=" * 50)
-    # 测试配置
-    db_file = "databases/CA984_25JUL25.db"
-    sample_file = "sample_commands.txt"
-    # 检查文件是否存在
-    if not os.path.exists(db_file):
-        print(f"❌ Database file not found: {db_file}")
-        return
-    if not os.path.exists(sample_file):
-        print(f"❌ Sample commands file not found: {sample_file}")
-        return
-    # 初始化命令处理器
-    processor = CommandProcessor(db_file)
-    # 清除现有commands表数据
-    if not processor.erase_commands_table():
-        print("❌ Failed to clear commands table")
-        return
-    # 加载航班信息
-    if processor.flight_info:
-        print(f"✅ Flight: {processor.flight_info['flight_number']}/{processor.flight_info['flight_date']}")
-    else:
-        print("⚠️ No flight info loaded")
-    # 读取和解析示例命令
-    try:
-        with open(sample_file, 'r', encoding='utf-8') as f:
-            sample_content = f.read()
-        commands = processor.parse_commands_from_text(sample_content)
-        print(f"📖 Parsed {len(commands)} commands")
-    except Exception as e:
-        print(f"❌ Error parsing sample file: {e}")
-        return
-    # 验证航班信息
-    matching_commands = []
-    non_matching_commands = []
-    for cmd in commands:
-        if processor.validate_flight_info(cmd['flight_number'], cmd['flight_date']):
-            matching_commands.append(cmd)
-        else:
-            non_matching_commands.append(cmd)
-    print(f"✅ Matching: {len(matching_commands)}, Non-matching: {len(non_matching_commands)}")
-    # 在数据库中存储命令
-    try:
-        stats = processor.store_commands(commands)
-        print(f"💾 Stored: {stats['new']} new, {stats['updated']} updated, {stats['skipped']} skipped")
-    except Exception as e:
-        print(f"❌ Error storing commands: {e}")
-        return
-    # 检索存储的命令
-    try:
-        stored_commands = processor.get_all_commands_data()
-        command_types = processor.get_command_types()
-        print(f"📋 Retrieved {len(stored_commands)} commands, Types: {', '.join(command_types)}")
-    except Exception as e:
-        print(f"❌ Error retrieving commands: {e}")
-    # 最终摘要
-    print(f"\n📊 RESULTS: {len(commands)} parsed, {len(matching_commands)} stored")
-    if non_matching_commands:
-        print(f"\n❌ NON-MATCHING COMMANDS:")
-        for cmd in non_matching_commands:
-            print(f"   {cmd['command_type']}: {cmd['command_full']}")
-    print("\n✅ TEST COMPLETED")
+    print("该脚本现在应该作为模块导入，而不是直接运行。")
+    print("用法示例:")
+    print("  from scripts.command_processor import CommandProcessor")
+    print("  import sqlite3")
+    print("  conn = sqlite3.connect(':memory:')")
+    print("  # ... populate your database with flight_info ...")
+    print("  processor = CommandProcessor(conn)")
+    print("  # ... use processor methods ...")
+
+
 if __name__ == "__main__":
     main()
 

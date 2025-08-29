@@ -5,12 +5,10 @@ Sort Records functionality for HBPR UI - Record sorting and filtering interface
 
 import streamlit as st
 import pandas as pd
-import sqlite3
 import re
 import json
 import os
-from scripts.hbpr_info_processor import HbprDatabase
-from ui.common import get_current_database
+from ui.db_management import get_current_database, db_manager, require_database_loaded
 
 
 def load_filter_config():
@@ -72,6 +70,7 @@ def should_exclude_property(prop, excluded_props, excluded_patterns):
     return False
 
 
+@require_database_loaded()
 def show_sort_records():
     """显示记录表格"""
     try:
@@ -81,9 +80,8 @@ def show_sort_records():
             st.error("❌ No database selected.")
             st.info("💡 Please select a database from the sidebar or build one first in the Database Management page.")
             return
-        db = HbprDatabase(selected_db_file)
         st.subheader("📋 Processed Records")
-        conn = sqlite3.connect(db.db_file)
+        conn = db_manager.get_database().get_connection()
         # 查询已处理的记录，包括properties、ckin_msg和asvc_msg字段
         df = pd.read_sql_query("""
             SELECT hbnb_number, boarding_number, name, seat, class, destination,
@@ -92,7 +90,6 @@ def show_sort_records():
             WHERE is_validated = 1
             ORDER BY hbnb_number
         """, conn)
-        conn.close()
         if df.empty:
             st.info("ℹ️ No processed records found.")
             return

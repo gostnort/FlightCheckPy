@@ -5,12 +5,7 @@ Excel处理页面 - 导入Excel文件并根据TKNE和CKIN CCRD生成输出文件
 
 import streamlit as st
 import pandas as pd
-import os
-from ui.common import (
-    apply_global_settings, 
-    db_manager,
-    require_database_loaded
-)
+from ui.db_management import apply_global_settings
 from scripts.excel_processor import (
     process_excel_file as core_process_excel_file,
     generate_output_excel as core_generate_output_excel,
@@ -20,7 +15,6 @@ from scripts.excel_processor import (
 from scripts.api_encoder.gemma3_client import generate_mood_description
 
 
-@require_database_loaded()
 def show_excel_processor():
     """显示Excel处理页面"""
     apply_global_settings()

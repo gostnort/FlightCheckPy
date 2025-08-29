@@ -6,9 +6,6 @@ Database Data Cleaning Utility
 
 import sqlite3
 import re
-import os
-import sys
-from typing import List, Tuple
 
 
 def clean_text_for_database(text: str) -> str:
@@ -39,29 +36,19 @@ def clean_text_for_database(text: str) -> str:
     return cleaned
 
 
-def clean_database_file(db_file: str, backup: bool = True) -> bool:
+def clean_database_connection(conn: sqlite3.Connection) -> bool:
     """
-    清理指定数据库文件中的所有问题数据
+    清理指定数据库连接中的所有问题数据
     Args:
-        db_file (str): 数据库文件路径
-        backup (bool): 是否创建备份
+        conn (sqlite3.Connection): 数据库连接对象
     Returns:
         bool: 是否成功清理
     """
-    if not os.path.exists(db_file):
-        print(f"❌ 数据库文件不存在: {db_file}")
+    if not conn:
+        print("❌ 数据库连接无效")
         return False
     
     try:
-        # 创建备份
-        if backup:
-            backup_file = f"{db_file}.backup_{int(os.path.getmtime(db_file))}"
-            import shutil
-            shutil.copy2(db_file, backup_file)
-            print(f"✅ 已创建备份: {backup_file}")
-        
-        # 连接数据库
-        conn = sqlite3.connect(db_file)
         cursor = conn.cursor()
         
         # 获取所有表名
@@ -144,7 +131,6 @@ def clean_database_file(db_file: str, backup: bool = True) -> bool:
         
         # 提交更改
         conn.commit()
-        conn.close()
         
         print(f"\n🎉 数据库清理完成！")
         print(f"📊 总共清理了 {total_cleaned} 行数据")
@@ -153,56 +139,25 @@ def clean_database_file(db_file: str, backup: bool = True) -> bool:
         
     except Exception as e:
         print(f"❌ 清理数据库时发生错误: {e}")
-        if 'conn' in locals():
-            conn.rollback()
-            conn.close()
+        conn.rollback()
         return False
 
 
 def main():
-    """主函数"""
+    """
+    主函数 - 现在作为一个示例，展示如何使用清理功能。
+    这个脚本现在被设计为从其他模块导入和使用。
+    """
     print("🧹 数据库数据清理工具")
     print("=" * 50)
-    
-    if len(sys.argv) < 2:
-        print("使用方法: python clean_database_data.py <数据库文件路径> [--no-backup]")
-        print("示例: python clean_database_data.py databases/CA984_15AUG25.db")
-        print("选项:")
-        print("  --no-backup    不创建备份文件")
-        return
-    
-    db_file = sys.argv[1]
-    backup = "--no-backup" not in sys.argv
-    
-    if not os.path.exists(db_file):
-        print(f"❌ 数据库文件不存在: {db_file}")
-        return
-    
-    print(f"🎯 目标数据库: {db_file}")
-    print(f"📦 备份模式: {'启用' if backup else '禁用'}")
-    print()
-    
-    # 确认操作
-    if backup:
-        print("⚠️  警告: 此操作将清理数据库中的问题数据")
-        print("💡 建议: 首次运行前请手动备份数据库文件")
-    else:
-        print("⚠️  警告: 此操作将清理数据库中的问题数据，且不会创建备份")
-    
-    confirm = input("\n是否继续？(y/N): ").strip().lower()
-    if confirm not in ['y', 'yes']:
-        print("❌ 操作已取消")
-        return
-    
-    # 执行清理
-    success = clean_database_file(db_file, backup)
-    
-    if success:
-        print("\n✅ 数据库清理成功完成！")
-        print("💡 现在可以尝试导出数据了")
-    else:
-        print("\n❌ 数据库清理失败")
-        print("💡 请检查错误信息并重试")
+    print("该脚本现在应该作为模块导入，而不是直接运行。")
+    print("用法示例:")
+    print("  from scripts.clean_database_data import clean_database_connection")
+    print("  import sqlite3")
+    print("  conn = sqlite3.connect(':memory:')")
+    print("  # ... populate your database ...")
+    print("  success = clean_database_connection(conn)")
+    print("  if success: print('清理成功')")
 
 
 if __name__ == "__main__":
