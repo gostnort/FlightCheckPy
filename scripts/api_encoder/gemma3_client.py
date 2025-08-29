@@ -132,7 +132,7 @@ def generate_mood_description(cash: float, total_amount: float, username: str) -
             f"用十个字以内的中文描述{mood_category}心情。随机种子{random_element}",
             f"十个字以内{mood_category}的心情状态，用中文简短描述。#{random_element}",
             f"工作时{mood_category}的感觉，中文表达，不超过十字。ID{random_element}",
-            f"描述{mood_category}心境，简洁中文，最多十个字。编号{random_element}",
+            f"描述{mood_category}心境，简洁中文，最多十个字。随机种子{random_element}",
         ]
         prompt = random.choice(prompt_styles)
         # 使用多线程实现超时

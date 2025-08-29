@@ -862,10 +862,9 @@ class CHbpr:
         return not any(self.error_msg.values())
 
 
+
 class HbprDatabase:
     """数据库操作类，管理HBPR相关的所有数据库操作"""
-
-
     def __init__(self, db_file: str = None):
         """初始化数据库连接"""
         # Initialize cache before setting db_file

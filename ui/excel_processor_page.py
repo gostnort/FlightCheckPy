@@ -12,8 +12,6 @@ from scripts.excel_processor import (
     process_excel_file as core_process_excel_file,
     generate_output_excel as core_generate_output_excel,
     calculate_cash_and_total_amounts,
-    FLIGHT_NUMBER, 
-    FLIGHT_DATE, 
     format_date_ddmmmyy
 )
 from scripts.api_encoder.gemma3_client import generate_mood_description
@@ -113,14 +111,11 @@ def show_excel_processor():
                             st.warning(f"乘客: {record['name']}, TKNE: {record['tkne']}, CKIN CCRD: {record['ckin_ccrd']}")
                     # 生成输出文件
                     # 使用全局航班信息（由核心处理在首次行设置）
-                    
                     # 计算现金和总金额
                     cash_total, total_amount = calculate_cash_and_total_amounts(df_input)
-                    
                     # 获取当前用户名并生成心情描述
                     username = st.session_state.get('username', 'unknown')
                     mood_description = "平静"  # 默认值
-                    
                     if cash_total > 0 and total_amount > 0 and username != 'unknown':
                         try:
                             mood_description = generate_mood_description(cash_total, total_amount, username)
@@ -135,7 +130,6 @@ def show_excel_processor():
                     # 生成文件名，如果重名则添加数字后缀
                     base_mood = mood_description
                     attempt = 0
-                    
                     while attempt < 100:  # 最多尝试100次
                         if attempt == 0:
                             filename = f"{fn}_{fd}_EMD_{mood_description}.xlsx"
@@ -143,11 +137,9 @@ def show_excel_processor():
                             filename = f"{fn}_{fd}_EMD_{base_mood}{attempt}.xlsx"
                         
                         output_file = get_output_file_path(filename)
-                        
                         # 检查文件是否已存在
                         if not os.path.exists(output_file):
                             break  # 文件不存在，可以使用这个文件名
-                        
                         attempt += 1
                     try:
                         core_generate_output_excel(result_df, unprocessed_records, output_file, cash_total)

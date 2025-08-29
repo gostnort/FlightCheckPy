@@ -63,11 +63,9 @@ def validate_input_columns(df_input: pd.DataFrame) -> None:
     触发失败时抛出 ValueError 异常，消息包含第一个不匹配的位置。
     """
     columns = list(df_input.columns)
-    
     # 添加调试信息
     print(f"DEBUG: 读取到的列名: {columns}")
     print(f"DEBUG: 总列数: {len(columns)}")
-    
     # 处理Unnamed列的情况 - 可能是Excel文件格式问题
     cleaned_columns = []
     for i, col in enumerate(columns):
@@ -91,13 +89,10 @@ def validate_input_columns(df_input: pd.DataFrame) -> None:
                 cleaned_columns.append(str(col))
         else:
             cleaned_columns.append(str(col).strip())
-    
     # 更新DataFrame的列名
     df_input.columns = cleaned_columns
     columns = cleaned_columns
-    
     print(f"DEBUG: 清理后的列名: {columns}")
-    
     for col_idx_1_based, expected_name in EXPECTED_COLUMNS.items():
         pos = col_idx_1_based - 1
         if pos >= len(columns):
@@ -246,8 +241,6 @@ def number_to_english(amount: float) -> str:
         ones = ['', 'ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE']
         teens = ['TEN', 'ELEVEN', 'TWELVE', 'THIRTEEN', 'FOURTEEN', 'FIFTEEN', 'SIXTEEN', 'SEVENTEEN', 'EIGHTEEN', 'NINETEEN']
         tens = ['', '', 'TWENTY', 'THIRTY', 'FORTY', 'FIFTY', 'SIXTY', 'SEVENTY', 'EIGHTY', 'NINETY']
-
-
         def convert_hundreds(n):
             result = ''
             if n >= 100:
@@ -361,16 +354,13 @@ def find_records_by_tkne(db, tkne: str) -> List[Dict]:
     """根据TKNE查找数据库记录"""
     conn = sqlite3.connect(db.db_file)
     cursor = conn.cursor()
-    clean_tkne = str(tkne).replace('.0', '') if tkne else ''
-    query = (
-        """
+    clean_tkne = normalize_tkne(tkne)
+    query = """
         SELECT hbnb_number, name, tkne, ckin_msg 
         FROM hbpr_full_records 
-        WHERE tkne LIKE ? OR tkne LIKE ? OR tkne = ?
-        """
-    )
-    patterns = [f'{clean_tkne}/1', f'{clean_tkne}/2', clean_tkne]
-    cursor.execute(query, patterns)
+        WHERE SUBSTR(tkne, 1, ?) = ? AND LENGTH(tkne) = 15
+    """
+    cursor.execute(query, (len(clean_tkne), clean_tkne))
     records = cursor.fetchall()
     conn.close()
     return [
@@ -382,6 +372,22 @@ def find_records_by_tkne(db, tkne: str) -> List[Dict]:
         }
         for record in records
     ]
+
+
+def normalize_tkne(tkne) -> str:
+    """标准化TKNE输入为字符串"""
+    if tkne is None or tkne == '':
+        return ''
+    # 直接转换为int再转字符串，比字符串替换更可靠
+    try:
+        if isinstance(tkne, (int, float)):
+            return str(int(tkne))
+        else:
+            # 字符串类型，先转float再转int（处理科学计数法）
+            return str(int(float(str(tkne))))
+    except (ValueError, TypeError):
+        # 如果转换失败，回退到字符串处理
+        return str(tkne).replace('.0', '')
 
 
 def create_base_output_row(input_row: pd.Series) -> Dict:
@@ -438,26 +444,22 @@ def process_excel_file(df_input: pd.DataFrame, db, debug: bool = False) -> Tuple
     for _, row in df_input.iterrows():
         # 尝试设置航班号
         if not FLIGHT_NUMBER:
-            flight_number = str(row.get('航班号', '') or '').strip()
+            flight_number = extract_first_line(row.get('航班号', '') or '').strip()
             if flight_number and flight_number != 'nan':
                 FLIGHT_NUMBER = flight_number
-        
         # 尝试设置航班日期
         if FLIGHT_DATE is None:
             try:
-                parsed_date = pd.to_datetime(row.get('航班日期', ''), errors='coerce')
+                parsed_date = pd.to_datetime(extract_first_line(row.get('航班日期', '')), errors='coerce')
                 if parsed_date is not None and not pd.isna(parsed_date):
                     FLIGHT_DATE = parsed_date.date()
             except Exception:
                 pass
-        
         # 如果两个都已经设置，就可以退出循环
         if FLIGHT_NUMBER and FLIGHT_DATE is not None:
             break
-    
     # 添加调试信息
     print(f"DEBUG: 预扫描完成 - FLIGHT_NUMBER: {FLIGHT_NUMBER}, FLIGHT_DATE: {FLIGHT_DATE}")
-    
     output_data: List[Dict] = []
     unprocessed_records: List[Dict] = []
     debug_logs: List[Dict] = []
@@ -515,7 +517,6 @@ def process_excel_file(df_input: pd.DataFrame, db, debug: bool = False) -> Tuple
         })
     # 添加调试信息
     print(f"DEBUG: 函数结束前 - FLIGHT_NUMBER: {FLIGHT_NUMBER}, FLIGHT_DATE: {FLIGHT_DATE}")
-    
     if output_data:
         result_df = pd.DataFrame(output_data)
         return result_df, unprocessed_records, debug_logs
