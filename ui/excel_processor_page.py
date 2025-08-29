@@ -6,8 +6,11 @@ Excel处理页面 - 导入Excel文件并根据TKNE和CKIN CCRD生成输出文件
 import streamlit as st
 import pandas as pd
 import os
-from ui.common import apply_global_settings, get_current_database
-from scripts.hbpr_info_processor import HbprDatabase
+from ui.common import (
+    apply_global_settings, 
+    db_manager,
+    require_database_loaded
+)
 from scripts.excel_processor import (
     process_excel_file as core_process_excel_file,
     generate_output_excel as core_generate_output_excel,
@@ -17,9 +20,11 @@ from scripts.excel_processor import (
 from scripts.api_encoder.gemma3_client import generate_mood_description
 
 
+@require_database_loaded()
 def show_excel_processor():
     """显示Excel处理页面"""
     apply_global_settings()
+    
     # Additional CSS to ensure bottom content is visible
     st.markdown("""
     <style>
@@ -40,13 +45,6 @@ def show_excel_processor():
     }
     </style>
     """, unsafe_allow_html=True)
-    # 检查数据库状态
-    selected_db_file = get_current_database()
-    if not selected_db_file:
-        st.error("❌ 未选择数据库!")
-        st.info("💡 请从侧边栏选择数据库或先创建数据库。")
-        return
-    db = HbprDatabase(selected_db_file)
     # 标题与调试开关同一行
     col_uploader, col_debug = st.columns([3, 1])
     with col_uploader:
@@ -84,7 +82,7 @@ def show_excel_processor():
             if st.button("🚀 开始处理", type="primary", use_container_width=True):
                 with st.spinner("正在处理Excel文件..."):
                     try:
-                        result_df, unprocessed_records, debug_logs = core_process_excel_file(df_input, db, debug=debug_on)
+                        result_df, unprocessed_records, debug_logs = core_process_excel_file(df_input, debug=debug_on)
                     except ValueError as ve:
                         st.error(f"❌ 数据校验失败: {str(ve)}")
                         return

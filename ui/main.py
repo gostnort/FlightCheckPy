@@ -14,12 +14,17 @@ project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 # Project-specific imports (after path setup)
-from ui.common import get_icon_base64, apply_global_settings, get_sorted_database_files
+from ui.common import (
+    get_icon_base64, 
+    apply_global_settings, 
+    get_sorted_database_files,
+    enhanced_database_status_widget,
+    create_database_selectbox
+)
 from ui.login_page import show_login_page
 from ui.home_page import show_home_page
 from ui.database_page import show_database_management
 from ui.settings_page import show_settings
-from scripts.hbpr_info_processor import HbprDatabase
 
 
 def setup_navigation_highlighting():
@@ -115,59 +120,31 @@ def main():
     setup_navigation_highlighting()
     # Sidebar navigation
     st.sidebar.title("📋 Navigation")
-    # Get database files (including custom folder if set)
+    # 使用增强的数据库选择器（自动加载到内存）
     custom_folder = st.session_state.get('custom_db_folder', None)
-    db_files = get_sorted_database_files(sort_by='creation_time', reverse=True, custom_folder=custom_folder)
-    if db_files:
-        # Create options with flight information and location indicators
-        db_options = []
-        for db_file in db_files:
-            try:
-                temp_db = HbprDatabase(db_file)
-                flight_info = temp_db.get_flight_info()
-                base_name = os.path.basename(db_file)
-                # Determine location indicator
-                if custom_folder and db_file.startswith(custom_folder):
-                    location_indicator = "📁"  # Custom folder
-                elif db_file.startswith("databases/"):
-                    location_indicator = "🏠"  # Default databases folder
-                else:
-                    location_indicator = "📄"  # Root directory 
-                if flight_info:
-                    display_name = f"{location_indicator} {base_name}"
-                else:
-                    display_name = f"{location_indicator} Unknown Flight - {base_name}"
-            except Exception:
-                base_name = os.path.basename(db_file)
-                # Determine location indicator for error case
-                if custom_folder and db_file.startswith(custom_folder):
-                    location_indicator = "📁"
-                elif db_file.startswith("databases/"):
-                    location_indicator = "🏠"
-                else:
-                    location_indicator = "📄"
-                display_name = f"{location_indicator} Database - {base_name}"
-            db_options.append((display_name, db_file))
-        # Sidebar selectbox
-        selected_db_display = st.sidebar.selectbox(
-            "Select Database:",
-            options=[opt[0] for opt in db_options],
-            index=0,
-            key="global_db_select"
-        )
-        # Get selected database file
-        selected_db_file = None
-        for display_name, db_file in db_options:
-            if display_name == selected_db_display:
-                selected_db_file = db_file
-                break
+    
+    # 在侧边栏中使用自定义的数据库选择器
+    with st.sidebar:
+        # 创建一个临时容器来包装选择器
+        container = st.container()
+        with container:
+            selected_db_file, db_files = create_database_selectbox(
+                label="💾 选择数据库:",
+                key="global_db_select",
+                default_index=0,
+                show_flight_info=True,
+                custom_folder=custom_folder
+            )
+    
+    if not selected_db_file:
+        st.sidebar.warning("⚠️ 未找到数据库")
+        st.sidebar.info("💡 请先创建数据库")
     else:
-        selected_db_file = None
-        st.sidebar.warning("⚠️ No databases found")
-        st.sidebar.info("💡 Create a database first")
+        # 显示增强的数据库状态（包含内存状态和保存功能）
+        enhanced_database_status_widget()
     # Store selected database in session state for all pages to use
     st.session_state.selected_database = selected_db_file
-    st.session_state.available_databases = db_files
+    st.session_state.available_databases = db_files if selected_db_file else []
     # Native Windows folder picker button and refresh button
     col1, col2, col3 = st.sidebar.columns([3,1,1])
     with col1:

@@ -18,6 +18,9 @@ import sqlite3
 from typing import Dict, List, Optional, Tuple
 from datetime import date
 import pandas as pd
+import sys
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'ui'))
+from ui.common import db_manager, GlobalDatabaseManager
 
 # =============================
 # 数据源列名与固定列序号定义（1-based）
@@ -323,10 +326,12 @@ def calculate_cash_and_total_amounts(df_input: pd.DataFrame) -> Tuple[float, flo
     return cash_total, total_amount
 
 
-def get_all_ckin_ccrd_hbnb(db) -> List[Dict]:
+def get_all_ckin_ccrd_hbnb() -> List[Dict]:
     """查询所有包含CKIN CCRD的HBNB记录"""
-    conn = sqlite3.connect(db.db_file)
+    db = db_manager.get_database()
+    conn = db.get_connection()
     cursor = conn.cursor()
+    
     query = (
         """
         SELECT hbnb_number, name, tkne, ckin_msg 
@@ -338,7 +343,7 @@ def get_all_ckin_ccrd_hbnb(db) -> List[Dict]:
     )
     cursor.execute(query)
     records = cursor.fetchall()
-    conn.close()
+    
     return [
         {
             'hbnb_number': record[0],
@@ -350,11 +355,16 @@ def get_all_ckin_ccrd_hbnb(db) -> List[Dict]:
     ]
 
 
-def find_records_by_tkne(db, tkne: str) -> List[Dict]:
+def find_records_by_tkne(tkne: str) -> List[Dict]:
     """根据TKNE查找数据库记录"""
-    conn = sqlite3.connect(db.db_file)
-    cursor = conn.cursor()
     clean_tkne = normalize_tkne(tkne)
+    if not clean_tkne:
+        return []
+    
+    db = db_manager.get_database()
+    conn = db.get_connection()
+    cursor = conn.cursor()
+    
     query = """
         SELECT hbnb_number, name, tkne, ckin_msg 
         FROM hbpr_full_records 
@@ -362,7 +372,7 @@ def find_records_by_tkne(db, tkne: str) -> List[Dict]:
     """
     cursor.execute(query, (len(clean_tkne), clean_tkne))
     records = cursor.fetchall()
-    conn.close()
+    
     return [
         {
             'hbnb_number': record[0],
@@ -407,7 +417,8 @@ def create_base_output_row(input_row: pd.Series) -> Dict:
     global FLIGHT_DATE, FLIGHT_NUMBER
     if FLIGHT_DATE is None or FLIGHT_DATE == '':
         try:
-            parsed_date = pd.to_datetime(input_row.get('航班日期', ''), errors='coerce')
+            first_line_date = extract_first_line(input_row.get('航班日期', ''))
+            parsed_date = pd.to_datetime(first_line_date, errors='coerce')
             if parsed_date is not None and not pd.isna(parsed_date):
                 FLIGHT_DATE = parsed_date.date()
         except Exception:
@@ -415,7 +426,16 @@ def create_base_output_row(input_row: pd.Series) -> Dict:
     if not FLIGHT_NUMBER:
         FLIGHT_NUMBER = str(input_row.get('航班号', '') or '').strip()
     # 输出列赋值
-    output_row['G'] = str(input_row.get('航班日期', ''))
+    # G列写入第一行日期，统一格式为YYYY-MM-DD
+    first_line_date = extract_first_line(input_row.get('航班日期', ''))
+    try:
+        parsed_first = pd.to_datetime(first_line_date, errors='coerce')
+        if parsed_first is not None and not pd.isna(parsed_first):
+            output_row['G'] = parsed_first.date().strftime('%Y-%m-%d')
+        else:
+            output_row['G'] = first_line_date
+    except Exception:
+        output_row['G'] = first_line_date
     output_row['J'] = extract_first_line(input_row.get('航班号', ''))
     output_row['K'] = str(input_row.get('实收金额', ''))
     product_type = str(input_row.get('产品类型', ''))
@@ -430,7 +450,7 @@ def create_base_output_row(input_row: pd.Series) -> Dict:
     return output_row
 
 
-def process_excel_file(df_input: pd.DataFrame, db, debug: bool = False) -> Tuple[Optional[pd.DataFrame], List[Dict], List[Dict]]:
+def process_excel_file(df_input: pd.DataFrame, debug: bool = False) -> Tuple[Optional[pd.DataFrame], List[Dict], List[Dict]]:
     """处理输入数据，返回结果表、未处理记录、调试日志（按行）。
     注：全局变量 FLIGHT_NUMBER/FLIGHT_DATE 会在处理期间被设置，可供其他地方直接使用。
     """
@@ -458,12 +478,18 @@ def process_excel_file(df_input: pd.DataFrame, db, debug: bool = False) -> Tuple
         # 如果两个都已经设置，就可以退出循环
         if FLIGHT_NUMBER and FLIGHT_DATE is not None:
             break
+    # 如果仍未能解析到日期，使用今天
+    if FLIGHT_DATE is None:
+        try:
+            FLIGHT_DATE = date.today()
+        except Exception:
+            pass
     # 添加调试信息
     print(f"DEBUG: 预扫描完成 - FLIGHT_NUMBER: {FLIGHT_NUMBER}, FLIGHT_DATE: {FLIGHT_DATE}")
     output_data: List[Dict] = []
     unprocessed_records: List[Dict] = []
     debug_logs: List[Dict] = []
-    hbnb_list = get_all_ckin_ccrd_hbnb(db)
+    hbnb_list = get_all_ckin_ccrd_hbnb()
     void_emds: set[str] = set()
     for _, row in df_input.iterrows():
         operation = str(row.get('操作', '')).strip()
@@ -477,7 +503,7 @@ def process_excel_file(df_input: pd.DataFrame, db, debug: bool = False) -> Tuple
             tkne = str(row.get('关联ET', '')).strip()
             if not tkne or tkne == 'nan':
                 continue
-            hbnb_records = find_records_by_tkne(db, tkne)
+            hbnb_records = find_records_by_tkne(tkne)
             output_row = create_base_output_row(row)
             current_emd = convert_to_string_no_decimal(str(row.get('EMD', '')))
             if current_emd in void_emds:
@@ -578,19 +604,20 @@ def generate_output_excel(result_df: pd.DataFrame, unprocessed_records: List[Dic
         flight_digits = re.findall(r'\d+', fn_for_digits)
         if flight_digits:
             ws_sum.cell(row=4, column=11, value=flight_digits[0])
-    # 将SUM中C14写为航班日期（来自结果表第7列G）
+    # 将SUM中C14写为航班日期：优先全局FLIGHT_DATE，否则用G列第一条，否则今天
+    flight_date_str = None
     if FLIGHT_DATE is not None:
-        ws_sum.cell(row=14, column=3, value=FLIGHT_DATE.strftime('%Y-%m-%d'))
-    else:
-        # 回退：从结果数据G列尝试
-        flight_date_cell_value = None
-        if 'G' in result_df.columns and len(result_df) > 0:
-            for _, r in result_df.iterrows():
-                candidate = r.get('G', '')
-                if candidate is not None and str(candidate).strip() and str(candidate).strip() != 'nan':
-                    flight_date_cell_value = str(candidate).strip()
-                    break
-        ws_sum.cell(row=14, column=3, value=flight_date_cell_value or '')
+        flight_date_str = FLIGHT_DATE.strftime('%Y-%m-%d')
+    elif 'G' in result_df.columns and len(result_df) > 0:
+        first_g = str(result_df.iloc[0].get('G', '')).strip()
+        if first_g and first_g != 'nan':
+            flight_date_str = first_g
+    if not flight_date_str:
+        try:
+            flight_date_str = date.today().strftime('%Y-%m-%d')
+        except Exception:
+            flight_date_str = ''
+    ws_sum.cell(row=14, column=3, value=flight_date_str)
     if unprocessed_records:
         row_idx = 15
         for record in unprocessed_records:
