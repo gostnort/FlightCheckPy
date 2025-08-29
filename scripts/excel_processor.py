@@ -11,7 +11,8 @@ Excel处理核心逻辑模块
 """
 
 import re
-from typing import Dict
+import os
+from typing import Dict, Optional, Tuple, List
 from datetime import date
 import pandas as pd
 from ui.db_management import db_manager

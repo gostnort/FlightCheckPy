@@ -6,7 +6,8 @@ Add/Edit Record functionality for HBPR UI - Single record editing and validation
 import streamlit as st
 import pandas as pd
 import re
-from scripts.hbpr_info_processor import CHbpr, HbprDatabase
+import traceback
+from scripts.hbpr_info_processor import CHbpr
 from scripts.hbpr_list_processor import HBPRProcessor
 from ui.db_management import get_current_database, db_manager, require_database_loaded
 

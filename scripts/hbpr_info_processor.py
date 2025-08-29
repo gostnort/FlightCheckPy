@@ -12,6 +12,7 @@ import time
 from typing import Any, Optional
 from .general_func import CArgs
 from .data_cleaner import clean_hbpr_record_content
+import pandas as pd
 
 
 class CHbpr:

@@ -5,6 +5,7 @@ Excel处理页面 - 导入Excel文件并根据TKNE和CKIN CCRD生成输出文件
 
 import streamlit as st
 import pandas as pd
+import os
 from ui.db_management import apply_global_settings
 from scripts.excel_processor import (
     process_excel_file as core_process_excel_file,
