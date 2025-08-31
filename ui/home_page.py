@@ -20,88 +20,78 @@ def show_home_page():
     if 'refresh_home' in st.session_state and st.session_state.refresh_home:
         st.session_state.refresh_home = False
         st.rerun()
-    col1, col2 = st.columns([3,2])
+    messages = []
+    try:# 检查数据库状态
+        # 获取当前选中的数据库
+        selected_db_file = get_current_database()
+        if not selected_db_file:
+            st.error("❌ No database selected!")
+            st.info("💡 Please select a database from the sidebar or build one first using the Database Management page.")
+            return
+        # 使用内存数据库
+        db = db_manager.get_database()
+        messages.append(f"DB connected: {os.path.basename(st.session_state.get('current_db_name',''))}")
+    except Exception as e:
+        st.error(f"❌ No database found: {str(e)}")
+        st.info("💡 Please build a database first using the Database Management page.")
+    col1, col2 = st.columns(2)
     with col1:
-        st.subheader("📈 System Overview")
-        # 检查数据库状态
-        try:
-            # 获取当前选中的数据库
-            selected_db_file = get_current_database()
-            if not selected_db_file:
-                st.error("❌ No database selected!")
-                st.info("💡 Please select a database from the sidebar or build one first using the Database Management page.")
-                return
-            # 使用内存数据库
-            db = db_manager.get_database()
-            st.success(f"DB connected: {os.path.basename(st.session_state.get('current_db_name',''))}")
-            # Display main statistics using reusable component
-            all_stats = get_and_display_main_statistics(db)
-            
-            # Extract data for additional sections
-            missing_numbers = all_stats.get('missing_numbers', []) if all_stats else []
-            # 显示缺失号码表格
-            if missing_numbers:
-                st.subheader("🚫 Missing HBNB Numbers")
-                # 分页显示缺失号码
-                items_per_page = 20
-                total_pages = (len(missing_numbers) + items_per_page - 1) // items_per_page
-                if total_pages > 1:
-                    page = st.selectbox("Page:", range(1, total_pages + 1), key="missing_page")
-                    start_idx = (page - 1) * items_per_page
-                    end_idx = min(start_idx + items_per_page, len(missing_numbers))
-                    page_missing = missing_numbers[start_idx:end_idx]
-                else:
-                    page_missing = missing_numbers
-                # 创建缺失号码的DataFrame
-                missing_df = pd.DataFrame({
-                    'Missing HBNB Numbers': page_missing
-                })
-                st.dataframe(missing_df, use_container_width=True)
-                if total_pages > 1:
-                    st.info(f"Showing page {page} of {total_pages} ({len(page_missing)} of {len(missing_numbers)} missing numbers)")
-            else:
-                st.success("✅ No missing HBNB numbers found!")
-        except Exception as e:
-            st.error(f"❌ No database found: {str(e)}")
-            st.info("💡 Please build a database first using the Database Management page.")
+        # Display main statistics using reusable component
+        all_stats = get_and_display_main_statistics(db)
     with col2:
-        st.subheader("🚀 Quick Actions")
-        if st.button("✏️ Add/Edit HBPR Record", use_container_width=True):
-            st.session_state.current_page = "🔍 Process Records"
-            st.session_state.process_records_tab = "✏️ Add/Edit Record"
-            st.rerun()
-        if st.button("✒️ Add/Edit Command", use_container_width=True):
-            st.session_state.current_page = "📋 Other Commands"
-            st.session_state.command_analysis_tab = "✒️ Add/Edit Data"
-            st.rerun()
-        if st.button("🔄 Refresh Statistics", use_container_width=True):
-            # 强制刷新所有统计信息
-            # Caching is disabled for memory db, so this button just reruns.
-            st.rerun()
+        st.subheader("📈 System Overview")
         # 航班摘要信息折叠块
-        try:
-            summary = get_home_summary()
-            title = f"{summary['flight_number']} / {summary['flight_date']}"
-            with st.expander(title, expanded=True):
-                total_line = f"TOTAL {summary['total_accepted']} + {summary['infant_count']} INF"
-                j_y_line = f"J_{summary['accepted_business']} / Y_{summary['accepted_economy']}"
-                ratio_display = f"{summary['ratio']}%" if summary['ratio'] is not None else "N/A"
-                ratio_line = f"RATIO: {ratio_display}"
-                id_line = f"ID_J: {summary['id_j']}  ID_Y: {summary['id_y']}"
-                noshow_line = f"NOSHOW: J_{summary['noshow_j']} / Y_{summary['noshow_y']}"
-                inad_line = f"INAD: {summary['inad_total']}"
-                msg = "\n".join([
-                    title,
-                    total_line,
-                    j_y_line,
-                    ratio_line,
-                    id_line,
-                    noshow_line,
-                    inad_line,
-                ])
-                st.code(msg)
-        except Exception as e:
-            st.info(f"Summary not available: {str(e)}")
+        summary = get_home_summary()
+        title = f"{summary['flight_number']} / {summary['flight_date']}"
+        with st.expander(title, expanded=True):
+            total_line = f"TOTAL {summary['total_accepted']} + {summary['infant_count']} INF"
+            j_y_line = f"J_{summary['accepted_business']} / Y_{summary['accepted_economy']}"
+            ratio_display = f"{summary['ratio']}%" if summary['ratio'] is not None else "N/A"
+            ratio_line = f"RATIO: {ratio_display}"
+            id_line = f"ID_J: {summary['id_j']}  ID_Y: {summary['id_y']}"
+            noshow_line = f"NOSHOW: J_{summary['noshow_j']} / Y_{summary['noshow_y']}"
+            inad_line = f"INAD: {summary['inad_total']}"
+            msg = "\n".join([
+                title,
+                total_line,
+                j_y_line,
+                ratio_line,
+                id_line,
+                noshow_line,
+                inad_line,
+            ])
+            st.code(msg)
+    # 显示缺失号码表格
+    missing_numbers = all_stats.get('missing_numbers', []) if all_stats else []
+    if missing_numbers:
+        st.subheader("🚫 Missing HBNB Numbers")
+        # 分页显示缺失号码
+        items_per_page = 20
+        total_pages = (len(missing_numbers) + items_per_page - 1) // items_per_page
+        if total_pages > 1:
+            page = st.selectbox("Page:", range(1, total_pages + 1), key="missing_page")
+            start_idx = (page - 1) * items_per_page
+            end_idx = min(start_idx + items_per_page, len(missing_numbers))
+            page_missing = missing_numbers[start_idx:end_idx]
+        else:
+            page_missing = missing_numbers
+        # 创建缺失号码的DataFrame
+        missing_df = pd.DataFrame({
+            'Missing HBNB Numbers': page_missing
+        })
+        st.dataframe(missing_df, use_container_width=True)
+        if total_pages > 1:
+            st.info(f"Showing page {page} of {total_pages} ({len(page_missing)} of {len(missing_numbers)} missing numbers)")
+    else:
+        messages.append("✅ No missing HBNB numbers found!")
+    # 显示消息
+    msg_length = len(messages)
+    if msg_length > 0:
+        # 根据消息数量动态创建列
+        cols = st.columns(msg_length)
+        for i, message in enumerate(messages):
+            with cols[i]:
+                st.success(message)
     st.markdown("---")
     # 最近活动
     st.subheader("📝 导航指南")

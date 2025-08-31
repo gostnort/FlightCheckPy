@@ -221,7 +221,7 @@ def main():
         # Only show title on homepage
         st.markdown("""
         <div style="display: flex; align-items: center; gap: 10px;">
-            <img src="data:image/x-icon;base64,{}" width="128" height="128">
+            <img src="data:image/x-icon;base64,{}" width="64" height="64">
             <h3 style="margin: 0;">Flight Check 0.62 --- Python</h3>
         </div>
         """.format(get_icon_base64("resources/fcp.ico")), unsafe_allow_html=True)

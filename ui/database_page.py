@@ -6,7 +6,10 @@ Database management page for HBPR UI - Database operations and maintenance
 import streamlit as st
 import pandas as pd
 import sqlite3
+import os
+import traceback
 from ui.db_management import apply_global_settings, db_manager, save_memory_database_to_file
+from scripts.hbpr_list_processor import HBPRProcessor
 
 
 def show_database_management():
@@ -14,29 +17,10 @@ def show_database_management():
     # Apply settings
     apply_global_settings()
     
-    # Temporarily disable the build tab, as it requires a file-based approach not suitable for memory DB
-    # tab1, tab2, tab3, tab4 = st.tabs(["📥 Build Database", "📈 Statistics", "🔍 Database Info", "🧹 Maintenance"])
-    tab2, tab3, tab4 = st.tabs(["📈 Statistics", "🔍 Database Info", "🧹 Maintenance"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📥 Build Database", "📈 Statistics", "🔍 Database Info", "🧹 Maintenance"])
     
-    # with tab1:
-    #     st.subheader("📥 Build Database from HBPR List")
-    #     # 文件选择
-    #     uploaded_file = st.file_uploader(
-    #         "Choose HBPR list file:", 
-    #         type=['txt'],
-    #         help="Upload your sample_hbpr_list.txt file"
-    #     )
-    #     if uploaded_file is not None:
-    #         # 保存上传的文件
-    #         file_path = "uploaded_hbpr_list.txt"
-    #         with open(file_path, "wb") as f:
-    #             f.write(uploaded_file.getbuffer())
-    #         # Track the uploaded file path for cleanup
-    #         st.session_state.uploaded_file_path = file_path
-    #         st.success("✅ File uploaded successfully!")
-    #     # 使用上传的文件
-    #     if uploaded_file and st.button("🔨 Build from Uploaded File", use_container_width=True):
-    #         build_database_ui("uploaded_hbpr_list.txt")
+    with tab1:
+        build_database_ui()
 
     with tab2:
         show_statistics()
@@ -48,10 +32,64 @@ def show_database_management():
         show_database_maintenance()
 
 
-def build_database_ui(input_file):
-    """构建数据库的UI函数 - This is deprecated with memory database."""
-    st.warning("Database building is handled by `hbpr_list_processor.py` and direct file uploads.")
-    st.info("This feature is temporarily disabled.")
+def build_database_ui():
+    """构建数据库的UI函数"""
+    st.subheader("📥 Build Database from HBPR List")
+
+    uploaded_file = st.file_uploader(
+        "Choose HBPR list file:", 
+        type=['txt'],
+        help="Upload your HBPR list text file"
+    )
+
+    if uploaded_file is not None:
+        file_content = uploaded_file.getvalue().decode("utf-8")
+        
+        st.subheader("Enter New Database Filename")
+        db_name_input = st.text_input(
+            "New DB Filename (e.g., CA984_25JUL25.db):", 
+            "",
+            help="Filename must follow the pattern FLTNUM_DDMMMYY.db"
+        )
+
+        if st.button("🔨 Build and Save Database", use_container_width=True):
+            if db_name_input and db_name_input.endswith(".db"):
+                db_folder = "databases"
+                if not os.path.exists(db_folder):
+                    os.makedirs(db_folder)
+                
+                new_db_path = os.path.join(db_folder, db_name_input)
+
+                try:
+                    with st.spinner(f"Building new database '{db_name_input}'..."):
+                        # 1. Create a new temporary in-memory database
+                        temp_conn = sqlite3.connect(":memory:")
+                        
+                        # 2. Process the uploaded file into the temp in-memory DB
+                        processor = HBPRProcessor(temp_conn)
+                        processor.create_tables_if_not_exist()
+                        processor.process(file_content)
+                        
+                        # 3. Save the in-memory content to the new file
+                        backup_conn = sqlite3.connect(new_db_path)
+                        temp_conn.backup(backup_conn)
+                        backup_conn.close()
+                        temp_conn.close()
+
+                        st.success(f"✅ Successfully built and saved database to '{new_db_path}'")
+                        st.info("🔄 Refreshing database list...")
+                        
+                        # Optionally, switch to the new DB immediately
+                        st.session_state.current_db_path = new_db_path
+                        st.session_state.current_db_name = os.path.basename(new_db_path)
+                        db_manager.load_database(new_db_path)
+                        st.rerun()
+
+                except Exception as e:
+                    st.error(f"❌ Error building database: {str(e)}")
+                    st.text(traceback.format_exc())
+            else:
+                st.error("❌ Please enter a valid database filename ending with .db")
 
 
 def show_database_info():
