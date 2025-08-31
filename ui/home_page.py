@@ -34,12 +34,12 @@ def show_home_page():
     except Exception as e:
         st.error(f"❌ No database found: {str(e)}")
         st.info("💡 Please build a database first using the Database Management page.")
-    col1, col2 = st.columns(2)
+    col1, col2 = st.columns([2,1])
     with col1:
         # Display main statistics using reusable component
         all_stats = get_and_display_main_statistics(db)
     with col2:
-        st.subheader("📈 System Overview")
+        st.subheader("📈 航班摘要")
         # 航班摘要信息折叠块
         summary = get_home_summary()
         title = f"{summary['flight_number']} / {summary['flight_date']}"

@@ -920,10 +920,10 @@ def database_save_status_widget():
     图标：🗃️ 已保存 / 💣 未保存
     """
     last_save_time = st.session_state.get('last_db_save_time')
-    current_name = st.session_state.get('current_db_name', '未加载')
+    current_name = str(st.session_state.get('current_db_name', '未加载'))[:-3]
     if last_save_time:
         icon = "🗃️"
-        msg = f"{icon} 已保存 {last_save_time.strftime('%H:%M:%S')}"
+        msg = f"{icon} {current_name}_{last_save_time.strftime('%H:%M')}"
         st.sidebar.success(msg)
     else:
         icon = "💣"
