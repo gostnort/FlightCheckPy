@@ -86,7 +86,7 @@ def create_navigation_button(page_name, current_page, button_text):
 def main():
     """Main UI function"""
     st.set_page_config(
-        page_title="Flight Check Py-0.62",
+        page_title="Flight Check Py-0.62.1",
         page_icon="resources/fcp.ico",
         layout="wide",
         initial_sidebar_state="expanded"
@@ -222,7 +222,7 @@ def main():
         st.markdown("""
         <div style="display: flex; align-items: center; gap: 10px;">
             <img src="data:image/x-icon;base64,{}" width="64" height="64">
-            <h3 style="margin: 0;">Flight Check 0.62 --- Python</h3>
+            <h3 style="margin: 0;">Flight Check 0.62.1 --- Python</h3>
         </div>
         """.format(get_icon_base64("resources/fcp.ico")), unsafe_allow_html=True)
         st.markdown("---")
