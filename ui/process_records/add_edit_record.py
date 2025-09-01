@@ -9,7 +9,7 @@ import re
 import traceback
 from scripts.hbpr_info_processor import CHbpr
 from scripts.hbpr_list_processor import HBPRProcessor
-from ui.db_management import get_current_database, db_manager, require_database_loaded
+from ui.db_management import get_current_database, db_manager, require_database_loaded, enable_auto_save_on_change
 
 
 @require_database_loaded()
@@ -605,12 +605,15 @@ def _process_converted_pr_as_hbpr(db, hbpr_content, target_hbnb):
         # 备份原有记录
         backup_success = db.auto_backup_before_replace(target_hbnb)
         if backup_success:
-            st.info(f"📦 Auto-backed up original record for HBNB {target_hbnb}")
+            # st.info(f"📦 Auto-backed up original record for HBNB {target_hbnb}")
+            pass
         # 更新记录内容
         db.create_full_record(target_hbnb, hbpr_content)
-        st.success(f"✅ Updated HBNB {target_hbnb} with converted HBPR content")
+        # st.success(f"✅ Updated HBNB {target_hbnb} with converted HBPR content")
         # 更新验证结果
         db.update_with_chbpr_results(chbpr)
+        enable_auto_save_on_change() # 触发自动保存
+        st.rerun()
         # 更新missing_numbers表
         _update_missing_numbers(db)
         # 设置刷新标志
@@ -690,6 +693,8 @@ def _process_replace_record(db, hbpr_content):
                 return
             # 使用CHbpr处理转换后的内容
             _process_converted_pr_as_hbpr(db, hbpr_content, matched_hbnb)
+            enable_auto_save_on_change() # 触发自动保存
+            st.rerun()
         except Exception as e:
             st.error(f"❌ Error processing PR record: {str(e)}")
             st.error(traceback.format_exc())
@@ -722,6 +727,8 @@ def _process_replace_record(db, hbpr_content):
                 return
             # Process the record
             _process_record_common(db, chbpr, corrected_content, is_duplicate=False)
+            enable_auto_save_on_change() # 触发自动保存
+            st.rerun()
         except Exception as e:
             st.error(f"❌ Error processing full record: {str(e)}")
             st.error(traceback.format_exc())
@@ -775,9 +782,11 @@ def _process_duplicate_record(db, hbpr_content):
             chbpr.run(hbpr_content)
             # 创建重复记录
             db.create_duplicate_record(matched_hbnb, matched_hbnb, hbpr_content)
-            st.success(f"✅ Created duplicate record for HBNB {matched_hbnb} (converted from PR)")
+            # st.success(f"✅ Created duplicate record for HBNB {matched_hbnb} (converted from PR)")
             # 更新验证结果
             db.update_with_chbpr_results(chbpr)
+            enable_auto_save_on_change() # 触发自动保存
+            st.rerun()
             # 设置刷新标志
             st.session_state.refresh_home = True
             # 显示创建信息和处理结果
@@ -823,15 +832,18 @@ def _process_duplicate_record(db, hbpr_content):
                 return
             # 创建重复记录
             db.create_duplicate_record(chbpr.HbnbNumber, chbpr.HbnbNumber, corrected_content)
-            st.success(f"✅ Created duplicate record for HBNB {chbpr.HbnbNumber}")
+            # st.success(f"✅ Created duplicate record for HBNB {chbpr.HbnbNumber}")
             # 更新验证结果
             db.update_with_chbpr_results(chbpr)
+            enable_auto_save_on_change() # 触发自动保存
+            st.rerun()
             # 更新missing_numbers表
             _update_missing_numbers(db)
-            st.success("✅ Duplicate record processed and stored!")
+            # st.success("✅ Duplicate record processed and stored!")
             display_processing_results(chbpr)
             # 设置刷新标志
             st.session_state.refresh_home = True
+            st.rerun()
         except Exception as e:
             st.error(f"❌ Error processing duplicate record: {str(e)}")
             st.error(traceback.format_exc())
@@ -856,34 +868,39 @@ def _process_record_common(db, chbpr, hbpr_content, is_duplicate=False):
             try:
                 backup_success = db.auto_backup_before_replace(chbpr.HbnbNumber)
                 if backup_success:
-                    st.info(f"📦 Auto-backed up original record for HBNB {chbpr.HbnbNumber} with original timestamp")
+                    # st.info(f"📦 Auto-backed up original record for HBNB {chbpr.HbnbNumber} with original timestamp")
+                    pass
                 else:
-                    st.warning(f"⚠️ Original record NOT exist for HBNB {chbpr.HbnbNumber}")
+                    # st.warning(f"⚠️ Original record NOT exist for HBNB {chbpr.HbnbNumber}")
+                    pass
             except Exception as e:
                 st.warning(f"⚠️ Backup failed for HBNB {chbpr.HbnbNumber}: {str(e)}")
         if hbnb_exists['simple_record']:
             # 如果存在简单记录，删除它并创建完整记录
             db.delete_simple_record(chbpr.HbnbNumber)
-            st.info(f"🔄 Replaced simple record for HBNB {chbpr.HbnbNumber}")
+            # st.info(f"🔄 Replaced simple record for HBNB {chbpr.HbnbNumber}")
         # 创建或更新完整记录
         db.create_full_record(chbpr.HbnbNumber, hbpr_content)
         if hbnb_exists['full_record']:
-            st.success(f"✅ Replaced full record for HBNB {chbpr.HbnbNumber} (original backed up)")
+            # st.success(f"✅ Replaced full record for HBNB {chbpr.HbnbNumber} (original backed up)")
+            pass
         else:
-            st.success(f"✅ Updated record for HBNB {chbpr.HbnbNumber}")
+            # st.success(f"✅ Updated record for HBNB {chbpr.HbnbNumber}")
+            pass
     else:
         # 创建新的完整记录
         db.create_full_record(chbpr.HbnbNumber, hbpr_content)
-        st.success(f"✅ Created new full record for HBNB {chbpr.HbnbNumber}")
+        # st.success(f"✅ Created new full record for HBNB {chbpr.HbnbNumber}")
     # 更新验证结果
     db.update_with_chbpr_results(chbpr)
     # 更新missing_numbers表
     _update_missing_numbers(db)
-    st.success("✅ Full record processed and stored!")
-    st.info("ℹ️ You can now clear the input box manually or enter new content.")
+    # st.success("✅ Full record processed and stored!")
+    # st.info("ℹ️ You can now clear the input box manually or enter new content.")
     display_processing_results(chbpr)
     # 设置刷新标志
     st.session_state.refresh_home = True
+    st.rerun()
 
 
 def _show_processing_info(db, hbnb_number, hbnb_exists):
@@ -935,7 +952,7 @@ def _update_missing_numbers(db):
     """更新missing_numbers表"""
     try:
         db.update_missing_numbers_table()
-        st.info("🔄 Updated missing numbers table")
+        # st.info("🔄 Updated missing numbers table")
     except Exception as e:
         st.warning(f"⚠️ Warning: Could not update missing numbers table: {str(e)}")
 

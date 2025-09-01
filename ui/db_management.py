@@ -266,20 +266,8 @@ def create_database_selectbox(label="Select database:", key=None, default_index=
         for db_file in db_files:
             base_name = os.path.basename(db_file)
             
-            # 添加位置指示器
-            if custom_folder and db_file.startswith(custom_folder):
-                location_indicator = "📁"  # 自定义文件夹
-            elif db_file.startswith("databases/"):
-                location_indicator = "🏠"  # 默认databases文件夹
-            else:
-                location_indicator = "📄"  # 根目录
-            
-            # 尝试从当前内存数据库获取航班信息
-            current_memory_db_name = st.session_state.get('current_db_name', '')
-            flight_info = None
-            
-            # 构建显示名称（只显示文件名，需求不再显示其他信息）
-            display_name = f"{location_indicator} {base_name}"
+            # 构建显示名称（只显示文件名）
+            display_name = base_name
             
             db_options.append((display_name, db_file))
         
@@ -867,7 +855,7 @@ def auto_save_memory_database():
         target_conn.close()
         
         # 更新保存状态
-        st.session_state['last_auto_save_time'] = datetime.now()
+        st.session_state['last_db_save_time'] = datetime.now()
         st.session_state['auto_save_count'] = st.session_state.get('auto_save_count', 0) + 1
         
     except Exception as e:
@@ -920,7 +908,13 @@ def database_save_status_widget():
     图标：🗃️ 已保存 / 💣 未保存
     """
     last_save_time = st.session_state.get('last_db_save_time')
-    current_name = str(st.session_state.get('current_db_name', '未加载'))[:-3]
+    
+    current_name_full = st.session_state.get('current_db_name', '未加载')
+    if current_name_full.endswith('.db'):
+        current_name = current_name_full[:-3]
+    else:
+        current_name = current_name_full
+
     if last_save_time:
         icon = "🗃️"
         msg = f"{icon} {current_name}_{last_save_time.strftime('%H:%M')}"
