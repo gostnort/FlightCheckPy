@@ -18,87 +18,68 @@ def clean_text_for_database(text: str) -> str:
     """
     if not text or not isinstance(text, str):
         return ""
-    
     # 移除或替换控制字符（ASCII 0-31, 127）
     cleaned = re.sub(r'[\x00-\x1f\x7f]', ' ', text)
-    
     # 移除或替换其他问题字符
     # 替换常见的二进制/hex字符
     cleaned = re.sub(r'[^\x20-\x7e\n\r\t]', ' ', cleaned)
-    
     # 移除多余的空白字符
     cleaned = re.sub(r' +', ' ', cleaned)
     cleaned = re.sub(r'\n\s*\n', '\n', cleaned)
-    
     # 确保文本以可打印字符结尾
     cleaned = cleaned.strip()
-    
     return cleaned
 
 
-def clean_database_connection(conn: sqlite3.Connection) -> bool:
+def clean_database_connection(conn: sqlite3.Connection) -> dict:
     """
     清理指定数据库连接中的所有问题数据
     Args:
         conn (sqlite3.Connection): 数据库连接对象
     Returns:
-        bool: 是否成功清理
+        dict: 包含清理结果的字典 {'success': bool, 'total_cleaned': int, 'messages': list}
     """
+    messages = []
     if not conn:
-        print("❌ 数据库连接无效")
-        return False
-    
+        messages.append("❌ 数据库连接无效")
+        return {"success": False, "total_cleaned": 0, "messages": messages}
+    total_cleaned = 0
     try:
         cursor = conn.cursor()
-        
         # 获取所有表名
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
         tables = [row[0] for row in cursor.fetchall()]
-        
-        print(f"📊 发现 {len(tables)} 个表")
-        
-        total_cleaned = 0
-        
+        messages.append(f"📊 发现 {len(tables)} 个表")
         for table in tables:
-            if table.startswith('sqlite_'):
+            if table.startswith("sqlite_"):
                 continue  # 跳过系统表
-                
-            print(f"🔍 处理表: {table}")
-            
+            messages.append(f"🔍 处理表: {table}")
             # 获取表结构
             cursor.execute(f"PRAGMA table_info({table})")
             columns = cursor.fetchall()
-            
             # 找到文本类型的列
             text_columns = []
             for col in columns:
                 col_name = col[1]
                 col_type = col[2].upper()
-                if 'TEXT' in col_type or 'CHAR' in col_type or 'VARCHAR' in col_type:
+                if "TEXT" in col_type or "CHAR" in col_type or "VARCHAR" in col_type:
                     text_columns.append(col_name)
-            
             if not text_columns:
-                print(f"   ⚠️  表 {table} 没有文本列，跳过")
+                messages.append(f"   ⚠️  表 {table} 没有文本列，跳过")
                 continue
-            
-            print(f"   📝  发现 {len(text_columns)} 个文本列: {', '.join(text_columns)}")
-            
+            messages.append(f"   📝  发现 {len(text_columns)} 个文本列: {', '.join(text_columns)}")
             # 获取所有数据
             cursor.execute(f"SELECT * FROM {table}")
             rows = cursor.fetchall()
-            
             if not rows:
-                print(f"   ℹ️  表 {table} 没有数据，跳过")
+                messages.append(f"   ℹ️  表 {table} 没有数据，跳过")
                 continue
-            
-            print(f"   📊  处理 {len(rows)} 行数据")
-            
+            messages.append(f"   📊  处理 {len(rows)} 行数据")
             # 处理每一行
             cleaned_count = 0
             for row in rows:
                 row_cleaned = False
                 new_values = []
-                
                 for i, value in enumerate(row):
                     if i < len(columns) and columns[i][1] in text_columns:
                         if isinstance(value, str) and value:
@@ -110,37 +91,41 @@ def clean_database_connection(conn: sqlite3.Connection) -> bool:
                             new_values.append(value)
                     else:
                         new_values.append(value)
-                
                 # 如果行被清理了，更新数据库
                 if row_cleaned:
                     # 构建UPDATE语句
-                    set_clause = ", ".join([f"{columns[i][1]} = ?" for i in range(len(columns))])
-                    where_clause = " AND ".join([f"{columns[i][1]} = ?" for i in range(len(columns))])
-                    
+                    set_clause = ", ".join(
+                        [f"{columns[i][1]} = ?" for i in range(len(columns))]
+                    )
+                    where_clause = " AND ".join(
+                        [f"{columns[i][1]} = ?" for i in range(len(columns))]
+                    )
                     update_sql = f"UPDATE {table} SET {set_clause} WHERE {where_clause}"
-                    
                     # 执行更新
                     cursor.execute(update_sql, new_values + list(row))
                     cleaned_count += 1
-            
             if cleaned_count > 0:
-                print(f"   ✅  清理了 {cleaned_count} 行数据")
+                messages.append(f"   ✅  清理了 {cleaned_count} 行数据")
                 total_cleaned += cleaned_count
             else:
-                print(f"   ℹ️  无需清理")
-        
+                messages.append("   ℹ️  无需清理")
         # 提交更改
         conn.commit()
-        
-        print(f"\n🎉 数据库清理完成！")
-        print(f"📊 总共清理了 {total_cleaned} 行数据")
-        
-        return True
-        
+        messages.append("🎉 数据库清理完成！")
+        messages.append(f"📊 总共清理了 {total_cleaned} 行数据")
+        return {
+            "success": True,
+            "total_cleaned": total_cleaned,
+            "messages": messages,
+        }
     except Exception as e:
-        print(f"❌ 清理数据库时发生错误: {e}")
+        messages.append(f"❌ 清理数据库时发生错误: {e}")
         conn.rollback()
-        return False
+        return {
+            "success": False,
+            "total_cleaned": total_cleaned,
+            "messages": messages,
+        }
 
 
 def main():
@@ -156,9 +141,10 @@ def main():
     print("  import sqlite3")
     print("  conn = sqlite3.connect(':memory:')")
     print("  # ... populate your database ...")
-    print("  success = clean_database_connection(conn)")
-    print("  if success: print('清理成功')")
+    print("  result = clean_database_connection(conn)")
+    print("  if result['success']: print('清理成功')")
 
 
 if __name__ == "__main__":
     main()
+
