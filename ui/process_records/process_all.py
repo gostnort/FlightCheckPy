@@ -6,17 +6,17 @@ Process All Records functionality for HBPR UI - Batch processing and error handl
 import streamlit as st
 import pandas as pd
 from scripts.hbpr_info_processor import CHbpr
-from ui.db_management import get_current_database, db_manager, require_database_loaded
+from ui.components.database_manager import db_manager, require_database, get_database_path
 from .add_edit_record import apply_font_settings
 
 
-@require_database_loaded()
+@require_database
 def show_process_all_records():
     """显示处理所有记录页面"""
     try:
         db = db_manager.get_database()
         # 获取当前选中的数据库
-        selected_db_file = get_current_database()    
+        selected_db_file = get_database_path()    
         if not selected_db_file:
             st.error("❌ No database selected! Please select a database from the sidebar.")
             return

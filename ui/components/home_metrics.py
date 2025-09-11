@@ -13,7 +13,7 @@ All SQL is defensive and will auto-create views if missing.
 import re
 import sqlite3
 from typing import Dict, Optional, Tuple
-from ui.db_management import db_manager
+from ui.components.database_manager import db_manager
 
 
 def _get_conn() -> sqlite3.Connection:

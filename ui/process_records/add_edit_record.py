@@ -9,16 +9,16 @@ import re
 import traceback
 from scripts.hbpr_info_processor import CHbpr
 from scripts.hbpr_list_processor import HBPRProcessor
-from ui.db_management import get_current_database, db_manager, require_database_loaded, enable_auto_save_on_change
+from ui.components.database_manager import db_manager, require_database, get_database_path
 
 
-@require_database_loaded()
+@require_database
 def show_add_edit_record():
     """查看单个记录"""
     try:
         db = db_manager.get_database()
         # 获取当前选中的数据库
-        selected_db_file = get_current_database()
+        selected_db_file = get_database_path()
         if not selected_db_file:
             st.error("❌ No database selected! Please select a database from the sidebar.")
             return
@@ -612,7 +612,7 @@ def _process_converted_pr_as_hbpr(db, hbpr_content, target_hbnb):
         # st.success(f"✅ Updated HBNB {target_hbnb} with converted HBPR content")
         # 更新验证结果
         db.update_with_chbpr_results(chbpr)
-        enable_auto_save_on_change() # 触发自动保存
+        db_manager.trigger_auto_save() # 触发自动保存
         st.rerun()
         # 更新missing_numbers表
         _update_missing_numbers(db)
@@ -693,7 +693,7 @@ def _process_replace_record(db, hbpr_content):
                 return
             # 使用CHbpr处理转换后的内容
             _process_converted_pr_as_hbpr(db, hbpr_content, matched_hbnb)
-            enable_auto_save_on_change() # 触发自动保存
+            db_manager.trigger_auto_save() # 触发自动保存
             st.rerun()
         except Exception as e:
             st.error(f"❌ Error processing PR record: {str(e)}")
@@ -727,7 +727,7 @@ def _process_replace_record(db, hbpr_content):
                 return
             # Process the record
             _process_record_common(db, chbpr, corrected_content, is_duplicate=False)
-            enable_auto_save_on_change() # 触发自动保存
+            db_manager.trigger_auto_save() # 触发自动保存
             st.rerun()
         except Exception as e:
             st.error(f"❌ Error processing full record: {str(e)}")
@@ -785,7 +785,7 @@ def _process_duplicate_record(db, hbpr_content):
             # st.success(f"✅ Created duplicate record for HBNB {matched_hbnb} (converted from PR)")
             # 更新验证结果
             db.update_with_chbpr_results(chbpr)
-            enable_auto_save_on_change() # 触发自动保存
+            db_manager.trigger_auto_save() # 触发自动保存
             st.rerun()
             # 设置刷新标志
             st.session_state.refresh_home = True
@@ -835,7 +835,7 @@ def _process_duplicate_record(db, hbpr_content):
             # st.success(f"✅ Created duplicate record for HBNB {chbpr.HbnbNumber}")
             # 更新验证结果
             db.update_with_chbpr_results(chbpr)
-            enable_auto_save_on_change() # 触发自动保存
+            db_manager.trigger_auto_save() # 触发自动保存
             st.rerun()
             # 更新missing_numbers表
             _update_missing_numbers(db)

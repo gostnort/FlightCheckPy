@@ -36,7 +36,9 @@ FlightCheckPy/
 │   └── data_cleaner.py        # Data cleaning and sanitization utilities
 ├── ui/                         # Web UI components
 │   ├── main.py                 # Main UI coordinator with Windows integration
-│   ├── db_management.py        # Centralized in-memory database management and utilities
+│   ├── common.py               # Common utilities and database helper functions
+│   ├── components/
+│   │   └── database_manager.py  # Centralized in-memory database management
 │   ├── login_page.py           # Authentication interface
 │   ├── home_page.py            # System overview with real-time statistics
 │   ├── database_page.py        # Database management and construction
@@ -500,7 +502,7 @@ def get_debug_summary() -> str:
 # In home page or database page - unified display with missing boarding numbers
 from ui.components.main_stats import get_and_display_main_statistics
 # db_manager provides the database connection automatically
-from ui.db_management import db_manager
+from ui.components.database_manager import db_manager
 db = db_manager.get_database()
 all_stats = get_and_display_main_statistics(db)
 
@@ -565,21 +567,29 @@ display_missing_boarding_numbers(missing_numbers)  # UI display
 
 ## 📋 Class Specifications
 
-### 1. EnhancedGlobalDatabaseManager Class - Central DB Management
+### 1. DatabaseManager Class - Central DB Management
 
-**Location**: `ui/db_management.py`
+**Location**: `ui/components/database_manager.py`
 
 **Purpose**: Manages the centralized, in-memory database connection for the entire application, including automatic saving logic. This is the single entry point for all database interactions.
 
 #### Methods
 
 ```python
-def get_database(self) -> HbprDatabaseWithAutoSave:
+def get_connection(self) -> sqlite3.Connection:
     """
-    Get the singleton instance of the in-memory database with auto-save capabilities.
-    
+    Get the in-memory database connection.
+
     Returns:
-        HbprDatabaseWithAutoSave: The active database instance.
+        sqlite3.Connection: The database connection.
+    """
+
+def get_database_instance(self) -> HbprDatabase:
+    """
+    Get a database instance for operations.
+
+    Returns:
+        HbprDatabase: Database instance for operations.
     """
 
 def is_available(self) -> bool:
@@ -1281,7 +1291,7 @@ import streamlit as st
 import os
 import tkinter as tk
 from tkinter import filedialog
-from ui.db_management import get_icon_base64, apply_global_settings, create_database_selectbox, enhanced_database_status_widget
+from ui.common import get_icon_base64, apply_global_settings
 from ui.login_page import show_login_page
 from ui.home_page import show_home_page
 from ui.database_page import show_database_management
@@ -1338,7 +1348,7 @@ st.session_state.view_results_tab     # Current tab in view results page
 
 ### 2. Authentication System
 
-**Location**: `ui/login_page.py`, `ui/db_management.py`
+**Location**: `ui/login_page.py`, `ui/common.py`
 
 ```python
 def show_login_page() -> None:
@@ -1451,7 +1461,7 @@ def validate_full_hbpr_record(record_content: str) -> Tuple[bool, List[str]]:
 
 ### 6. Common Utilities
 
-**Location**: `ui/db_management.py`
+**Location**: `ui/common.py`
 
 ```python
 def get_icon_base64(path: str) -> str:
@@ -1509,12 +1519,12 @@ def get_sorted_database_files(sort_by: str = 'creation_time',
         - Supports multiple sort criteria
     """
 
-def get_current_database() -> Optional[str]:
+def get_database_path() -> Optional[str]:
     """
-    Get currently selected database from session state
-    
+    Get currently loaded database file path from database manager
+
     Returns:
-        Optional[str]: Path to selected database file or None
+        Optional[str]: Path to loaded database file or None
     """
 ```
 
@@ -1721,7 +1731,7 @@ CREATE TABLE flight_info (
 ### Statistics Management
 ```python
 # All database access is now through the global manager
-from ui.db_management import db_manager
+from ui.components.database_manager import db_manager
 
 # Get the database instance (assuming one is loaded in the UI)
 db = db_manager.get_database()
@@ -1752,7 +1762,7 @@ db.update_with_chbpr_results(chbpr)
 
 ### Database Operations
 ```python
-from ui.db_management import db_manager
+from ui.components.database_manager import db_manager
 
 # Get the database instance
 db = db_manager.get_database()
@@ -1812,7 +1822,7 @@ if needs_cleaning:
 ### Enhanced Database Discovery
 ```python
 # Get databases from multiple sources
-from ui.db_management import get_sorted_database_files
+# Note: get_sorted_database_files is now part of the database manager
 
 # Include custom folder in search
 custom_folder = "C:/MyDatabases"

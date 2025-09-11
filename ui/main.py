@@ -14,12 +14,7 @@ project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 # Project-specific imports (after path setup)
-from ui.db_management import (
-    get_icon_base64, 
-    apply_global_settings, 
-    create_database_selectbox,
-    enhanced_database_status_widget
-)
+from ui.common import get_icon_base64, apply_global_settings
 from ui.login_page import show_login_page
 from ui.home_page import show_home_page
 from ui.database_page import show_database_management

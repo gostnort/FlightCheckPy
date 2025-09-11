@@ -8,7 +8,7 @@ import pandas as pd
 import re
 import json
 import os
-from ui.db_management import get_current_database, db_manager, require_database_loaded
+from ui.components.database_manager import db_manager, require_database, get_database_path
 
 
 def load_filter_config():
@@ -70,12 +70,12 @@ def should_exclude_property(prop, excluded_props, excluded_patterns):
     return False
 
 
-@require_database_loaded()
+@require_database
 def show_sort_records():
     """显示记录表格"""
     try:
         # 获取当前选中的数据库
-        selected_db_file = get_current_database()
+        selected_db_file = get_database_path()
         if not selected_db_file:
             st.error("❌ No database selected.")
             st.info("💡 Please select a database from the sidebar or build one first in the Database Management page.")

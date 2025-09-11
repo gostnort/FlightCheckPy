@@ -9,9 +9,10 @@ import os
 import traceback
 import io
 import re
-from ui.db_management import apply_global_settings, db_manager
+from ui.common import apply_global_settings
+from ui.components.database_manager import db_manager
 from scripts.command_processor import CommandProcessor
-from ui.db_management import enable_auto_save_on_change
+# Database manager is already imported above
 
 
 def cleanup_command_files():
@@ -135,7 +136,7 @@ def show_import_commands(processor: CommandProcessor):
         if st.button("💾 Store Commands", use_container_width=True, type="primary"):
             stats = processor.store_commands(st.session_state.matching_commands)
             st.success(f"✅ Stored {stats['new']} new, {stats['updated']} updated, {stats['skipped']} skipped")
-            enable_auto_save_on_change()  # 触发自动保存
+            db_manager.trigger_auto_save()  # 触发自动保存
             # 存储完成后清理文件
             cleanup_command_files()
     with col_3:
@@ -299,7 +300,7 @@ def restore_command_version(processor: CommandProcessor, command_full: str, vers
             WHERE id = ?
         """, (target_version['id'],))
         conn.commit()
-        enable_auto_save_on_change()  # 触发自动保存
+        db_manager.trigger_auto_save()  # 触发自动保存
         st.success(f"✅ Version {version_num} restored successfully!")
         st.rerun()
     except Exception as e:
@@ -460,12 +461,12 @@ def save_manual_command(processor: CommandProcessor, raw_input: str, create_tabl
             st.success(f"✅ 命令已成功添加: {command_info['command_full']}")
             if create_table_if_needed:
                 st.info("ℹ️ Commands table was automatically created")
-            enable_auto_save_on_change()  # 触发自动保存
+            db_manager.trigger_auto_save()  # 触发自动保存
             st.rerun()
         elif stats['updated'] > 0:
             st.success(f"✅ 命令已更新为新版本: {command_info['command_full']}")
             st.info("💡 旧版本已保存在时间线中")
-            enable_auto_save_on_change()  # 触发自动保存
+            db_manager.trigger_auto_save()  # 触发自动保存
             st.rerun()
         else:
             st.error("❌ 命令添加失败")
@@ -622,7 +623,7 @@ def save_edited_data(processor: CommandProcessor, original_command_full: str, ed
                 st.success(f"✅ 已创建新命令记录: {new_command_full}")
                 st.info(f"💡 原命令 '{original_command_full}' 仍然存在")
             conn.commit()
-            enable_auto_save_on_change()  # 触发自动保存
+            db_manager.trigger_auto_save()  # 触发自动保存
         except Exception as e:
             conn.rollback()
             raise e
@@ -643,7 +644,7 @@ def delete_command_record(processor: CommandProcessor, command_full: str):
         cursor = conn.execute("DELETE FROM commands WHERE command_full = ?", (command_full,))
         if cursor.rowcount > 0:
             st.success(f"✅ 已删除记录: {command_full}")
-            enable_auto_save_on_change()  # 触发自动保存
+            db_manager.trigger_auto_save()  # 触发自动保存
         else:
             st.warning(f"⚠️ 未找到记录: {command_full}")
         conn.commit()
@@ -812,7 +813,7 @@ def show_command_settings(processor: CommandProcessor):
                         conn = processor.conn
                         conn.execute("DELETE FROM commands")
                         conn.commit()
-                        enable_auto_save_on_change()  # 触发自动保存
+                        db_manager.trigger_auto_save()  # 触发自动保存
                         st.success("✅ All command data cleared!")
                         st.session_state.confirm_clear_commands = False
                         # 清除数据后清理文件

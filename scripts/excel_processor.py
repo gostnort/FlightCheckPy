@@ -15,7 +15,7 @@ import os
 from typing import Dict, Optional, Tuple, List
 from datetime import date
 import pandas as pd
-from ui.db_management import db_manager
+from ui.components.database_manager import db_manager
 
 # =============================
 # 数据源列名与固定列序号定义（1-based）

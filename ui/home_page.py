@@ -5,13 +5,14 @@ Home page for HBPR UI - System overview and quick actions
 
 import streamlit as st
 import pandas as pd
-from ui.db_management import apply_global_settings, get_current_database, db_manager, require_database_loaded
+from ui.common import apply_global_settings
+from ui.components.database_manager import db_manager, require_database, get_database_path
 import os
 from ui.components.home_metrics import get_home_summary
 from ui.components.main_stats import get_and_display_main_statistics
 
 
-@require_database_loaded()
+@require_database
 def show_home_page():
     """显示主页"""
     # Apply settings
@@ -23,7 +24,7 @@ def show_home_page():
     messages = []
     try:# 检查数据库状态
         # 获取当前选中的数据库
-        selected_db_file = get_current_database()
+        selected_db_file = get_database_path()
         if not selected_db_file:
             st.error("❌ No database selected!")
             st.info("💡 Please select a database from the sidebar or build one first using the Database Management page.")

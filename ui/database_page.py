@@ -9,11 +9,8 @@ import sqlite3
 import os
 import traceback
 from send2trash import send2trash
-from ui.db_management import (
-    apply_global_settings,
-    db_manager,
-    save_memory_database_to_file,
-)
+from ui.common import apply_global_settings
+from ui.components.database_manager import db_manager
 from scripts.hbpr_list_processor import HBPRProcessor
 
 
@@ -149,7 +146,7 @@ def show_database_maintenance():
     with col1:
         # 保存数据库按钮
         if st.button("💾 Save Database to File", use_container_width=True):
-            if save_memory_database_to_file():
+            if db_manager.save_to_file():
                 st.success("✅ Database saved successfully!")
             else:
                 st.error("❌ Error saving database.")
@@ -174,7 +171,7 @@ def show_database_maintenance():
         if st.button("🗑️ Remove Database File", use_container_width=True):
             try:
                 # 保存当前内存中的数据到文件
-                if save_memory_database_to_file():
+                if db_manager.save_to_file():
                     st.success("✅ Database data saved to file before removal!")
                     # 获取当前数据库文件名
                     current_db_name = st.session_state.get('current_db_name')

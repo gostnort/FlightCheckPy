@@ -9,7 +9,7 @@ import sqlite3
 import re
 from datetime import datetime
 from io import BytesIO
-from ui.db_management import db_manager
+from ui.components.database_manager import db_manager
 
 
 def clean_text_for_export(text: str) -> str:

@@ -3,7 +3,7 @@
 Calculation functions for deleted passenger and missing boarding number statistics
 """
 
-from ui.db_management import db_manager
+from ui.components.database_manager import db_manager
 
 
 

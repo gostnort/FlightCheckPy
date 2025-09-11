@@ -4,7 +4,8 @@ Process Records page for HBPR UI - Main navigation interface for record processi
 """
 
 import streamlit as st
-from ui.db_management import apply_global_settings, require_database_loaded
+from ui.common import apply_global_settings
+from ui.components.database_manager import require_database
 from ui.process_records.add_edit_record import show_add_edit_record
 from ui.process_records.process_all import show_process_all_records
 from ui.process_records.simple_record import show_simple_record
@@ -12,7 +13,7 @@ from ui.process_records.export_data import show_export_data
 from ui.process_records.sort_records import show_sort_records
 
 
-@require_database_loaded()
+@require_database
 def show_process_records():
     """显示处理记录页面"""
     # Apply settings
