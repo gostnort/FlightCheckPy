@@ -6,6 +6,11 @@ Common utilities and shared functions for HBPR UI
 import streamlit as st
 import base64
 import hashlib
+import subprocess
+import sys
+import time
+from urllib.request import urlopen
+from urllib.error import URLError
 
 def get_icon_base64(path):
     """将图标文件转换为base64编码"""
@@ -31,10 +36,62 @@ def authenticate_user(username):
     return username_hash in valid_usernames
 
 
+def _port_for_username(username: str) -> int:
+    """Map valid username (by hash) to a fixed LAN port (two users)."""
+    username_hash = hashlib.sha256(username.encode()).hexdigest()
+    mapping = {
+        'c7c5b358d4097f8e2798c54f2ab6c3574a0cc82c87a3acf4ac9f038af4f75d2c': 51201,
+        '9fe93417853739c1c18c2e8b051860d1a317824f1aa91304d16f3fe832486f7a': 51202,
+    }
+    return mapping.get(username_hash, 0)
+
+
+def _is_server_running(port: int) -> bool:
+    if not port:
+        return False
+    try:
+        with urlopen(f"http://127.0.0.1:{port}/health", timeout=1) as resp:
+            return resp.status == 200
+    except URLError:
+        return False
+    except Exception:
+        return False
+
+
+def ensure_memdb_server(username: str) -> tuple:
+    """
+    Ensure a per-user in-memory DB HTTP server is running on the mapped port.
+    Returns: (ok: bool, port: int, message: str)
+    Behavior:
+    - If server already running → treat as already logged in, return (False, port, msg)
+    - Else spawn remote_db/memdb_port_server.py on that port and wait until healthy
+    """
+    port = _port_for_username(username)
+    if not port:
+        return False, 0, "No port mapping for user"
+    if _is_server_running(port):
+        return False, port, "User already logged in on this host"
+    # Spawn server
+    server_path = None
+    try:
+        # Resolve script path relative to project root
+        from pathlib import Path
+        project_root = Path(__file__).resolve().parents[1]
+        server_path = str(project_root / 'remote_db' / 'memdb_port_server.py')
+        subprocess.Popen([sys.executable, server_path, '--port', str(port)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception as e:
+        return False, 0, f"Failed to start server: {e}"
+    # Wait until health OK
+    for _ in range(30):
+        if _is_server_running(port):
+            return True, port, "OK"
+        time.sleep(0.1)
+    return False, 0, "Timed out starting server"
+
+
 def apply_global_settings():
     """Apply global settings from session state"""
     if 'settings' in st.session_state:
-        settings = st.session_state.settings
         # Apply font settings globally
         apply_font_settings()
     # Remove the purple vertical block spacing

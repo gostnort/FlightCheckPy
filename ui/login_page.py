@@ -4,7 +4,7 @@ Login and authentication page for HBPR UI
 """
 
 import streamlit as st
-from ui.common import authenticate_user, get_icon_base64
+from ui.common import authenticate_user, get_icon_base64, ensure_memdb_server
 
 
 def show_login_page():
@@ -33,9 +33,18 @@ def show_login_page():
                 if not username:
                     st.error("❌ Please enter a username")
                 elif authenticate_user(username):
+                    ok, port, msg = ensure_memdb_server(username)
+                    if not ok and msg == "User already logged in on this host":
+                        st.error("❌ This user is already logged in. Please use another username.")
+                        return
+                    if not ok:
+                        st.error(f"❌ Failed to prepare DB service: {msg}")
+                        return
                     st.session_state.authenticated = True
                     st.session_state.username = username
-                    st.success(f"✅ Welcome, {username}! Authentication successful.")
+                    st.session_state.db_service_host = '127.0.0.1'
+                    st.session_state.db_service_port = port
+                    st.success(f"✅ Welcome, {username}! DB service on port {port} is ready.")
                     st.rerun()
                 else:
                     st.error("❌ Invalid username. Please try again.")

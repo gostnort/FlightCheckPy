@@ -1,20 +1,16 @@
 #!/usr/bin/env python3
 """
-Database Manager Component
+UI Database Manager Wrapper
 
-Provides centralized in-memory database management with synchronous memory updates
-and asynchronous file persistence.
+Thin wrapper around remote_db.database_manager to integrate with Streamlit UI.
 """
 
 import streamlit as st
-import sqlite3
 import os
-import glob
-import threading
-import time
-from datetime import datetime
 from typing import Optional, Callable
-from scripts.hbpr_info_processor import HbprDatabase
+from remote_db.database_manager import get_manager, get_database_instance as _core_get_db, get_database_path as _core_get_path
+from remote_db.remote_sqlite_adapter import RemoteSqliteConnection
+from remote_db.hbpr_database_client import HbprDatabaseClient
 
 
 class DatabaseManager:
@@ -29,13 +25,11 @@ class DatabaseManager:
     """
 
     def __init__(self):
-        self._memory_conn: Optional[sqlite3.Connection] = None
-        self._db_name: Optional[str] = None
-        self._file_path: Optional[str] = None
-        self._auto_save_enabled = True
-        self._save_lock = threading.Lock()
-        self._last_save_time: Optional[datetime] = None
-        self._pending_save = False
+        self._core = get_manager()
+
+    def _ensure_client(self):
+        # delegated inside core manager
+        return self._core._ensure_client()  # type: ignore
 
     def load_database(self, file_path: str) -> bool:
         """
@@ -51,47 +45,39 @@ class DatabaseManager:
             if not os.path.exists(file_path):
                 st.error(f"Database file not found: {file_path}")
                 return False
-
-            # Create new in-memory database
-            self._memory_conn = sqlite3.connect(":memory:", check_same_thread=False)
-
-            # Load data from file
-            with sqlite3.connect(file_path) as file_conn:
-                file_conn.backup(self._memory_conn)
-
-            self._file_path = file_path
-            self._db_name = os.path.basename(file_path)
-            self._last_save_time = datetime.now()
-
+            if not self._ensure_client():
+                st.error("❌ DB service is not ready. Please login again.")
+                return False
+            if not self._core.load_database(file_path):
+                st.error("❌ Failed to load database in remote memory")
+                return False
             st.success(f"✅ Database loaded: {self._db_name}")
             return True
 
         except Exception as e:
             st.error(f"❌ Failed to load database: {e}")
-            if self._memory_conn:
-                self._memory_conn.close()
-                self._memory_conn = None
             return False
 
-    def get_connection(self) -> Optional[sqlite3.Connection]:
+    def get_connection(self) -> Optional[RemoteSqliteConnection]:
         """
         Get the in-memory database connection.
 
         Returns:
             sqlite3.Connection or None: The database connection
         """
-        return self._memory_conn
+        client = self._ensure_client()
+        if not client:
+            return None
+        return RemoteSqliteConnection(client)
 
-    def get_database(self) -> Optional[HbprDatabase]:
+    def get_database(self) -> Optional[HbprDatabaseClient]:
         """
         Return a lightweight HbprDatabase wrapper over the in-memory connection.
 
         Returns:
             HbprDatabase or None: Wrapper instance if a connection is loaded.
         """
-        if not self._memory_conn:
-            return None
-        return HbprDatabase(self._memory_conn)
+        return self._core.get_database()
 
     def get_database_name(self) -> Optional[str]:
         """
@@ -100,7 +86,7 @@ class DatabaseManager:
         Returns:
             str or None: Database name
         """
-        return self._db_name
+        return self._core.get_database_name()
 
     def get_database_path(self) -> Optional[str]:
         """
@@ -109,7 +95,7 @@ class DatabaseManager:
         Returns:
             str or None: Database file path
         """
-        return self._file_path
+        return self._core.get_database_path()
 
     def is_loaded(self) -> bool:
         """
@@ -118,24 +104,10 @@ class DatabaseManager:
         Returns:
             bool: True if database is loaded
         """
-        return self._memory_conn is not None
+        return self._core.is_loaded()
 
     def get_record_count(self) -> int:
-        """
-        Get total number of records in the database.
-
-        Returns:
-            int: Number of records
-        """
-        if not self._memory_conn:
-            return 0
-
-        try:
-            cursor = self._memory_conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM hbpr_full_records")
-            return cursor.fetchone()[0]
-        except:
-            return 0
+        return self._core.get_record_count()
 
     def save_to_file(self, show_progress: bool = True) -> bool:
         """
@@ -147,7 +119,7 @@ class DatabaseManager:
         Returns:
             bool: True if successful
         """
-        if not self._memory_conn or not self._file_path:
+        if not self._core.get_database_path():
             if show_progress:
                 st.error("❌ No database loaded")
             return False
@@ -155,11 +127,13 @@ class DatabaseManager:
         try:
             if show_progress:
                 with st.spinner("💾 Saving database..."):
-                    self._perform_save()
+                    ok = self._core.save_to_file()
             else:
-                self._perform_save()
-
-            self._last_save_time = datetime.now()
+                ok = self._core.save_to_file()
+            if not ok:
+                if show_progress:
+                    st.error("❌ Failed to save database")
+                return False
             if show_progress:
                 st.success("✅ Database saved successfully")
             return True
@@ -169,125 +143,30 @@ class DatabaseManager:
                 st.error(f"❌ Failed to save database: {e}")
             return False
 
-    def _perform_save(self):
-        """Internal method to perform the actual save operation."""
-        with self._save_lock:
-            with sqlite3.connect(self._file_path, check_same_thread=False) as file_conn:
-                self._memory_conn.backup(file_conn)
-
-    def enable_auto_save(self, enabled: bool = True):
-        """
-        Enable or disable automatic saving.
-
-        Args:
-            enabled (bool): Whether to enable auto-save
-        """
-        self._auto_save_enabled = enabled
-
-    def trigger_auto_save(self):
-        """
-        Trigger asynchronous auto-save if enabled.
-        This is called after database modifications.
-        """
-        if not self._auto_save_enabled or not self._memory_conn or not self._file_path:
-            return
-
-        # Mark that a save is pending
-        self._pending_save = True
-
-        # Start async save in background thread
-        save_thread = threading.Thread(target=self._async_save_worker, daemon=True)
-        save_thread.start()
-
-    def _async_save_worker(self):
-        """Background worker for asynchronous saving."""
-        try:
-            time.sleep(0.1)  # Small delay to batch rapid changes
-            if self._pending_save:
-                self._perform_save()
-                self._last_save_time = datetime.now()
-                self._pending_save = False
-        except Exception as e:
-            print(f"Async save error: {e}")
-
-    def get_last_save_time(self) -> Optional[datetime]:
-        """
-        Get the last save time.
-
-        Returns:
-            datetime or None: Last save timestamp
-        """
-        return self._last_save_time
-
     def create_backup(self, backup_name: Optional[str] = None) -> Optional[str]:
-        """
-        Create a backup of the current database.
-
-        Args:
-            backup_name (str, optional): Name for the backup file
-
-        Returns:
-            str or None: Path to the backup file if successful
-        """
-        if not self._memory_conn:
-            st.error("❌ No database loaded")
+        path = self._core.create_backup()
+        if not path:
+            st.error("❌ Failed to create backup")
             return None
-
-        try:
-            if not backup_name:
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                base_name = os.path.splitext(self._db_name or "database")[0]
-                backup_name = f"{base_name}_backup_{timestamp}.db"
-
-            backup_dir = os.path.join("databases", "backups")
-            os.makedirs(backup_dir, exist_ok=True)
-            backup_path = os.path.join(backup_dir, backup_name)
-
-            with sqlite3.connect(backup_path, check_same_thread=False) as backup_conn:
-                self._memory_conn.backup(backup_conn)
-
-            st.success(f"✅ Backup created: {backup_path}")
-            return backup_path
-
-        except Exception as e:
-            st.error(f"❌ Failed to create backup: {e}")
-            return None
+        st.success(f"✅ Backup created: {path}")
+        return path
 
     def close(self):
-        """
-        Close the database connection and cleanup resources.
-        """
-        if self._memory_conn:
-            # Final save before closing
-            try:
-                self.save_to_file(show_progress=False)
-            except:
-                pass
-
-            self._memory_conn.close()
-            self._memory_conn = None
-
-        self._db_name = None
-        self._file_path = None
-        self._last_save_time = None
-        self._pending_save = False
+        self._core.close()
 
 
 # Global instance
-db_manager = DatabaseManager()
+_db_manager_instance = DatabaseManager()
 
 
-def get_database_instance() -> Optional[HbprDatabase]:
+def get_database_instance() -> Optional[HbprDatabaseClient]:
     """
     Get a database instance for operations.
 
     Returns:
-        HbprDatabase or None: Database instance if available
+        HbprDatabaseClient or None: Database instance if available
     """
-    conn = db_manager.get_connection()
-    if conn:
-        return HbprDatabase(conn)
-    return None
+    return _core_get_db()
 
 
 def get_database_path() -> Optional[str]:
@@ -297,7 +176,7 @@ def get_database_path() -> Optional[str]:
     Returns:
         str or None: Database file path
     """
-    return db_manager.get_database_path()
+    return _core_get_path()
 
 
 def require_database(func: Callable) -> Callable:
@@ -311,7 +190,7 @@ def require_database(func: Callable) -> Callable:
         Decorated function
     """
     def wrapper(*args, **kwargs):
-        if not db_manager.is_loaded():
+        if not _db_manager_instance.is_loaded():
             st.error("❌ Please load a database first")
             st.stop()
         return func(*args, **kwargs)
@@ -329,29 +208,17 @@ def create_database_selectbox(label="Select database:", key=None, default_index=
     Returns:
         tuple: (selected_db_file, db_files_list) 或 (None, []) 如果没有数据库
     """
-    # 搜索数据库文件
-    db_files = []
-    # 首先添加自定义文件夹中的数据库（如果指定）
-    if custom_folder and os.path.exists(custom_folder) and os.path.isdir(custom_folder):
-        custom_db_files = glob.glob(os.path.join(custom_folder, "*.db"))
-        db_files.extend(custom_db_files)
-    # 然后查找默认的databases文件夹
-    if os.path.exists("databases"):
-        default_db_files = glob.glob("databases/*.db")
-        db_files.extend(default_db_files)
-    # 去重（防止同一文件被添加多次）
-    db_files = list(set(db_files))
+    client = _db_manager_instance._ensure_client()
+    if not client:
+        st.error("❌ DB service not available. Please login again.")
+        return None, []
+    db_files = client.list_databases()
     if not db_files:
         return None, []
-
-    # 按创建时间排序（最新的在前）
-    db_files.sort(key=lambda x: os.path.getctime(x), reverse=True)
-
-    # 简单版本，只显示文件名
-    db_names = [os.path.basename(db_file) for db_file in db_files]
+    db_names = [os.path.basename(p) for p in db_files]
 
     # 设定选中索引为当前已加载到内存的数据库
-    current_memory_db_name = db_manager.get_database_name()
+    current_memory_db_name = _db_manager_instance.get_database_name()
     selected_index = default_index
     for i, name in enumerate(db_names):
         if name == current_memory_db_name:
@@ -370,14 +237,14 @@ def create_database_selectbox(label="Select database:", key=None, default_index=
 
     # 检查是否需要加载新的数据库到内存
     if selected_db_file:
-        current_memory_db_name = db_manager.get_database_name()
+        current_memory_db_name = _db_manager_instance.get_database_name()
         selected_db_name = os.path.basename(selected_db_file)
 
         # 如果选择的数据库与当前内存中的不同，则加载新数据库
         if selected_db_name != current_memory_db_name:
             with st.spinner(f"🔄 正在切换到 {selected_db_name}..."):
                 # 加载新数据库
-                success = db_manager.load_database(selected_db_file)
+                success = _db_manager_instance.load_database(selected_db_file)
                 if success:
                     st.success(f"✅ 数据库 {selected_db_name} 已加载到内存")
                     # Database loading is synchronous, no need for st.rerun()
