@@ -15,6 +15,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 # Project-specific imports (after path setup)
 from ui.common import get_icon_base64, apply_global_settings
+from ui.components.database_manager import create_database_selectbox
 from ui.login_page import show_login_page
 from ui.home_page import show_home_page
 from ui.database_page import show_database_management
@@ -126,16 +127,12 @@ def main():
                 label="💾 选择数据库:",
                 key="global_db_select",
                 default_index=0,
-                show_flight_info=True,
                 custom_folder=custom_folder
             )
     
     if not selected_db_file:
         st.sidebar.warning("⚠️ 未找到数据库")
         st.sidebar.info("💡 请先创建数据库")
-    else:
-        # 显示增强的数据库状态（包含内存状态和保存功能）
-        enhanced_database_status_widget()
     # Store selected database in session state for all pages to use
     st.session_state.selected_database = selected_db_file
     st.session_state.available_databases = db_files if selected_db_file else []

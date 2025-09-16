@@ -47,8 +47,7 @@ FlightCheckPy/
 │   ├── excel_processor_page.py # Excel upload and EMD export UI
 │   ├── settings_page.py        # System configuration and about info
 │   ├── components/             # Reusable UI components
-│   │   ├── main_stats.py       # Main statistics display and UI logic
-│   │   ├── deleted_stats.py    # Deleted/missing passenger calculation functions
+│   │   ├── main_stats.py       # Main statistics display, UI logic and calculation functions
 │   │   └── home_metrics.py     # Home page metrics and debug information
 │   └── process_records/        # Sub-modules for record processing
 │       ├── process_all.py      # Batch processing functionality
@@ -182,8 +181,7 @@ The system provides comprehensive tracking and analysis of deleted passengers wi
 
 **Locations**: 
 - `scripts/hbpr_info_processor.py` - Deleted passenger identification and statistics
-- `ui/components/deleted_stats.py` - Missing boarding number calculation
-- `ui/components/main_stats.py` - Unified display logic
+- `ui/components/main_stats.py` - Missing boarding number calculation and unified display logic
 
 **Purpose**: Identifies and categorizes deleted passengers by XRES property, extracts their original boarding numbers from DEL command lines, and detects truly missing boarding numbers by excluding deleted passengers to prevent duplicate reporting.
 
@@ -284,7 +282,7 @@ def get_missing_boarding_numbers(db) -> List[int]:
 
 #### Integration Points
 - **Statistics Caching**: Integrated with StatisticsManager for efficient retrieval
-- **UI Components**: Separated calculation (deleted_stats.py) and display (main_stats.py) logic
+- **UI Components**: Unified calculation and display (main_stats.py) logic
 - **Database Migration**: Automatic field creation and data population on first use
 - **Cache Invalidation**: Statistics cache cleared on database modifications
 - **Debug Information**: Complete boarding number lists included in debug output (home_metrics.py)
@@ -302,8 +300,7 @@ The system implements a modular component architecture with separated calculatio
 
 ```
 ui/components/
-├── main_stats.py          # UI display logic and presentation (all display functions)
-├── deleted_stats.py       # Calculation functions only (deleted/missing passenger calculations)
+├── main_stats.py          # UI display logic, presentation and calculation functions
 └── home_metrics.py        # Flight summary and comprehensive debug information
 ```
 
@@ -372,7 +369,7 @@ def get_and_display_deleted_stats(db: HbprDatabase) -> None:
     """
 ```
 
-**deleted_stats.py**:
+**main_stats.py**:
 ```python
 def get_missing_boarding_numbers(db: HbprDatabase) -> List[int]:
     """
@@ -512,7 +509,7 @@ db = db_manager.get_database()
 get_and_display_deleted_stats(db)
 
 # For missing boarding number calculation only (pure function)
-from ui.components.deleted_stats import get_missing_boarding_numbers
+from ui.components.main_stats import get_missing_boarding_numbers
 db = db_manager.get_database()
 missing_numbers = get_missing_boarding_numbers(db)
 
@@ -526,7 +523,7 @@ debug_info = get_debug_summary()
 # Contains complete deleted passenger and missing boarding number lists
 
 # Separated calculation and display approach
-from ui.components.deleted_stats import get_missing_boarding_numbers
+from ui.components.main_stats import get_missing_boarding_numbers
 from ui.components.main_stats import display_missing_boarding_numbers
 
 db = db_manager.get_database()
@@ -1467,10 +1464,10 @@ def validate_full_hbpr_record(record_content: str) -> Tuple[bool, List[str]]:
 def get_icon_base64(path: str) -> str:
     """
     Convert icon file to base64 encoding
-    
+
     Args:
         path (str): Path to icon file
-        
+
     Returns:
         str: Base64 encoded icon data
     """
@@ -1478,19 +1475,34 @@ def get_icon_base64(path: str) -> str:
 def apply_global_settings() -> None:
     """Apply global settings from session state"""
 
-def create_database_selectbox(label: str = "Select database:", 
-                            key: str = None, 
-                            default_index: int = 0, 
-                            show_flight_info: bool = False,
+def parse_hbnb_input(input_text: str) -> List[int]:
+    """
+    Parse HBNB input supporting single numbers, ranges, and comma-separated lists
+
+    Args:
+        input_text (str): Input text to parse
+
+    Returns:
+        List[int]: List of parsed HBNB numbers
+    """
+```
+
+### 7. Database Management UI Functions
+
+**Location**: `ui/components/database_manager.py`
+
+```python
+def create_database_selectbox(label: str = "Select database:",
+                            key: str = None,
+                            default_index: int = 0,
                             custom_folder: str = None) -> Tuple[str, List[str]]:
     """
     Create database selection widget with custom folder support
-    
+
     Args:
         label (str): Widget label
         key (str): Widget key for session state
         default_index (int): Default selection index
-        show_flight_info (bool): Whether to show flight information
         custom_folder (str): Custom database folder path
         
     Returns:
@@ -1836,7 +1848,6 @@ db_files = get_sorted_database_files(
 # This is handled within ui/main.py
 selected_db, all_dbs = create_database_selectbox(
     label="Select Database:",
-    show_flight_info=True,
     custom_folder=custom_folder
 )
 ```

@@ -31,10 +31,15 @@ def show_home_page():
             return
         # 使用内存数据库
         db = db_manager.get_database()
+        if db is None:
+            st.error("❌ No database loaded in memory")
+            st.info("💡 Please load a database in the Database page.")
+            return
         messages.append(f"DB connected: {os.path.basename(st.session_state.get('current_db_name',''))}")
     except Exception as e:
         st.error(f"❌ No database found: {str(e)}")
         st.info("💡 Please build a database first using the Database Management page.")
+        return
     col1, col2 = st.columns([2,1])
     with col1:
         # Display main statistics using reusable component

@@ -9,7 +9,7 @@ and asynchronous file persistence.
 import streamlit as st
 import sqlite3
 import os
-import tempfile
+import glob
 import threading
 import time
 from datetime import datetime
@@ -81,6 +81,17 @@ class DatabaseManager:
             sqlite3.Connection or None: The database connection
         """
         return self._memory_conn
+
+    def get_database(self) -> Optional[HbprDatabase]:
+        """
+        Return a lightweight HbprDatabase wrapper over the in-memory connection.
+
+        Returns:
+            HbprDatabase or None: Wrapper instance if a connection is loaded.
+        """
+        if not self._memory_conn:
+            return None
+        return HbprDatabase(self._memory_conn)
 
     def get_database_name(self) -> Optional[str]:
         """
@@ -279,6 +290,16 @@ def get_database_instance() -> Optional[HbprDatabase]:
     return None
 
 
+def get_database_path() -> Optional[str]:
+    """
+    Get the current database file path from the manager.
+
+    Returns:
+        str or None: Database file path
+    """
+    return db_manager.get_database_path()
+
+
 def require_database(func: Callable) -> Callable:
     """
     Decorator to ensure database is loaded before executing function.
@@ -295,3 +316,74 @@ def require_database(func: Callable) -> Callable:
             st.stop()
         return func(*args, **kwargs)
     return wrapper
+
+
+def create_database_selectbox(label="Select database:", key=None, default_index=0, custom_folder=None):
+    """
+    创建数据库选择下拉框并自动加载到内存数据库
+    Args:
+        label (str): 下拉框标签
+        key (str): Streamlit组件key
+        default_index (int): 默认选中的索引（0为最新的数据库）
+        custom_folder (str): 自定义数据库文件夹路径
+    Returns:
+        tuple: (selected_db_file, db_files_list) 或 (None, []) 如果没有数据库
+    """
+    # 搜索数据库文件
+    db_files = []
+    # 首先添加自定义文件夹中的数据库（如果指定）
+    if custom_folder and os.path.exists(custom_folder) and os.path.isdir(custom_folder):
+        custom_db_files = glob.glob(os.path.join(custom_folder, "*.db"))
+        db_files.extend(custom_db_files)
+    # 然后查找默认的databases文件夹
+    if os.path.exists("databases"):
+        default_db_files = glob.glob("databases/*.db")
+        db_files.extend(default_db_files)
+    # 去重（防止同一文件被添加多次）
+    db_files = list(set(db_files))
+    if not db_files:
+        return None, []
+
+    # 按创建时间排序（最新的在前）
+    db_files.sort(key=lambda x: os.path.getctime(x), reverse=True)
+
+    # 简单版本，只显示文件名
+    db_names = [os.path.basename(db_file) for db_file in db_files]
+
+    # 设定选中索引为当前已加载到内存的数据库
+    current_memory_db_name = db_manager.get_database_name()
+    selected_index = default_index
+    for i, name in enumerate(db_names):
+        if name == current_memory_db_name:
+            selected_index = i
+            break
+
+    selected_db_name = st.selectbox(
+        label,
+        options=db_names,
+        index=selected_index,
+        key=key
+    )
+
+    # 获取完整的文件路径
+    selected_db_file = db_files[db_names.index(selected_db_name)]
+
+    # 检查是否需要加载新的数据库到内存
+    if selected_db_file:
+        current_memory_db_name = db_manager.get_database_name()
+        selected_db_name = os.path.basename(selected_db_file)
+
+        # 如果选择的数据库与当前内存中的不同，则加载新数据库
+        if selected_db_name != current_memory_db_name:
+            with st.spinner(f"🔄 正在切换到 {selected_db_name}..."):
+                # 加载新数据库
+                success = db_manager.load_database(selected_db_file)
+                if success:
+                    st.success(f"✅ 数据库 {selected_db_name} 已加载到内存")
+                    # Database loading is synchronous, no need for st.rerun()
+                    # The UI will update naturally when the function completes
+                else:
+                    st.error(f"❌ 无法加载数据库 {selected_db_name} 到内存")
+                    return None, []
+
+    return selected_db_file, db_files
