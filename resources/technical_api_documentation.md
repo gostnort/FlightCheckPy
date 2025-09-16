@@ -38,7 +38,9 @@ FlightCheckPy/
 │   ├── main.py                 # Main UI coordinator with Windows integration
 │   ├── common.py               # Common utilities and database helper functions
 │   ├── components/
-│   │   └── database_manager.py  # Centralized in-memory database management
+│   │   ├── database_manager.py # Local SQLite in-memory database management
+│   │   ├── main_stats.py       # Main statistics display, UI logic and calculation functions
+│   │   └── home_metrics.py     # Home page metrics and debug information
 │   ├── login_page.py           # Authentication interface
 │   ├── home_page.py            # System overview with real-time statistics
 │   ├── database_page.py        # Database management and construction
@@ -46,17 +48,133 @@ FlightCheckPy/
 │   ├── command_analysis_page.py # Command processing, timeline view, and maintenance
 │   ├── excel_processor_page.py # Excel upload and EMD export UI
 │   ├── settings_page.py        # System configuration and about info
-│   ├── components/             # Reusable UI components
-│   │   ├── main_stats.py       # Main statistics display, UI logic and calculation functions
-│   │   └── home_metrics.py     # Home page metrics and debug information
 │   └── process_records/        # Sub-modules for record processing
 │       ├── process_all.py      # Batch processing functionality
 │       ├── add_edit_record.py  # Single record editing
 │       ├── simple_record.py    # Simple record creation
 │       ├── sort_records.py     # Record viewing and filtering
 │       └── export_data.py      # Data export functionality with cleaning
+├── remote_db/                  # Remote database architecture (alternative to local)
+│   ├── database_manager.py     # Remote HTTP-based database manager
+│   ├── remote_sqlite_adapter.py # HTTP-to-SQLite adapter layer
+│   ├── hbpr_database_client.py # Remote HbprDatabase API client
+│   ├── db_port_client.py       # HTTP client for remote DB server
+│   └── memdb_port_server.py   # Per-port in-memory DB HTTP server
 ├── databases/                  # Default database storage directory
 └── resources/                  # Documentation and resources
+```
+
+### Database Architecture Options
+
+The system supports two distinct database architectures:
+
+#### 1. Local SQLite Architecture (Default)
+- **Location**: `ui/components/database_manager.py`
+- **Type**: Direct SQLite file-based in-memory database
+- **Features**:
+  - Local file system access
+  - Direct SQLite operations
+  - No network dependencies
+  - Single-user operation
+  - Immediate file persistence
+
+#### 2. Remote HTTP Architecture (Alternative)
+- **Location**: `remote_db/` directory
+- **Type**: HTTP-based remote database service
+- **Features**:
+  - Network-based database access
+  - Per-user isolated database services
+  - LAN/multi-user support
+  - Remote server management
+  - Port-based service isolation
+
+##### Remote Architecture Components
+
+**Remote Database Manager** (`remote_db/database_manager.py`):
+```python
+class DatabaseManager:
+    """
+    Manage connection to the per-user remote in-memory DB service.
+    """
+    def load_database(self, file_path: str) -> bool:
+        # Load SQLite file into remote in-memory database via HTTP
+
+    def get_connection(self) -> Optional[RemoteSqliteConnection]:
+        # Return HTTP-based SQLite connection adapter
+
+    def get_database(self) -> Optional[HbprDatabaseClient]:
+        # Return remote HbprDatabase API client
+```
+
+**HTTP Client** (`remote_db/db_port_client.py`):
+```python
+class DbPortClient:
+    """Minimal HTTP client for the per-port in-memory DB server."""
+    def load_database(self, path: str):  # POST /database/load
+    def backup(self):                     # POST /database/backup
+    def save(self):                       # POST /database/save
+    def query(self, sql, params):         # POST /query
+    def exec(self, sql, params):          # POST /exec
+```
+
+**SQLite Adapter** (`remote_db/remote_sqlite_adapter.py`):
+```python
+class RemoteSqliteConnection:
+    """Minimal connection adapter that proxies SQLite calls to HTTP server."""
+    def cursor(self) -> RemoteCursor:
+    def execute(self, sql, params):
+    def commit(self):  # No-op for compatibility
+    def close(self):   # No-op for compatibility
+
+class RemoteCursor:
+    """DB-API–like cursor that proxies to HTTP server."""
+    def execute(self, sql, params):
+    def fetchall(self):
+```
+
+**Database Server** (`remote_db/memdb_port_server.py`):
+```python
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        # /health - Server health check
+        # /databases/list - List available databases
+
+    def do_POST(self):
+        # /database/load - Load SQLite file into memory
+        # /database/backup - Create timestamped backup
+        # /database/save - Persist memory DB to source file
+        # /query - Execute SELECT queries
+        # /exec - Execute DDL/DML operations
+```
+
+**API Client** (`remote_db/hbpr_database_client.py`):
+```python
+class HbprDatabaseClient:
+    """Thin client mirroring scripts.hbpr_info_processor.HbprDatabase API."""
+    def get_connection(self):  # Returns RemoteSqliteConnection
+    def query_one(self, sql, params):  # Convenience method
+    def query_all(self, sql, params):  # Convenience method
+    def exec(self, sql, params):       # Convenience method
+```
+
+##### Remote Architecture Benefits
+
+- **Scalability**: Multiple users can access databases over network
+- **Isolation**: Each user gets dedicated port-based database service
+- **Centralization**: Database operations can be managed centrally
+- **Flexibility**: Same UI can work with local or remote databases
+- **Load Distribution**: Heavy operations can be offloaded to dedicated servers
+
+##### Environment Configuration
+
+```bash
+# Required environment variables for remote architecture
+export FCP_DB_HOST=192.168.1.100    # Database server host
+export FCP_DB_PORT=8080             # Database server port (per-user)
+
+# Or set via Streamlit session state at runtime
+st.session_state.db_service_host = "192.168.1.100"
+st.session_state.db_service_port = 8080
 ```
 
 ### Data Cleaning & Export Solutions
@@ -300,11 +418,31 @@ The system implements a modular component architecture with separated calculatio
 
 ```
 ui/components/
-├── main_stats.py          # UI display logic, presentation and calculation functions
-└── home_metrics.py        # Flight summary and comprehensive debug information
+├── database_manager.py    # Local SQLite in-memory database management
+├── main_stats.py          # Main statistics display with calculation functions
+└── home_metrics.py        # Home page metrics and comprehensive debug information
 ```
 
 #### Key Functions
+
+**database_manager.py**:
+```python
+# Local SQLite Database Management
+def create_database_selectbox(label="Select database:", key=None, default_index=0, custom_folder=None):
+    """
+    Create database selection dropdown with automatic loading
+    Returns: (selected_db_file, db_files_list)
+    """
+
+def db_manager: DatabaseManager
+    """Global database manager instance for local SQLite operations"""
+
+def get_database_instance() -> Optional[HbprDatabase]:
+    """Get HbprDatabase instance for operations"""
+
+def require_database(func: Callable) -> Callable:
+    """Decorator to ensure database is loaded before function execution"""
+```
 
 **main_stats.py**:
 ```python
@@ -564,41 +702,96 @@ display_missing_boarding_numbers(missing_numbers)  # UI display
 
 ## 📋 Class Specifications
 
-### 1. DatabaseManager Class - Central DB Management
+### 1. DatabaseManager Class - Local SQLite DB Management
 
 **Location**: `ui/components/database_manager.py`
 
-**Purpose**: Manages the centralized, in-memory database connection for the entire application, including automatic saving logic. This is the single entry point for all database interactions.
+**Purpose**: Manages local SQLite file-based in-memory database connections with synchronous memory updates and asynchronous file persistence.
 
 #### Methods
 
 ```python
-def get_connection(self) -> sqlite3.Connection:
-    """
-    Get the in-memory database connection.
+class DatabaseManager:
+    """Centralized database manager for local SQLite operations."""
 
-    Returns:
-        sqlite3.Connection: The database connection.
-    """
+    def load_database(self, file_path: str) -> bool:
+        """Load SQLite file into memory database."""
 
-def get_database_instance(self) -> HbprDatabase:
-    """
-    Get a database instance for operations.
+    def get_connection(self) -> Optional[sqlite3.Connection]:
+        """Get the in-memory database connection."""
 
-    Returns:
-        HbprDatabase: Database instance for operations.
-    """
+    def get_database(self) -> Optional[HbprDatabase]:
+        """Get HbprDatabase instance for operations."""
 
-def is_available(self) -> bool:
-    """
-    Check if a database is currently loaded into memory.
-    
-    Returns:
-        bool: True if a database is available, False otherwise.
-    """
+    def get_database_name(self) -> Optional[str]:
+        """Get current database filename."""
+
+    def get_database_path(self) -> Optional[str]:
+        """Get current database file path."""
+
+    def is_loaded(self) -> bool:
+        """Check if database is loaded."""
+
+    def get_record_count(self) -> int:
+        """Get total record count."""
+
+    def save_to_file(self, show_progress: bool = True) -> bool:
+        """Save memory database to file."""
+
+    def trigger_auto_save(self):
+        """Trigger asynchronous auto-save."""
+
+    def create_backup(self) -> Optional[str]:
+        """Create timestamped backup."""
+
+    def close(self):
+        """Close database connection."""
 ```
 
-### 2. CHbpr Class - HBPR Record Processing
+### 2. Remote DatabaseManager Class - HTTP-based DB Management
+
+**Location**: `remote_db/database_manager.py`
+
+**Purpose**: Manages connections to remote HTTP-based database services for network-based database access.
+
+#### Methods
+
+```python
+class DatabaseManager:
+    """Remote database manager for HTTP-based operations."""
+
+    def load_database(self, file_path: str) -> bool:
+        """Load database via remote HTTP service."""
+
+    def get_connection(self) -> Optional[RemoteSqliteConnection]:
+        """Get remote SQLite connection adapter."""
+
+    def get_database(self) -> Optional[HbprDatabaseClient]:
+        """Get remote HbprDatabase API client."""
+
+    def get_database_name(self) -> Optional[str]:
+        """Get current remote database name."""
+
+    def get_database_path(self) -> Optional[str]:
+        """Get current remote database file path."""
+
+    def is_loaded(self) -> bool:
+        """Check if remote database is loaded."""
+
+    def get_record_count(self) -> int:
+        """Get record count via HTTP query."""
+
+    def save_to_file(self) -> bool:
+        """Save remote database to file."""
+
+    def create_backup(self) -> Optional[str]:
+        """Create backup via remote service."""
+
+    def close(self):
+        """Close remote connection."""
+```
+
+### 3. CHbpr Class - HBPR Record Processing
 
 **Location**: `scripts/hbpr_info_processor.py`
 
@@ -699,7 +892,7 @@ def __GetConnectingFlights(self) -> None:
     """Extract connecting flight information"""
 ```
 
-### 3. HbprDatabase Class - Database Management
+### 4. HbprDatabase Class - Database Management
 
 **Location**: `scripts/hbpr_info_processor.py`
 
@@ -961,7 +1154,7 @@ def add_is_deleted_field_if_not_exists(self) -> bool:
     """
 ```
 
-### 4. HBPRProcessor Class - Batch Processing
+### 5. HBPRProcessor Class - Batch Processing
 
 **Location**: `scripts/hbpr_list_processor.py`
 
@@ -1054,7 +1247,7 @@ def _parse_simple_record(self, line: str) -> Optional[int]:
     """Parse simple HBPR record to extract HBNB number"""
 ```
 
-### 5. DataCleaner Class - Data Sanitization
+### 6. DataCleaner Class - Data Sanitization
 
 **Location**: `scripts/data_cleaner.py`
 
@@ -1148,7 +1341,7 @@ def clean_database_connection(conn: sqlite3.Connection) -> bool:
     """
 ```
 
-### 6. CArgs Class - Configuration
+### 7. CArgs Class - Configuration
 
 **Location**: `scripts/general_func.py`
 
@@ -1740,20 +1933,58 @@ CREATE TABLE flight_info (
 
 ## 🚀 Usage Examples
 
-### Statistics Management
+### Local SQLite Database Usage
 ```python
-# All database access is now through the global manager
-from ui.components.database_manager import db_manager
+# Local SQLite database management
+from ui.components.database_manager import db_manager, create_database_selectbox
 
-# Get the database instance (assuming one is loaded in the UI)
+# Load a database
+success = db_manager.load_database("path/to/database.db")
+
+# Create database selector widget
+selected_file, available_files = create_database_selectbox(
+    label="Select Database:",
+    custom_folder="C:/MyDatabases"
+)
+
+# Get database instance for operations
 db = db_manager.get_database()
 
 # Get all statistics efficiently
 all_stats = db.get_all_statistics()
 record_summary = all_stats['record_summary']
 accepted_stats = all_stats['accepted_stats']
+```
 
-# Statistics are managed automatically, manual refresh is done via UI
+### Remote HTTP Database Usage
+```python
+# Remote database management (requires running server)
+import os
+os.environ['FCP_DB_HOST'] = '192.168.1.100'
+os.environ['FCP_DB_PORT'] = '8080'
+
+from remote_db.database_manager import get_manager
+
+# Get remote database manager
+remote_manager = get_manager()
+
+# Load database via HTTP
+success = remote_manager.load_database("path/to/database.db")
+
+# Get remote database instance
+remote_db = remote_manager.get_database()
+
+# Use same API as local database
+all_stats = remote_db.get_all_statistics()
+```
+
+### Remote Database Server Setup
+```bash
+# Start remote database server for port 8080
+python remote_db/memdb_port_server.py --host 0.0.0.0 --port 8080
+
+# Or with specific host
+python remote_db/memdb_port_server.py --host 192.168.1.100 --port 8080
 ```
 
 ### Processing HBPR Records
@@ -1877,9 +2108,11 @@ if folder_path:
     st.session_state.custom_db_folder = folder_path
 ```
 
-### UI Statistics Display
+### UI Statistics Display (Local SQLite)
 ```python
-# In Streamlit UI components
+# In Streamlit UI components - Local SQLite
+from ui.components.database_manager import db_manager
+
 db = db_manager.get_database()
 all_stats = db.get_all_statistics()
 record_summary = all_stats['record_summary']
@@ -1896,10 +2129,48 @@ if record_summary['tkne_count'] > 0:
 else:
     st.metric("Acceptance Rate", "0.0%")
 
-# Refresh statistics button
-if st.button("🔄 Refresh Statistics"):
-    # Invalidation is handled by db modifications, refresh is st.rerun()
-    st.rerun()
+# Auto-save on changes
+db_manager.trigger_auto_save()
+```
+
+### UI Statistics Display (Remote HTTP)
+```python
+# In Streamlit UI components - Remote HTTP
+from remote_db.database_manager import get_manager
+
+remote_manager = get_manager()
+remote_db = remote_manager.get_database()
+all_stats = remote_db.get_all_statistics()
+
+# Same UI code works with remote database!
+record_summary = all_stats['record_summary']
+accepted_stats = all_stats['accepted_stats']
+st.metric("Total Records", record_summary['total_records'])
+st.metric("Accepted Pax", record_summary['accepted_pax'])
+```
+
+### Architecture Selection
+```python
+# Choose database architecture at runtime
+import os
+
+# Check if remote server is available
+remote_host = os.environ.get('FCP_DB_HOST')
+remote_port = os.environ.get('FCP_DB_PORT')
+
+if remote_host and remote_port:
+    # Use remote architecture
+    from remote_db.database_manager import get_manager
+    db_manager = get_manager()
+    st.info("📡 Using remote database server")
+else:
+    # Use local architecture
+    from ui.components.database_manager import db_manager
+    st.info("💻 Using local database")
+
+# Same API works for both architectures
+db = db_manager.get_database()
+stats = db.get_all_statistics()
 ```
 
 ## 🔧 Error Handling
@@ -1960,4 +2231,31 @@ except sqlite3.OperationalError:
 - **Batch processing**: Database cleaning operations use transactions
 - **Memory management**: Line-by-line processing for large files
 
-This technical documentation provides comprehensive information about the system's functions, their parameters, return types, and relationships for developers working with the HBPR Processing System, including all recent enhancements for the in-memory database architecture, automatic persistence, and comprehensive data cleaning solutions.
+This technical documentation provides comprehensive information about the HBPR Processing System's dual architecture approach:
+
+## 🏗️ Architecture Summary
+
+### Local SQLite Architecture (Default)
+- **Best for**: Single-user applications, development, offline usage
+- **Features**: Direct file access, immediate persistence, no network setup
+- **Location**: `ui/components/database_manager.py`
+- **Performance**: Highest performance for local operations
+
+### Remote HTTP Architecture (Alternative)
+- **Best for**: Multi-user environments, LAN deployments, centralized management
+- **Features**: Network-based access, user isolation, scalable deployment
+- **Location**: `remote_db/` directory
+- **Performance**: Network latency overhead, suitable for distributed systems
+
+### Unified API
+Both architectures provide identical APIs, allowing seamless switching between local and remote database operations without code changes. The system automatically detects available architecture and provides transparent operation.
+
+### Key Features
+- **Automatic Persistence**: Changes saved to disk automatically
+- **Data Cleaning**: Comprehensive sanitization at input, storage, and export
+- **Statistics Caching**: Efficient data retrieval with automatic invalidation
+- **UI Components**: Reusable, modular interface components
+- **Error Handling**: Robust exception management across all layers
+- **Cross-Platform**: Windows-native folder picker and path handling
+
+The system is designed for flexibility, allowing deployment in both traditional single-user environments and modern distributed, multi-user architectures.

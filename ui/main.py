@@ -8,11 +8,10 @@ import os
 import sys
 import tkinter as tk
 from tkinter import filedialog
-
+from pathlib import Path
 # Add project root to Python path
-project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
+project_root = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(project_root))
 # Project-specific imports (after path setup)
 from ui.common import get_icon_base64, apply_global_settings
 from ui.components.database_manager import create_database_selectbox
