@@ -5,68 +5,69 @@ Home page for HBPR UI - System overview and quick actions
 
 import streamlit as st
 import pandas as pd
-from ui.common import apply_global_settings
-from ui.components.database_manager import db_manager, require_database, get_database_path
+from ui.common import apply_global_settings, get_hbpr_database_client, is_db_available
 import os
 from ui.components.home_metrics import get_home_summary
 from ui.components.main_stats import get_and_display_main_statistics
 
 
-@require_database
 def show_home_page():
     """显示主页"""
-    # Apply settings
     apply_global_settings()
-    # 检查是否需要刷新
-    if 'refresh_home' in st.session_state and st.session_state.refresh_home:
-        st.session_state.refresh_home = False
-        st.rerun()
-    messages = []
-    try:# 检查数据库状态
-        # 获取当前选中的数据库
-        selected_db_file = get_database_path()
-        if not selected_db_file:
-            st.error("❌ No database selected!")
-            st.info("💡 Please select a database from the sidebar or build one first using the Database Management page.")
-            return
-        # 使用内存数据库
-        db = db_manager.get_database()
-        if db is None:
-            st.error("❌ No database loaded in memory")
-            st.info("💡 Please load a database in the Database page.")
-            return
-        messages.append(f"DB connected: {os.path.basename(st.session_state.get('current_db_name',''))}")
-    except Exception as e:
-        st.error(f"❌ No database found: {str(e)}")
-        st.info("💡 Please build a database first using the Database Management page.")
-        return
-    col1, col2 = st.columns([2,1])
+
+    # Create two columns for layout
+    col1, col2 = st.columns([2, 1])
+
     with col1:
-        # Display main statistics using reusable component
-        all_stats = get_and_display_main_statistics(db)
+        st.subheader("📊 Main Statistics")
+        try:
+            # 检查数据库状态
+            if not is_db_available():
+                st.warning("⚠️ Please select a database from the sidebar to begin.")
+                return
+
+            # 使用内存数据库
+            db = get_hbpr_database_client()
+            if db is None:
+                st.error("❌ No database loaded in memory")
+                return
+
+            with st.spinner("Loading database statistics..."):
+                get_and_display_main_statistics(db.get_all_statistics())
+        except Exception as e:
+            st.error(f"❌ Error loading main statistics: {e}")
+
     with col2:
-        st.subheader("📈 航班摘要")
-        # 航班摘要信息折叠块
-        summary = get_home_summary()
-        title = f"{summary['flight_number']} / {summary['flight_date']}"
-        with st.expander(title, expanded=True):
-            total_line = f"TOTAL {summary['total_accepted']} + {summary['infant_count']} INF"
-            j_y_line = f"J_{summary['accepted_business']} / Y_{summary['accepted_economy']}"
-            ratio_display = f"{summary['ratio']}%" if summary['ratio'] is not None else "N/A"
-            ratio_line = f"RATIO: {ratio_display}"
-            id_line = f"ID_J: {summary['id_j']}  ID_Y: {summary['id_y']}"
-            noshow_line = f"NOSHOW: J_{summary['noshow_j']} / Y_{summary['noshow_y']}"
-            inad_line = f"INAD: {summary['inad_total']}"
-            msg = "\n".join([
-                title,
-                total_line,
-                j_y_line,
-                ratio_line,
-                id_line,
-                noshow_line,
-                inad_line,
-            ])
-            st.code(msg)
+        st.subheader("📈 Home Summary")
+        try:
+            # Get home summary metrics
+            summary = get_home_summary()
+            if summary:
+                # 航班摘要信息折叠块
+                title = f"{summary['flight_number']} / {summary['flight_date']}"
+                with st.expander(title, expanded=True):
+                    total_line = f"TOTAL {summary['total_accepted']} + {summary['infant_count']} INF"
+                    j_y_line = f"J_{summary['accepted_business']} / Y_{summary['accepted_economy']}"
+                    ratio_display = f"{summary['ratio']}%" if summary['ratio'] is not None else "N/A"
+                    ratio_line = f"RATIO: {ratio_display}"
+                    id_line = f"ID_J: {summary['id_j']}  ID_Y: {summary['id_y']}"
+                    noshow_line = f"NOSHOW: J_{summary['noshow_j']} / Y_{summary['noshow_y']}"
+                    inad_line = f"INAD: {summary['inad_total']}"
+                    msg = "\n".join([
+                        title,
+                        total_line,
+                        j_y_line,
+                        ratio_line,
+                        id_line,
+                        noshow_line,
+                        inad_line,
+                    ])
+                    st.code(msg)
+            else:
+                st.info("No summary data available.")
+        except Exception as e:
+            st.error(f"❌ Error loading home summary: {e}")
+
     # 显示缺失号码表格
     missing_numbers = all_stats.get('missing_numbers', []) if all_stats else []
     if missing_numbers:

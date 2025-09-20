@@ -16,9 +16,15 @@ class DatabaseMigrator:
     """数据库迁移器，用于修复现有数据库结构"""
 
 
-    def __init__(self):
-        """初始化迁移器"""
-        self.databases_folder = "databases"
+    def __init__(self, conn: sqlite3.Connection):
+        """
+        初始化迁移器
+        Args:
+            conn (sqlite3.Connection): 数据库连接对象
+        """
+        if not conn:
+            raise ValueError("A valid database connection must be provided.")
+        self.conn = conn
         # HBPR表需要的列
         self.hbpr_required_columns = [
             ('is_validated', 'BOOLEAN DEFAULT 0'),
@@ -66,42 +72,15 @@ class DatabaseMigrator:
         ]
 
 
-    def find_databases(self) -> List[str]:
-        """查找所有需要迁移的数据库文件"""
-        if not os.path.exists(self.databases_folder):
-            print(f"⚠️  {self.databases_folder} 文件夹不存在")
-            return []
-        
-        db_files = glob.glob(os.path.join(self.databases_folder, "*.db"))
-        print(f"📁 找到 {len(db_files)} 个数据库文件")
-        return db_files
-
-
-    def get_table_structure(self, db_file: str, table_name: str) -> List[Tuple]:
-        """获取指定表的结构信息"""
-        try:
-            conn = sqlite3.connect(db_file)
-            cursor = conn.cursor()
-            cursor.execute(f"PRAGMA table_info({table_name})")
-            columns = cursor.fetchall()
-            conn.close()
-            return columns
-        except sqlite3.Error as e:
-            print(f"❌ 无法读取 {db_file} 的表结构: {e}")
-            return []
-
-
-    def migrate_hbpr_table(self, db_file: str) -> bool:
+    def migrate_hbpr_table(self) -> bool:
         """迁移HBPR表"""
         print("   🔄 迁移HBPR表...")
         
         # 检查表是否存在
-        conn = sqlite3.connect(db_file)
-        cursor = conn.cursor()
+        cursor = self.conn.cursor()
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='hbpr_full_records'")
         if not cursor.fetchone():
             print("     ⚠️  hbpr_full_records表不存在，跳过")
-            conn.close()
             return True
         
         # 获取现有列
@@ -116,7 +95,6 @@ class DatabaseMigrator:
         
         if not missing_columns:
             print("     ✅ HBPR表结构完整，无需迁移")
-            conn.close()
             return True
         
         print(f"     📝  需要添加 {len(missing_columns)} 个列")
@@ -127,29 +105,25 @@ class DatabaseMigrator:
                 cursor.execute(f"ALTER TABLE hbpr_full_records ADD COLUMN {column_name} {column_type}")
                 print(f"       ➕ 添加列: {column_name}")
             
-            conn.commit()
+            self.conn.commit()
             print("     ✅ HBPR表迁移成功")
             return True
             
         except sqlite3.Error as e:
             print(f"     ❌ HBPR表迁移失败: {e}")
-            conn.rollback()
+            self.conn.rollback()
             return False
-        finally:
-            conn.close()
 
 
-    def migrate_commands_table(self, db_file: str) -> bool:
+    def migrate_commands_table(self) -> bool:
         """迁移Commands表"""
         print("   🔄 迁移Commands表...")
         
         # 检查表是否存在
-        conn = sqlite3.connect(db_file)
-        cursor = conn.cursor()
+        cursor = self.conn.cursor()
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='commands'")
         if not cursor.fetchone():
             print("     ⚠️  commands表不存在，跳过")
-            conn.close()
             return True
         
         # 获取现有列
@@ -164,7 +138,6 @@ class DatabaseMigrator:
         
         if not missing_columns:
             print("     ✅ Commands表结构完整，无需迁移")
-            conn.close()
             return True
         
         print(f"     📝  需要添加 {len(missing_columns)} 个列")
@@ -186,121 +159,93 @@ class DatabaseMigrator:
             cursor.execute("UPDATE commands SET version = 1 WHERE version IS NULL")
             cursor.execute("UPDATE commands SET is_latest = TRUE WHERE is_latest IS NULL")
             
-            conn.commit()
+            self.conn.commit()
             print("     ✅ Commands表迁移成功")
             return True
             
         except sqlite3.Error as e:
             print(f"     ❌ Commands表迁移失败: {e}")
-            conn.rollback()
+            self.conn.rollback()
             return False
-        finally:
-            conn.close()
 
 
-    def migrate_database(self, db_file: str) -> bool:
-        """迁移单个数据库"""
-        print(f"\n🔄 正在迁移数据库: {os.path.basename(db_file)}")
+    def migrate_database(self) -> bool:
+        """迁移当前连接的数据库"""
+        print(f"\n🔄 正在迁移数据库...")
         
         # 迁移HBPR表
-        hbpr_success = self.migrate_hbpr_table(db_file)
+        hbpr_success = self.migrate_hbpr_table()
         
         # 迁移Commands表
-        commands_success = self.migrate_commands_table(db_file)
+        commands_success = self.migrate_commands_table()
         
+        if hbpr_success and commands_success:
+            print("\n🎉 数据库迁移成功！")
+        else:
+            print("\n⚠️  数据库迁移失败")
+            
         return hbpr_success and commands_success
 
 
-    def migrate_all_databases(self) -> None:
-        """迁移所有数据库"""
-        print("🚀 开始数据库迁移...")
-        print("=" * 50)
-        
-        db_files = self.find_databases()
-        if not db_files:
-            print("❌ 没有找到需要迁移的数据库")
-            return
-        
-        success_count = 0
-        total_count = len(db_files)
-        
-        for db_file in db_files:
-            if self.migrate_database(db_file):
-                success_count += 1
-        
-        print("\n" + "=" * 50)
-        print(f"🎉 迁移完成！成功: {success_count}/{total_count}")
-        
-        if success_count < total_count:
-            print("⚠️  部分数据库迁移失败，请检查错误信息")
-        else:
-            print("✅  所有数据库迁移成功！")
-
-
-    def verify_migration(self, db_file: str) -> bool:
+    def verify_migration(self) -> bool:
         """验证迁移结果"""
-        print(f"\n🔍 验证数据库: {os.path.basename(db_file)}")
+        print(f"\n🔍 验证数据库...")
         
         all_valid = True
         
-        # 验证HBPR表
-        columns = self.get_table_structure(db_file, "hbpr_full_records")
-        if columns:
-            existing_column_names = [col[1] for col in columns]
-            required_column_names = [col[0] for col in self.hbpr_required_columns]
-            missing_columns = set(required_column_names) - set(existing_column_names)
+        try:
+            cursor = self.conn.cursor()
             
-            if missing_columns:
-                print(f"   ❌ HBPR表缺少列: {list(missing_columns)}")
-                all_valid = False
-            else:
-                print("   ✅ HBPR表所有必需列都存在")
-        
-        # 验证Commands表
-        columns = self.get_table_structure(db_file, "commands")
-        if columns:
-            existing_column_names = [col[1] for col in columns]
-            required_column_names = [col[0] for col in self.commands_required_columns]
-            missing_columns = set(required_column_names) - set(existing_column_names)
+            # 验证HBPR表
+            cursor.execute("PRAGMA table_info(hbpr_full_records)")
+            columns = cursor.fetchall()
+            if columns:
+                existing_column_names = [col[1] for col in columns]
+                required_column_names = [col[0] for col in self.hbpr_required_columns]
+                missing_columns = set(required_column_names) - set(existing_column_names)
+                
+                if missing_columns:
+                    print(f"   ❌ HBPR表缺少列: {list(missing_columns)}")
+                    all_valid = False
+                else:
+                    print("   ✅ HBPR表所有必需列都存在")
             
-            if missing_columns:
-                print(f"   ❌ Commands表缺少列: {list(missing_columns)}")
-                all_valid = False
-            else:
-                print("   ✅ Commands表所有必需列都存在")
-        
+            # 验证Commands表
+            cursor.execute("PRAGMA table_info(commands)")
+            columns = cursor.fetchall()
+            if columns:
+                existing_column_names = [col[1] for col in columns]
+                required_column_names = [col[0] for col in self.commands_required_columns]
+                missing_columns = set(required_column_names) - set(existing_column_names)
+                
+                if missing_columns:
+                    print(f"   ❌ Commands表缺少列: {list(missing_columns)}")
+                    all_valid = False
+                else:
+                    print("   ✅ Commands表所有必需列都存在")
+            
+        except sqlite3.Error as e:
+            print(f"   ❌ 验证时发生数据库错误: {e}")
+            all_valid = False
+            
         return all_valid
 
 
-    def verify_all_databases(self) -> None:
-        """验证所有数据库的迁移结果"""
-        print("\n🔍 验证所有数据库...")
-        print("=" * 50)
-        
-        db_files = self.find_databases()
-        if not db_files:
-            return
-        
-        all_valid = True
-        for db_file in db_files:
-            if not self.verify_migration(db_file):
-                all_valid = False
-        
-        if all_valid:
-            print("\n🎉 所有数据库验证通过！")
-        else:
-            print("\n⚠️  部分数据库验证失败")
-
-
 def main():
-    """主函数"""
-    migrator = DatabaseMigrator()
-    
-    # 执行迁移
-    migrator.migrate_all_databases()
-    
-    # 验证迁移结果
-    migrator.verify_all_databases()
+    """主函数 - 示例"""
+    print("🚀 数据库迁移脚本 (内存模式)")
+    print("=" * 50)
+    print("该脚本现在应该作为模块导入，而不是直接运行。")
+    print("用法示例:")
+    print("  from scripts.database_migration import DatabaseMigrator")
+    print("  from ui.common import get_hbpr_database_client # Assuming UI is running")
+    print("")
+    print("  db_client = get_hbpr_database_client()")
+    print("  if db_client:")
+    print("      conn = db_client.get_connection()")
+    print("      migrator = DatabaseMigrator(conn)")
+    print("      migrator.migrate_database()")
+    print("      migrator.verify_migration()")
 
 
 if __name__ == "__main__":

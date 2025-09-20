@@ -9,7 +9,7 @@ import sqlite3
 import re
 from datetime import datetime
 from io import BytesIO
-from ui.components.database_manager import db_manager
+from ui.common import get_hbpr_database_client, is_db_available
 
 
 def clean_text_for_export(text: str) -> str:
@@ -86,14 +86,19 @@ def safe_export_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
 def show_export_data():
     """显示导出选项"""
-    try:
-        if not db_manager.is_available():
-            st.error("❌ No database selected.")
-            st.info("💡 Please select a database from the sidebar or build one first in the Database Management page.")
-            return
+    st.subheader("📤 Export Data")
+    
+    if not is_db_available():
+        st.warning("⚠️ Please select a database from the sidebar to begin.")
+        return
 
-        st.subheader("📤 Export Data")
-        conn = db_manager.get_database().get_connection()
+    try:
+        db = get_hbpr_database_client()
+        if not db:
+            st.error("❌ Database connection not available.")
+            return
+            
+        conn = db.get_connection()
         
         # 获取所有已处理的记录，但排除可能有问题的record_content字段
         df = pd.read_sql_query("""

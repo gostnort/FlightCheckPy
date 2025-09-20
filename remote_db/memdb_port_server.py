@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
 Per-port in-memory SQLite HTTP server
-
 - Loads a SQLite file into an in-memory database
 - Exposes minimal HTTP endpoints for query/exec/save/backup/switch
 - Intended for LAN-only use; one server per user/port
@@ -17,7 +16,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse
 
 
-# 仅中文注释：内存数据库与源文件路径
+# Global variables to hold the in-memory database connection,
+# the path to the source file, and a thread lock for safe concurrent access.
 _conn = None
 _src_file_path = None
 _lock = threading.Lock()
@@ -33,25 +33,37 @@ def _ensure_pragmas(conn: sqlite3.Connection) -> None:
 
 
 def _load_db_into_memory(file_path: str) -> None:
-    """Load a SQLite file into a new in-memory database and swap it in atomically."""
+    """
+    Loads a SQLite database file from the given path into a new in-memory database.
+    It then atomically swaps the new connection for the global one.
+    If a database is already loaded, it's closed after the new one is ready.
+    """
     global _conn, _src_file_path
+    # Create a new in-memory SQLite database connection.
     new_conn = sqlite3.connect(":memory:", check_same_thread=False)
     _ensure_pragmas(new_conn)
+    # Connect to the source file on disk and back it up to the new in-memory database.
     with sqlite3.connect(file_path) as fconn:
         fconn.backup(new_conn)
+    # Use a lock to safely swap the global connection to the new in-memory database.
     with _lock:
         old = _conn
         _conn = new_conn
         _src_file_path = file_path
         if old:
             try:
+                # Close the old connection if it exists.
                 old.close()
             except Exception:
                 pass
 
 
 def _backup_memory_db() -> str:
-    """Create a timestamped backup of the current in-memory DB to databases/backups."""
+    """
+    Creates a timestamped backup of the current in-memory database.
+    The backup is saved in the 'databases/backups' directory.
+    The backup filename includes the original database name and a timestamp.
+    """
     if not _conn:
         return ""
     base = os.path.splitext(os.path.basename(_src_file_path or "database"))[0]
@@ -59,6 +71,7 @@ def _backup_memory_db() -> str:
     bdir = os.path.join("databases", "backups")
     os.makedirs(bdir, exist_ok=True)
     bpath = os.path.join(bdir, f"{base}_backup_{ts}.db")
+    # Lock to prevent other operations on the DB while backing up.
     with _lock:
         with sqlite3.connect(bpath, check_same_thread=False) as bconn:
             _conn.backup(bconn)
@@ -66,15 +79,23 @@ def _backup_memory_db() -> str:
 
 
 def _save_to_source() -> None:
-    """Persist the in-memory DB to its source file."""
+    """
+    Persists the in-memory database back to its original source file on disk.
+    This overwrites the source file with the current state of the in-memory database.
+    """
     if not _conn or not _src_file_path:
         return
+    # Lock to ensure data integrity during the save operation.
     with _lock:
         with sqlite3.connect(_src_file_path, check_same_thread=False) as fconn:
             _conn.backup(fconn)
 
 
 def _list_db_files() -> list:
+    """
+    Lists all '.db' files in the 'databases' directory.
+    Returns a list of file paths, sorted by creation time (most recent first).
+    """
     files = []
     if os.path.exists("databases"):
         for name in os.listdir("databases"):
@@ -84,7 +105,12 @@ def _list_db_files() -> list:
 
 
 class Handler(BaseHTTPRequestHandler):
+    """
+    The request handler for the HTTP server.
+    It defines how to handle GET and POST requests to various endpoints.
+    """
     def _send(self, code: int, body: dict) -> None:
+        """Helper function to send a JSON response."""
         data = json.dumps(body).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
@@ -93,18 +119,22 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def log_message(self, format, *args):
-        # Quiet server logs
+        # Overridden to suppress the default server log messages for cleaner output.
         return
 
     def do_GET(self):
+        """Handles GET requests."""
         path = urlparse(self.path).path
         if path == "/health":
+            # Health check endpoint: returns server status and current database file.
             return self._send(200, {"ok": True, "db": os.path.basename(_src_file_path) if _src_file_path else None})
         if path == "/databases/list":
+            # Lists available database files.
             return self._send(200, {"files": _list_db_files()})
         return self._send(404, {"error": "not_found"})
 
     def do_POST(self):
+        """Handles POST requests."""
         path = urlparse(self.path).path
         length = int(self.headers.get("Content-Length", "0"))
         raw = self.rfile.read(length) if length > 0 else b"{}"
@@ -115,6 +145,8 @@ class Handler(BaseHTTPRequestHandler):
 
         try:
             if path == "/database/load":
+                # Loads a new database file into memory.
+                # If a database is already loaded, it's backed up first.
                 file_path = body.get("path")
                 if not file_path or not os.path.exists(file_path):
                     return self._send(400, {"error": "invalid_path"})
@@ -124,14 +156,17 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"ok": True, "db_name": os.path.basename(file_path)})
 
             if path == "/database/backup":
+                # Triggers a backup of the current in-memory database.
                 b = _backup_memory_db()
                 return self._send(200, {"path": b})
 
             if path == "/database/save":
+                # Saves the in-memory database to its source file.
                 _save_to_source()
                 return self._send(200, {"ok": True})
 
             if path == "/query":
+                # Executes a read-only SQL query.
                 sql = body.get("sql") or ""
                 params = body.get("params") or []
                 with _lock:
@@ -142,6 +177,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"columns": cols, "rows": rows})
 
             if path == "/exec":
+                # Executes a write (INSERT, UPDATE, DELETE) SQL statement.
                 sql = body.get("sql") or ""
                 params = body.get("params") or []
                 with _lock:
@@ -157,6 +193,10 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
+    """
+    Parses command line arguments and starts the HTTP server.
+    Requires --port to be specified.
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, required=True)

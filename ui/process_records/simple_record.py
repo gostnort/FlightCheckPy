@@ -5,23 +5,21 @@ Simple Record functionality for HBPR UI - Simple HBNB record creation and manage
 
 import streamlit as st
 import pandas as pd
-from ui.common import parse_hbnb_input
-from ui.components.database_manager import db_manager, require_database, get_database_path
+from ui.common import parse_hbnb_input, get_hbpr_database_client, is_db_available
 
 
-@require_database
 def show_simple_record():
     """简单记录处理""" 
-    # 搜索根目录中的数据库文件
+    if not is_db_available():
+        st.warning("⚠️ Please select a database from the sidebar to begin.")
+        return
+
     try:
-        # 获取当前选中的数据库
-        selected_db_file = get_database_path()
-        if not selected_db_file:
-            st.error("❌ No database selected! Please select a database from the sidebar or build one first.")
-            st.info("💡 Tip: Consider creating a 'databases' folder to organize your database files.")
+        db = get_hbpr_database_client()
+        if not db:
+            st.error("❌ Database connection not available.")
             return
-        # 使用选中的数据库
-        db = db_manager.get_database()
+
         # 只保留简单HBNB记录功能
         _handle_simple_record_input(db)
         # 显示记录列表区域 - 只显示简单记录视图

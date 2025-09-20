@@ -138,11 +138,12 @@ def main():
     print("该脚本现在应该作为模块导入，而不是直接运行。")
     print("用法示例:")
     print("  from scripts.clean_database_data import clean_database_connection")
-    print("  import sqlite3")
-    print("  conn = sqlite3.connect(':memory:')")
-    print("  # ... populate your database ...")
-    print("  result = clean_database_connection(conn)")
-    print("  if result['success']: print('清理成功')")
+    print("  from ui.common import get_hbpr_database_client # Assuming UI is running")
+    print("  db_client = get_hbpr_database_client()")
+    print("  if db_client:")
+    print("      conn = db_client.get_connection()")
+    print("      result = clean_database_connection(conn)")
+    print("      if result['success']: print('清理成功')")
 
 
 if __name__ == "__main__":

@@ -13,8 +13,7 @@ from pathlib import Path
 project_root = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(project_root))
 # Project-specific imports (after path setup)
-from ui.common import get_icon_base64, apply_global_settings
-from ui.components.database_manager import create_database_selectbox
+from ui.common import get_icon_base64, apply_global_settings, create_database_selectbox
 from ui.login_page import show_login_page
 from ui.home_page import show_home_page
 from ui.database_page import show_database_management

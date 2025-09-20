@@ -4,7 +4,7 @@ Reusable component for displaying main HBPR statistics
 """
 
 import streamlit as st
-from ui.components.database_manager import db_manager
+from ui.common import get_hbpr_database_client
 
 
 def display_main_statistics(all_stats, db=None):
@@ -176,7 +176,7 @@ def get_missing_boarding_numbers(db):
     """
     try:
         # 使用全局内存数据库连接
-        conn = db_manager.get_database().get_connection()
+        conn = db.get_connection()
         cursor = conn.cursor()
         # 获取所有有效的boarding_number（非空且非0）
         cursor.execute("""

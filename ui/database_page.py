@@ -9,299 +9,100 @@ import sqlite3
 import os
 import traceback
 from send2trash import send2trash
-from ui.common import apply_global_settings
-from ui.components.database_manager import db_manager
+from tkinter import filedialog
 from scripts.hbpr_list_processor import HBPRProcessor
+from scripts.clean_database_data import clean_database_data
+from ui.common import (
+    get_hbpr_database_client, 
+    is_db_available, 
+    get_database_name,
+    trigger_auto_save
+)
 
 
 def show_database_management():
-    """显示数据库管理页面"""
-    # Apply settings
-    apply_global_settings()
-    tab1, tab2, tab3, tab4 = st.tabs(
-        ["📥 Build Database", "📈 Statistics", "🔍 Database Info", "🧹 Maintenance"]
+    """Display the database management page"""
+    st.markdown("<h3>🗄️ Database Management</h3>", unsafe_allow_html=True)
+    
+    tab1, tab2, tab3 = st.tabs(
+        ["➕ Create/Append from HBPR", "💾 Operations", "ℹ️ Info"]
     )
+
     with tab1:
-        build_database_ui()
-    with tab2:
-        show_statistics()
-    with tab3:
-        st.subheader("🔍 Database Information")
-        show_database_info()
-    with tab4:
-        st.subheader("🧹 Database Maintenance")
-        show_database_maintenance()
-
-
-def build_database_ui():
-    """构建数据库的UI函数"""
-    st.subheader("📥 Build Database from HBPR List")
-    uploaded_file = st.file_uploader(
-        "Choose HBPR list file:", type=["txt"], help="Upload your HBPR list text file"
-    )
-    if uploaded_file is not None:
-        file_content = uploaded_file.getvalue().decode("utf-8")
-        st.subheader("Enter New Database Filename")
-        db_name_input = st.text_input(
-            "New DB Filename (e.g., CA984_25JUL25.db):",
-            "",
-            help="Filename must follow the pattern FLTNUM_DDMMMYY.db",
+        st.subheader("Upload HBPR List to Create or Append")
+        uploaded_file = st.file_uploader(
+            "Upload an HBPR List file (e.g., sample_hbpr_list.txt)",
+            type=["txt"],
+            help="This will process the file and load the data into the current in-memory database.",
         )
-        if st.button("🔨 Build and Save Database", use_container_width=True):
-            if db_name_input and db_name_input.endswith(".db"):
-                db_folder = "databases"
-                if not os.path.exists(db_folder):
-                    os.makedirs(db_folder)
-                new_db_path = os.path.join(db_folder, db_name_input)
-                try:
-                    with st.spinner(f"Building new database '{db_name_input}'..."):
-                        # 1. Create a new temporary in-memory database
-                        temp_conn = sqlite3.connect(":memory:")
-                        # 2. Process the uploaded file into the temp in-memory DB
-                        processor = HBPRProcessor(temp_conn)
-                        processor.create_tables_if_not_exist()
+        
+        if uploaded_file is not None:
+            if st.button("Process File", use_container_width=True, type="primary"):
+                file_content = uploaded_file.getvalue().decode("utf-8")
+                
+                with st.spinner("Processing file and loading data..."):
+                    try:
+                        db_client = get_hbpr_database_client()
+                        if not db_client:
+                            st.error("Database service is not available. Please log in again.")
+                            return
+
+                        conn = db_client.get_connection()
+                        processor = HBPRProcessor(conn)
                         processor.process(file_content)
-                        # 3. Save the in-memory content to the new file
-                        backup_conn = sqlite3.connect(new_db_path)
-                        temp_conn.backup(backup_conn)
-                        backup_conn.close()
-                        temp_conn.close()
-                        st.success(
-                            f"✅ Successfully built and saved database to '{new_db_path}'"
-                        )
-                        st.info("🔄 Refreshing database list...")
-                        # Optionally, switch to the new DB immediately
-                        st.session_state.current_db_path = new_db_path
-                        st.session_state.current_db_name = os.path.basename(new_db_path)
-                        db_manager.load_database(new_db_path)
+                        st.success("✅ HBPR data processed and loaded into the current in-memory database.")
+                        
+                        if trigger_auto_save():
+                            st.toast("Database changes have been saved to disk.")
+                        
                         st.rerun()
-                except Exception as e:
-                    st.error(f"❌ Error building database: {str(e)}")
-                    st.text(traceback.format_exc())
-            else:
-                st.error("❌ Please enter a valid database filename ending with .db")
+                    except Exception as e:
+                        st.error(f"❌ Error processing file: {e}")
 
+    with tab2:
+        st.subheader("Database Operations")
+        
+        if not is_db_available():
+            st.warning("⚠️ No database loaded. Please select one from the sidebar.")
+        else:
+            db_name = get_database_name()
+            st.info(f"**Current Database:** `{db_name}`")
 
-def show_database_info():
-    """显示数据库信息"""
-    if not db_manager.is_available():
-        st.warning("⚠️ No database loaded in memory.")
-        return
-    try:
-        db = db_manager.get_database()
-        conn = db.get_connection()
-        cursor = conn.cursor()
-        db_name = db_manager.get_database_name()
-        with st.expander(f"📁 {db_name} (In-Memory)"):
-            try:
-                # 获取表信息
-                cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
-                tables = cursor.fetchall()
-                st.write("**Tables:**")
-                for table in tables:
-                    table_name = table[0]
-                    cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
-                    count = cursor.fetchone()[0]
-                    st.write(f"- {table_name}: {count} records")
-                # 如果是HBPR数据库，显示详细统计
-                if "hbpr_full_records" in [t[0] for t in tables]:
-                    # Use reusable components for consistent display
-                    from ui.components.main_stats import (
-                        get_and_display_main_statistics,
-                        display_detailed_range_info,
-                    )
-                    all_stats = get_and_display_main_statistics(db)
-                    # Display detailed range information
-                    if all_stats:
-                        display_detailed_range_info(all_stats)
-                        missing_numbers = all_stats.get("missing_numbers", [])
-                        # Show missing numbers details
-                        if missing_numbers:
-                            st.write("**Missing HBNB Numbers:**")
-                            # 限制显示前20个缺失号码
-                            display_missing = missing_numbers[:20]
-                            missing_text = ", ".join(map(str, display_missing))
-                            if len(missing_numbers) > 20:
-                                missing_text += (
-                                    f" ... and {len(missing_numbers) - 20} more"
-                                )
-                            st.text(missing_text)
-                        else:
-                            st.success("✅ No missing HBNB numbers found!")
-            except Exception as e:
-                st.error(f"Error reading database: {str(e)}")
-    except Exception as e:
-        st.error(f"Error accessing database manager: {str(e)}")
-
-
-def show_database_maintenance():
-    """显示数据库维护选项"""
-    if not db_manager.is_available():
-        st.info("ℹ️ No database selected. Please select a database from the sidebar.")
-        return
-    st.info(
-        "💡 If you encounter errors, you can perform maintenance on the in-memory database."
-    )
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        # 保存数据库按钮
-        if st.button("💾 Save Database to File", use_container_width=True):
-            if db_manager.save_to_file():
-                st.success("✅ Database saved successfully!")
-            else:
-                st.error("❌ Error saving database.")
-    with col2:
-        # 更新missing_numbers表按钮
-        if st.button("🔄 Update Missing Numbers", use_container_width=True):
-            try:
-                db = db_manager.get_database()
-                db.update_missing_numbers_table()
-                st.success("✅ Missing numbers table updated successfully!")
-            except Exception as e:
-                st.error(f"❌ Error updating missing numbers table: {str(e)}")
-    with col3:
-        # 数据库清理按钮
-        if st.button("🧹 Clean Database Data", use_container_width=True):
-            try:
-                clean_database_data(db_manager.get_database().get_connection())
-            except Exception as e:
-                st.error(f"❌ Error cleaning database: {str(e)}")
-    with col4:
-        # 删除数据库文件到回收站按钮
-        if st.button("🗑️ Remove Database File", use_container_width=True):
-            try:
-                # 保存当前内存中的数据到文件
-                if db_manager.save_to_file():
-                    st.success("✅ Database data saved to file before removal!")
-                    # 获取当前数据库文件名
-                    current_db_name = st.session_state.get('current_db_name')
-                    if current_db_name:
-                        # 构造完整的数据库文件路径
-                        if os.path.exists('databases'):
-                            current_db_path = os.path.join('databases', current_db_name)
-                        else:
-                            current_db_path = current_db_name
-                        if os.path.exists(current_db_path):
-                            # 将文件移动到回收站
-                            send2trash(current_db_path)
-                            st.success(f"✅ Database file moved to recycle bin: {current_db_name}")
-                            # 清除内存中的数据库
-                            # 清除相关的session state变量
-                            keys_to_clear = [
-                                'current_memory_db',
-                                'current_db_name',
-                                'last_db_save_time',
-                                'last_db_save_path'
-                            ]
-                            for key in keys_to_clear:
-                                if key in st.session_state:
-                                    st.session_state.pop(key, None)
-                            # 清除所有相关的数据库实例缓存
-                            keys_to_remove = []
-                            for key in st.session_state.keys():
-                                if ('_instance' in key or '_enhanced_instance' in key or
-                                    key.startswith('memory_db_')):
-                                    keys_to_remove.append(key)
-                            for key in keys_to_remove:
-                                cached_instance = st.session_state.get(key)
-                                if cached_instance and hasattr(cached_instance, 'close'):
-                                    try:
-                                        cached_instance.close()
-                                    except Exception:
-                                        pass
-                                st.session_state.pop(key, None)
-                            st.info("💡 Database cleared from memory. Please select a new database from the sidebar.")
-                            st.rerun()
-                        else:
-                            st.warning(f"⚠️ Database file not found at expected path: {current_db_path}")
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("💾 Save to File", use_container_width=True, help="Persist in-memory changes to disk"):
+                    if trigger_auto_save():
+                        st.success(f"✅ Database `{db_name}` saved successfully.")
                     else:
-                        st.warning("⚠️ No database file selected or loaded.")
-                else:
-                    st.error("❌ Failed to save database data before removal. Operation cancelled.")
+                        st.error("❌ Failed to save database.")
+            with col2:
+                if st.button("🧹 Clean Database Data", use_container_width=True, help="Run data cleaning scripts"):
+                    try:
+                        db = get_hbpr_database_client()
+                        with st.spinner("Cleaning database data..."):
+                            clean_database_data(db.get_connection())
+                        st.success("✅ Database cleaned successfully.")
+                        if trigger_auto_save():
+                            st.toast("💾 Changes saved to disk.")
+                    except Exception as e:
+                        st.error(f"❌ Error cleaning database: {e}")
+
+    with tab3:
+        st.subheader("Database Information")
+
+        if not is_db_available():
+            st.warning("⚠️ No database loaded to display information.")
+        else:
+            try:
+                db = get_hbpr_database_client()
+                stats = db.get_record_summary()
+                
+                col1, col2, col3, col4 = st.columns(4)
+                col1.metric("Total Records", f"{stats.get('total_records', 0)}")
+                col2.metric("Full Records", f"{stats.get('full_records', 0)}")
+                col3.metric("Simple Records", f"{stats.get('simple_records', 0)}")
+                col4.metric("Validated Records", f"{stats.get('validated_records', 0)}")
+
             except Exception as e:
-                st.error(f"❌ Error removing database file: {str(e)}")
-
-
-def clean_database_data(conn: sqlite3.Connection):
-    """清理数据库中的问题数据"""
-    try:
-        with st.spinner("🔄 正在清理数据库数据..."):
-            # 导入清理函数
-            from scripts.clean_database_data import clean_database_connection
-            # 执行清理
-            result = clean_database_connection(conn)
-        # 显示清理过程中的消息
-        with st.expander("Show Cleaning Log", expanded=True):
-            for msg in result.get("messages", []):
-                st.text(msg)
-        if result["success"]:
-            st.success("✅ 数据库数据清理完成！")
-            if result["total_cleaned"] > 0:
-                st.info(f"💡 清理了 {result['total_cleaned']} 行数据。现在可以尝试导出数据了。")
-                st.rerun()
-            else:
-                st.info("💡 未发现需要清理的数据。")
-        else:
-            st.error("❌ 数据库数据清理失败")
-    except ImportError:
-        st.error("❌ 清理工具未找到，请确保 scripts/clean_database_data.py 文件存在")
-    except Exception as e:
-        st.error(f"❌ 清理过程中发生错误: {str(e)}")
-        st.error("💡 请检查错误信息并重试")
-
-
-def show_statistics():
-    """显示统计信息"""
-    if not db_manager.is_available():
-        st.error("❌ No database loaded.")
-        st.info("💡 Please select a database from the sidebar or build one first.")
-        return
-    try:
-        db = db_manager.get_database()
-        # 添加刷新按钮
-        col1, col2, col3 = st.columns([3, 1, 1])
-        with col1:
-            st.subheader("📈 Statistics")
-        with col2:
-            if st.button("🔄 Refresh", use_container_width=True):
-                st.rerun()
-        with col3:
-            debug_trigger = st.toggle("🔍 Debug", value=False)
-        # 显示调试信息（如果触发）
-        if debug_trigger:
-            # Debug summary needs a file path, so this might not work as expected
-            # with an in-memory database.
-            st.info("Debug summary may not be accurate for in-memory databases.")
-        # Use reusable components for consistent display
-        from ui.components.main_stats import get_and_display_main_statistics
-        all_stats = get_and_display_main_statistics(db)
-        # Extract missing numbers for the detailed display below
-        missing_numbers = all_stats.get("missing_numbers", []) if all_stats else []
-        # 显示缺失号码表格
-        if missing_numbers:
-            st.subheader("🚫 Missing HBNB Numbers")
-            # 分页显示缺失号码
-            items_per_page = 30
-            total_pages = (len(missing_numbers) + items_per_page - 1) // items_per_page
-            if total_pages > 1:
-                page = st.selectbox(
-                    "Page:", range(1, total_pages + 1), key="stats_missing_page"
-                )
-                start_idx = (page - 1) * items_per_page
-                end_idx = min(start_idx + items_per_page, len(missing_numbers))
-                page_missing = missing_numbers[start_idx:end_idx]
-            else:
-                page_missing = missing_numbers
-            # 创建缺失号码的DataFrame
-            missing_df = pd.DataFrame({"Missing HBNB Numbers": page_missing})
-            st.dataframe(missing_df, use_container_width=True)
-            if total_pages > 1:
-                st.info(
-                    f"Showing page {page} of {total_pages} ({len(page_missing)} of {len(missing_numbers)} missing numbers)"
-                )
-        else:
-            st.success("✅ No missing HBNB numbers found!")
-    except Exception as e:
-        st.error(f"❌ Database not available: {str(e)}")
-        st.info("💡 Please select a database from the sidebar or build one first.")
+                st.error(f"❌ Error fetching database info: {e}")
 

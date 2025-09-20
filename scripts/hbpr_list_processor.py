@@ -369,12 +369,14 @@ def main():
     print("该脚本现在应该作为模块导入，而不是直接运行。")
     print("用法示例:")
     print("  from scripts.hbpr_list_processor import HBPRProcessor")
-    print("  import sqlite3")
-    print("  conn = sqlite3.connect(':memory:')")
-    print("  processor = HBPRProcessor(conn)")
-    print("  with open('sample_hbpr_list.txt', 'r') as f:")
-    print("      content = f.read()")
-    print("  processor.process(content)")
+    print("  from ui.common import get_hbpr_database_client # Assuming UI is running")
+    print("  db_client = get_hbpr_database_client()")
+    print("  if db_client:")
+    print("      conn = db_client.get_connection()")
+    print("      processor = HBPRProcessor(conn)")
+    print("      with open('sample_hbpr_list.txt', 'r') as f:")
+    print("          content = f.read()")
+    print("      processor.process(content)")
 
 
 if __name__ == "__main__":

@@ -11,6 +11,11 @@ import sys
 import time
 from urllib.request import urlopen
 from urllib.error import URLError
+from remote_db.db_port_client import DbPortClient
+from remote_db.remote_sqlite_adapter import RemoteSqliteConnection
+from scripts.hbpr_info_processor import HbprDatabase
+import os
+
 
 def get_icon_base64(path):
     """将图标文件转换为base64编码"""
@@ -87,6 +92,134 @@ def ensure_memdb_server(username: str) -> tuple:
             return True, port, "OK"
         time.sleep(0.1)
     return False, 0, "Timed out starting server"
+
+
+# --- New Database Client Management ---
+
+def get_db_port_client():
+    """Gets/creates the DbPortClient for the current session."""
+    port = st.session_state.get("db_service_port")
+    if not port:
+        return None
+    
+    client_key = f"db_port_client_{port}"
+    if client_key not in st.session_state:
+        st.session_state[client_key] = DbPortClient("127.0.0.1", port)
+    return st.session_state[client_key]
+
+
+def get_hbpr_database_client():
+    """Gets/creates the HbprDatabase client instance for the current session."""
+    port = st.session_state.get("db_service_port")
+    client = get_db_port_client()
+    if not client or not port:
+        return None
+        
+    hbpr_client_key = f"hbpr_db_client_{port}"
+    if hbpr_client_key not in st.session_state:
+        remote_conn = RemoteSqliteConnection(client)
+        st.session_state[hbpr_client_key] = HbprDatabase(remote_conn)
+    return st.session_state[hbpr_client_key]
+
+
+def is_db_available():
+    """Check if a database is loaded and available."""
+    client = get_db_port_client()
+    if not client:
+        return False
+    try:
+        health = client.health()
+        return health.get("ok") and health.get("db") is not None
+    except Exception:
+        return False
+
+
+def get_database_name():
+    """Get the name of the currently loaded database."""
+    client = get_db_port_client()
+    if not client:
+        return "N/A"
+    try:
+        return client.health().get("db", "N/A")
+    except Exception:
+        return "Error"
+
+
+def trigger_auto_save():
+    """Saves the in-memory database to its source file."""
+    client = get_db_port_client()
+    if client:
+        try:
+            client.save()
+            return True
+        except Exception as e:
+            st.toast(f"Error saving database: {e}")
+            return False
+    return False
+
+
+def load_database(path: str):
+    """Requests the server to load a database file into memory."""
+    client = get_db_port_client()
+    port = st.session_state.get("db_service_port")
+    if client and port:
+        try:
+            # When loading a new DB, we must destroy the old HbprDatabase client
+            # because its internal state/cache is tied to the previous DB connection.
+            hbpr_client_key = f"hbpr_db_client_{port}"
+            if hbpr_client_key in st.session_state:
+                del st.session_state[hbpr_client_key]
+            
+            client.load_database(path)
+            # Re-create the hbpr client on the next get() call
+            return True
+        except Exception as e:
+            st.error(f"Failed to load database: {e}")
+            return False
+    return False
+
+
+# --- New Database Selectbox Widget ---
+
+def create_database_selectbox(label="💾 Select Database:", key="global_db_select", custom_folder=None):
+    """
+    Creates a selectbox for DB selection and handles loading it into memory.
+    (This replaces the one from the deleted database_manager.py)
+    """
+    client = get_db_port_client()
+    db_files = []
+
+    if client:
+        try:
+            # The server lists files from its 'databases' directory.
+            # The 'custom_folder' parameter is not currently supported by the server and is ignored.
+            db_files = client.list_databases()
+        except Exception:
+            db_files = []
+
+    if not db_files:
+        st.selectbox(label, ["No databases found in 'databases/' folder"], disabled=True)
+        return None, []
+
+    # Get current selection from session state to compare against widget state
+    current_selection_key = f"db_selection_{key}"
+    previous_selection = st.session_state.get(current_selection_key)
+
+    # Find index of previous selection to set the widget correctly
+    try:
+        current_index = db_files.index(previous_selection) if previous_selection in db_files else 0
+    except (ValueError, TypeError):
+        current_index = 0
+
+    selected_db_file = st.selectbox(label, db_files, index=current_index, key=key)
+
+    # If selection has changed, or if nothing is loaded yet, load the DB
+    if (selected_db_file and selected_db_file != previous_selection) or (not is_db_available() and selected_db_file):
+        if load_database(selected_db_file):
+            st.session_state[current_selection_key] = selected_db_file
+            st.rerun()
+
+    return selected_db_file, db_files
 
 
 def apply_global_settings():

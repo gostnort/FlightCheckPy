@@ -8,7 +8,7 @@ import pandas as pd
 import re
 import json
 import os
-from ui.components.database_manager import db_manager, require_database, get_database_path
+from ui.common import get_hbpr_database_client, is_db_available
 
 
 def load_filter_config():
@@ -70,18 +70,21 @@ def should_exclude_property(prop, excluded_props, excluded_patterns):
     return False
 
 
-@require_database
 def show_sort_records():
     """显示记录表格"""
+    st.subheader("📋 Processed Records")
+    
+    if not is_db_available():
+        st.warning("⚠️ Please select a database from the sidebar to begin.")
+        return
+
     try:
-        # 获取当前选中的数据库
-        selected_db_file = get_database_path()
-        if not selected_db_file:
-            st.error("❌ No database selected.")
-            st.info("💡 Please select a database from the sidebar or build one first in the Database Management page.")
+        db = get_hbpr_database_client()
+        if not db:
+            st.error("❌ Database connection not available.")
             return
-        st.subheader("📋 Processed Records")
-        conn = db_manager.get_database().get_connection()
+
+        conn = db.get_connection()
         # 查询已处理的记录，包括properties、ckin_msg和asvc_msg字段
         df = pd.read_sql_query("""
             SELECT hbnb_number, boarding_number, name, seat, class, destination,

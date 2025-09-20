@@ -1966,13 +1966,27 @@ class HbprDatabase:
 
 
 def main():
-    """测试__GetProperties方法"""
-    with open("sample_hbpr.txt", "r", encoding="utf-8") as f:
-        sample_content = f.read()
-    chbpr = CHbpr()
-    chbpr.run(sample_content)
-    print("Debug Message:", chbpr.debug_msg)
-    print("error_msg:", chbpr.error_msg)
+    """主函数 - 现在作为一个示例，展示如何使用该模块中的类"""
+    print("🧹 HBPR Info Processor Tool")
+    print("=" * 50)
+    print("该脚本现在应该作为模块导入，而不是直接运行。")
+    print("用法示例:")
+    print("  from scripts.hbpr_info_processor import CHbpr, HbprDatabase")
+    print("  from ui.common import get_hbpr_database_client # Assuming UI is running")
+    print("")
+    print("  # 1. Get database client")
+    print("  db_client = get_hbpr_database_client()")
+    print("  if db_client:")
+    print("      # 2. Get a specific record")
+    print("      record_content = db_client.get_hbpr_record(hbnb_number=123)")
+    print("")
+    print("      # 3. Process it with CHbpr")
+    print("      processor = CHbpr()")
+    print("      processor.run(record_content)")
+    print("")
+    print("      # 4. Update the database with results")
+    print("      db_client.update_with_chbpr_results(processor)")
+
 if __name__ == "__main__":
     main() 
 

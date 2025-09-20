@@ -6,7 +6,7 @@ Excel处理页面 - 导入Excel文件并根据TKNE和CKIN CCRD生成输出文件
 import streamlit as st
 import pandas as pd
 import os
-from ui.common import apply_global_settings
+from ui.common import apply_global_settings, get_hbpr_database_client
 from scripts.excel_processor import (
     process_excel_file as core_process_excel_file,
     generate_output_excel as core_generate_output_excel,
@@ -18,8 +18,12 @@ from scripts.api_encoder.gemma3_client import generate_mood_description
 
 def show_excel_processor():
     """显示Excel处理页面"""
-    apply_global_settings()
+    st.markdown("<h3>📊 Excel Processor</h3>", unsafe_allow_html=True)
     
+    if not is_db_available():
+        st.warning("⚠️ Please select a database from the sidebar to begin.")
+        return
+
     # Additional CSS to ensure bottom content is visible
     st.markdown("""
     <style>
@@ -43,13 +47,13 @@ def show_excel_processor():
     # 标题与调试开关同一行
     col_uploader, col_debug = st.columns([3, 1])
     with col_uploader:
-        st.subheader("📁 上传Excel文件")
+        st.subheader("📁 Upload Excel File")
     with col_debug:
-        debug_on = st.toggle("Debug", value=False, help="开启后显示每一行的输入与输出详情")
+        debug_on = st.toggle("Debug", value=False, help="Enable to see detailed processing logs for each row.")
     uploaded_file = st.file_uploader(
-            "选择要处理的Excel文件",
+            "Select the Excel file to process",
             type=['xlsx', 'xls'],
-            help="上传包含TKNE数据的Excel文件进行处理"
+            help="Upload an Excel file containing TKNE data for processing"
         )
     if uploaded_file is not None:
         try:
@@ -60,48 +64,54 @@ def show_excel_processor():
                 try:
                     df_input = pd.read_excel(uploaded_file, header=1, engine='xlrd')
                 except ImportError:
-                    st.error("❌ 缺少xlrd包，无法读取XLS文件。请安装：pip install xlrd")
+                    st.error("❌ xlrd package is missing, cannot read XLS files. Please install: pip install xlrd")
                     return
                 except Exception as e:
-                    st.error(f"❌ 读取XLS文件失败: {str(e)}")
+                    st.error(f"❌ Failed to read XLS file: {str(e)}")
                     return
             else:
                 # 对于XLSX格式，使用默认引擎
                 try:
                     df_input = pd.read_excel(uploaded_file, header=1, engine='openpyxl')
                 except Exception as e:
-                    st.error(f"❌ 读取XLSX文件失败: {str(e)}")
+                    st.error(f"❌ Failed to read XLSX file: {str(e)}")
                     return
             # 列名与位置的严格校验在核心处理函数内执行
             # 处理按钮
-            if st.button("🚀 开始处理", type="primary", use_container_width=True):
-                with st.spinner("正在处理Excel文件..."):
+            if st.button("🚀 Start Processing", type="primary", use_container_width=True):
+                with st.spinner("Processing Excel file..."):
                     try:
-                        result_df, unprocessed_records, debug_logs = core_process_excel_file(df_input, debug=debug_on)
+                        # Get the database client and pass it to the core processor
+                        db_client = get_hbpr_database_client()
+                        if not db_client:
+                            st.error("Database connection not available. Please ensure a database is selected.")
+                            return
+
+                        result_df, unprocessed_records, debug_logs = core_process_excel_file(db_client, df_input, debug=debug_on)
                     except ValueError as ve:
-                        st.error(f"❌ 数据校验失败: {str(ve)}")
+                        st.error(f"❌ Data validation failed: {str(ve)}")
                         return
                     except Exception as e:
-                        st.error(f"❌ 处理文件时发生错误: {str(e)}")
+                        st.error(f"❌ An error occurred while processing the file: {str(e)}")
                         return
                 if result_df is not None:
                     # Debug开关：打开时显示每行输入与输出详情
                     if debug_on and debug_logs:
-                        st.subheader("🛠️ Debug 明细（每行输入与输出）")
+                        st.subheader("🛠️ Debug Details (Input and Output per Row)")
                         for entry in debug_logs:
-                            with st.expander(f"第 {entry.get('row_index', '?')} 行"):
-                                st.write("输入：")
+                            with st.expander(f"Row {entry.get('row_index', '?')}"):
+                                st.write("Input:")
                                 st.json(entry.get('input', {}))
-                                st.write("输出：")
+                                st.write("Output:")
                                 st.json(entry.get('output', {}))
                     # 显示处理结果
-                    st.subheader("✅ 处理结果")
+                    st.subheader("✅ Processing Results")
                     st.dataframe(result_df, use_container_width=True)
                     # 显示未处理的记录（错误信息）
                     if unprocessed_records:
-                        st.subheader("⚠️ 未处理的CKIN CCRD记录")
+                        st.subheader("⚠️ Unprocessed CKIN CCRD Records")
                         for record in unprocessed_records:
-                            st.warning(f"乘客: {record['name']}, TKNE: {record['tkne']}, CKIN CCRD: {record['ckin_ccrd']}")
+                            st.warning(f"Passenger: {record['name']}, TKNE: {record['tkne']}, CKIN CCRD: {record['ckin_ccrd']}")
                     # 生成输出文件
                     # 使用全局航班信息（由核心处理在首次行设置）
                     # 计算现金和总金额
@@ -113,7 +123,7 @@ def show_excel_processor():
                         try:
                             mood_description = generate_mood_description(cash_total, total_amount, username)
                         except Exception as e:
-                            st.warning(f"生成心情描述时出错: {e}")
+                            st.warning(f"Error generating mood description: {e}")
                             mood_description = "复杂"
                     # 生成包含心情描述的文件名，处理重名情况
                     # 重新获取全局变量，确保获取到最新值
@@ -137,25 +147,25 @@ def show_excel_processor():
                     try:
                         core_generate_output_excel(result_df, unprocessed_records, output_file, cash_total)
                     except Exception as e:
-                        st.error(f"❌ 生成输出文件失败: {str(e)}")
+                        st.error(f"❌ Failed to generate output file: {str(e)}")
                         return
                     # 显示文件保存位置和提供下载链接
                     col_download, col_info = st.columns([1, 2])
                     with col_download:
-                        st.subheader("📥 文件已生成")
+                        st.subheader("📥 File Generated")
                     with col_info:
-                        st.success(f"✅ 文件已保存到: {output_file}")
+                        st.success(f"✅ File saved to: {output_file}")
                     with open(output_file, 'rb') as f:
                         st.download_button(
-                            label="📥 下载",
+                            label="📥 Download",
                             data=f.read(),
                             file_name=filename,
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                             use_container_width=True
                         )
         except Exception as e:
-            st.error(f"❌ 处理文件时发生错误: {str(e)}")
-            st.info("💡 请检查Excel文件格式是否正确")
+            st.error(f"❌ An error occurred while processing the file: {str(e)}")
+            st.info("💡 Please check if the Excel file format is correct")
 
 
 def get_output_file_path(filename: str) -> str:
@@ -170,12 +180,12 @@ def get_output_file_path(filename: str) -> str:
         temp_dir = "C:\\temp"
         if not os.path.exists(temp_dir):
             os.makedirs(temp_dir)
-            st.info(f"📁 创建临时目录: {temp_dir}")
+            st.info(f"📁 Created temporary directory: {temp_dir}")
         output_path = os.path.join(temp_dir, filename)
-        st.info(f"📁 文件将保存到: {temp_dir}\\{filename}")
+        st.info(f"📁 File will be saved to: {temp_dir}\\{filename}")
         return output_path
     except Exception as e:
         # 最后的备用方案：当前工作目录
-        st.warning(f"⚠️ 无法访问Downloads或创建C:\\temp，使用当前目录: {str(e)}")
+        st.warning(f"⚠️ Unable to access Downloads or create C:\\temp, using current directory: {str(e)}")
         return filename
  

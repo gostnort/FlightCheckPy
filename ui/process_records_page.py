@@ -4,8 +4,7 @@ Process Records page for HBPR UI - Main navigation interface for record processi
 """
 
 import streamlit as st
-from ui.common import apply_global_settings
-from ui.components.database_manager import require_database
+from ui.common import is_db_available
 from ui.process_records.add_edit_record import show_add_edit_record
 from ui.process_records.process_all import show_process_all_records
 from ui.process_records.simple_record import show_simple_record
@@ -13,14 +12,17 @@ from ui.process_records.export_data import show_export_data
 from ui.process_records.sort_records import show_sort_records
 
 
-@require_database
 def show_process_records():
     """显示处理记录页面"""
-    # Apply settings
-    apply_global_settings()
+    st.markdown("<h3>🔍 Process Records</h3>", unsafe_allow_html=True)
+    
+    if not is_db_available():
+        st.warning("⚠️ Please select a database from the sidebar to begin.")
+        return
+
     try:
         # 定义标签页选项
-        tab_options = ["🚀 Process All Records", "✏️ Add/Edit Record", "🧻 Simple Record", "📋 Sort Records", "📤 Export Data"]
+        tab_options = ["🚀 Process All", "✏️ Add/Edit", "🧻 Simple", "📋 Sort", "📤 Export"]
         
         # 处理程序化标签页切换
         if hasattr(st.session_state, 'process_records_tab'):

@@ -13,13 +13,15 @@ All SQL is defensive and will auto-create views if missing.
 import re
 import sqlite3
 from typing import Dict, Optional, Tuple
-from ui.components.database_manager import db_manager
+from ui.common import get_hbpr_database_client
 from ui.components.main_stats import get_missing_boarding_numbers
 
 
 def _get_conn() -> sqlite3.Connection:
     """Get shared in-memory DB connection from global manager."""
-    db = db_manager.get_database()
+    db = get_hbpr_database_client()
+    if not db:
+        raise ConnectionError("Database client not available.")
     conn = db.get_connection()
     # Ensure sane pragmas (no-ops if already set)
     try:
@@ -286,7 +288,7 @@ def get_debug_summary() -> str:
         # 添加deleted passengers和missing boarding numbers的完整信息
         try:
             # 获取deleted passengers完整信息
-            db = db_manager.get_database()
+            db = get_hbpr_database_client()
             all_stats = db.get_all_statistics()
             deleted_stats = all_stats.get('deleted_passengers_stats', {})
             if deleted_stats and deleted_stats.get('total_deleted', 0) > 0:

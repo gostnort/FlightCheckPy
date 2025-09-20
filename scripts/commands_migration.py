@@ -15,9 +15,15 @@ class CommandsMigrator:
     """Commands表迁移器，用于修复现有commands表结构"""
 
 
-    def __init__(self):
-        """初始化迁移器"""
-        self.databases_folder = "databases"
+    def __init__(self, conn: sqlite3.Connection):
+        """
+        初始化迁移器
+        Args:
+            conn (sqlite3.Connection): 数据库连接对象
+        """
+        if not conn:
+            raise ValueError("A valid database connection must be provided.")
+        self.conn = conn
         self.required_columns = [
             ('version', 'INTEGER DEFAULT 1'),
             ('parent_id', 'INTEGER'),
@@ -25,42 +31,15 @@ class CommandsMigrator:
         ]
 
 
-    def find_databases(self) -> List[str]:
-        """查找所有需要迁移的数据库文件"""
-        if not os.path.exists(self.databases_folder):
-            print(f"⚠️  {self.databases_folder} 文件夹不存在")
-            return []
-        
-        db_files = glob.glob(os.path.join(self.databases_folder, "*.db"))
-        print(f"📁 找到 {len(db_files)} 个数据库文件")
-        return db_files
-
-
-    def get_table_structure(self, db_file: str, table_name: str) -> List[Tuple]:
-        """获取指定表的结构信息"""
-        try:
-            conn = sqlite3.connect(db_file)
-            cursor = conn.cursor()
-            cursor.execute(f"PRAGMA table_info({table_name})")
-            columns = cursor.fetchall()
-            conn.close()
-            return columns
-        except sqlite3.Error as e:
-            print(f"❌ 无法读取 {db_file} 的表结构: {e}")
-            return []
-
-
-    def migrate_commands_table(self, db_file: str) -> bool:
-        """迁移单个数据库的commands表"""
-        print(f"\n🔄 正在迁移数据库: {os.path.basename(db_file)}")
+    def migrate_commands_table(self) -> bool:
+        """迁移当前连接的数据库中的commands表"""
+        print(f"\n🔄 正在迁移Commands表...")
         
         # 检查commands表是否存在
-        conn = sqlite3.connect(db_file)
-        cursor = conn.cursor()
+        cursor = self.conn.cursor()
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='commands'")
         if not cursor.fetchone():
-            print(f"⚠️  {os.path.basename(db_file)} 中不存在 commands 表，跳过")
-            conn.close()
+            print(f"⚠️  数据库中不存在 commands 表，跳过")
             return False
         
         # 获取现有列
@@ -74,8 +53,7 @@ class CommandsMigrator:
                 missing_columns.append((column_name, column_type))
         
         if not missing_columns:
-            print(f"✅  {os.path.basename(db_file)} commands表结构完整，无需迁移")
-            conn.close()
+            print(f"✅  Commands表结构完整，无需迁移")
             return True
         
         print(f"📝  需要添加 {len(missing_columns)} 个列")
@@ -97,52 +75,31 @@ class CommandsMigrator:
             cursor.execute("UPDATE commands SET version = 1 WHERE version IS NULL")
             cursor.execute("UPDATE commands SET is_latest = TRUE WHERE is_latest IS NULL")
             
-            conn.commit()
-            print(f"✅  {os.path.basename(db_file)} commands表迁移成功")
+            self.conn.commit()
+            print(f"✅  Commands表迁移成功")
             return True
             
         except sqlite3.Error as e:
-            print(f"❌ 迁移 {os.path.basename(db_file)} 失败: {e}")
-            conn.rollback()
+            print(f"❌ 迁移失败: {e}")
+            self.conn.rollback()
             return False
-        finally:
-            conn.close()
 
 
-    def migrate_all_databases(self) -> None:
-        """迁移所有数据库的commands表"""
-        print("🚀 开始commands表迁移...")
-        print("=" * 50)
-        
-        db_files = self.find_databases()
-        if not db_files:
-            print("❌ 没有找到需要迁移的数据库")
-            return
-        
-        success_count = 0
-        total_count = len(db_files)
-        
-        for db_file in db_files:
-            if self.migrate_commands_table(db_file):
-                success_count += 1
-        
-        print("\n" + "=" * 50)
-        print(f"🎉 迁移完成！成功: {success_count}/{total_count}")
-        
-        if success_count < total_count:
-            print("⚠️  部分数据库迁移失败，请检查错误信息")
-        else:
-            print("✅  所有数据库迁移成功！")
-
-
-    def verify_migration(self, db_file: str) -> bool:
+    def verify_migration(self) -> bool:
         """验证迁移结果"""
-        print(f"\n🔍 验证数据库: {os.path.basename(db_file)}")
+        print(f"\n🔍 验证数据库Commands表...")
         
-        columns = self.get_table_structure(db_file, "commands")
-        if not columns:
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute("PRAGMA table_info(commands)")
+            columns = cursor.fetchall()
+            if not columns:
+                print("   ❌ Commands表不存在")
+                return False
+        except sqlite3.Error as e:
+            print(f"   ❌ 无法读取Commands表结构: {e}")
             return False
-        
+            
         existing_column_names = [col[1] for col in columns]
         required_column_names = [col[0] for col in self.required_columns]
         
@@ -156,35 +113,21 @@ class CommandsMigrator:
             return True
 
 
-    def verify_all_databases(self) -> None:
-        """验证所有数据库的迁移结果"""
-        print("\n🔍 验证所有数据库...")
-        print("=" * 50)
-        
-        db_files = self.find_databases()
-        if not db_files:
-            return
-        
-        all_valid = True
-        for db_file in db_files:
-            if not self.verify_migration(db_file):
-                all_valid = False
-        
-        if all_valid:
-            print("\n🎉 所有数据库验证通过！")
-        else:
-            print("\n⚠️  部分数据库验证失败")
-
-
 def main():
-    """主函数"""
-    migrator = CommandsMigrator()
-    
-    # 执行迁移
-    migrator.migrate_all_databases()
-    
-    # 验证迁移结果
-    migrator.verify_all_databases()
+    """主函数 - 示例"""
+    print("🚀 Commands表迁移脚本 (内存模式)")
+    print("=" * 50)
+    print("该脚本现在应该作为模块导入，而不是直接运行。")
+    print("用法示例:")
+    print("  from scripts.commands_migration import CommandsMigrator")
+    print("  from ui.common import get_hbpr_database_client # Assuming UI is running")
+    print("")
+    print("  db_client = get_hbpr_database_client()")
+    print("  if db_client:")
+    print("      conn = db_client.get_connection()")
+    print("      migrator = CommandsMigrator(conn)")
+    print("      migrator.migrate_commands_table()")
+    print("      migrator.verify_migration()")
 
 
 if __name__ == "__main__":

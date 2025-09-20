@@ -15,7 +15,7 @@ import os
 from typing import Dict, Optional, Tuple, List
 from datetime import date
 import pandas as pd
-from ui.components.database_manager import db_manager
+from scripts.hbpr_info_processor import HbprDatabase
 
 # =============================
 # 数据源列名与固定列序号定义（1-based）
@@ -321,10 +321,9 @@ def calculate_cash_and_total_amounts(df_input: pd.DataFrame) -> Tuple[float, flo
     return cash_total, total_amount
 
 
-def get_all_ckin_ccrd_hbnb() -> List[Dict]:
+def get_all_ckin_ccrd_hbnb(db_client: HbprDatabase) -> List[Dict]:
     """查询所有包含CKIN CCRD的HBNB记录"""
-    db = db_manager.get_database()
-    conn = db.get_connection()
+    conn = db_client.get_connection()
     cursor = conn.cursor()
     
     query = (
@@ -350,14 +349,13 @@ def get_all_ckin_ccrd_hbnb() -> List[Dict]:
     ]
 
 
-def find_records_by_tkne(tkne: str) -> List[Dict]:
+def find_records_by_tkne(db_client: HbprDatabase, tkne: str) -> List[Dict]:
     """根据TKNE查找数据库记录"""
     clean_tkne = normalize_tkne(tkne)
     if not clean_tkne:
         return []
     
-    db = db_manager.get_database()
-    conn = db.get_connection()
+    conn = db_client.get_connection()
     cursor = conn.cursor()
     
     query = """
@@ -445,7 +443,7 @@ def create_base_output_row(input_row: pd.Series) -> Dict:
     return output_row
 
 
-def process_excel_file(df_input: pd.DataFrame, debug: bool = False) -> Tuple[Optional[pd.DataFrame], List[Dict], List[Dict]]:
+def process_excel_file(db_client: HbprDatabase, df_input: pd.DataFrame, debug: bool = False) -> Tuple[Optional[pd.DataFrame], List[Dict], List[Dict]]:
     """处理输入数据，返回结果表、未处理记录、调试日志（按行）。
     注：全局变量 FLIGHT_NUMBER/FLIGHT_DATE 会在处理期间被设置，可供其他地方直接使用。
     """
@@ -484,7 +482,7 @@ def process_excel_file(df_input: pd.DataFrame, debug: bool = False) -> Tuple[Opt
     output_data: List[Dict] = []
     unprocessed_records: List[Dict] = []
     debug_logs: List[Dict] = []
-    hbnb_list = get_all_ckin_ccrd_hbnb()
+    hbnb_list = get_all_ckin_ccrd_hbnb(db_client)
     void_emds: set[str] = set()
     for _, row in df_input.iterrows():
         operation = str(row.get('操作', '')).strip()
@@ -498,7 +496,7 @@ def process_excel_file(df_input: pd.DataFrame, debug: bool = False) -> Tuple[Opt
             tkne = str(row.get('关联ET', '')).strip()
             if not tkne or tkne == 'nan':
                 continue
-            hbnb_records = find_records_by_tkne(tkne)
+            hbnb_records = find_records_by_tkne(db_client, tkne)
             output_row = create_base_output_row(row)
             current_emd = convert_to_string_no_decimal(str(row.get('EMD', '')))
             if current_emd in void_emds:

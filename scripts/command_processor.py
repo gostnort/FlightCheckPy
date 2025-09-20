@@ -569,11 +569,13 @@ def main():
     print("该脚本现在应该作为模块导入，而不是直接运行。")
     print("用法示例:")
     print("  from scripts.command_processor import CommandProcessor")
-    print("  import sqlite3")
-    print("  conn = sqlite3.connect(':memory:')")
-    print("  # ... populate your database with flight_info ...")
-    print("  processor = CommandProcessor(conn)")
-    print("  # ... use processor methods ...")
+    print("  from ui.common import get_hbpr_database_client # Assuming UI is running")
+    print("")
+    print("  db_client = get_hbpr_database_client()")
+    print("  if db_client:")
+    print("      conn = db_client.get_connection()")
+    print("      processor = CommandProcessor(conn)")
+    print("      # ... use processor methods ...")
 
 
 if __name__ == "__main__":
