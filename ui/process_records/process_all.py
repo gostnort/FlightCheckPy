@@ -10,6 +10,38 @@ from ui.common import get_hbpr_database_client, is_db_available
 from .add_edit_record import apply_font_settings
 
 
+def execute_query_to_dataframe(db, query, params=None):
+    """
+    Execute a SQL query using the remote connection and return results as pandas DataFrame.
+    This avoids pandas compatibility issues with RemoteSqliteConnection.
+    """
+    try:
+        conn = db.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(query, params or [])
+
+        # Get column names from cursor description
+        if cursor.description:
+            columns = [desc[0] for desc in cursor.description]
+        else:
+            columns = []
+
+        # Get all rows
+        rows = cursor.fetchall()
+
+        # Create DataFrame
+        if columns and rows:
+            return pd.DataFrame(rows, columns=columns)
+        elif columns:
+            return pd.DataFrame(columns=columns)
+        else:
+            return pd.DataFrame()
+
+    except Exception as e:
+        st.error(f"❌ Error executing query: {str(e)}")
+        return pd.DataFrame()
+
+
 def show_process_all_records():
     """显示处理所有记录页面"""
     if not is_db_available():
@@ -76,7 +108,7 @@ def start_processing_all_records(db, batch_size):
                         else:
                             # 无BN号的记录标记为已处理但不计入错误统计
                             st.write(f"ℹ️ HBNB {hbnb_number}: No boarding number, processed but not counted in error stats")
-                except Exception as e:
+                except Exception:
                     # 静默处理错误，不显示具体错误信息
                     pass
         # 显示结果总结
@@ -115,13 +147,12 @@ def erase_splited_records(db):
 def show_error_summary(db):
     """显示错误分组统计"""
     try:
-        conn = db.get_connection()
         # 查询有错误的记录
-        df = pd.read_sql_query("""
+        df = execute_query_to_dataframe(db, """
             SELECT error_baggage, error_passport, error_name, error_visa, error_other
-            FROM hbpr_full_records 
+            FROM hbpr_full_records
             WHERE is_validated = 1 AND is_valid = 0 AND error_count > 0
-        """, conn)
+        """)
         if df.empty:
             st.info("ℹ️ No error messages found. All processed records are valid!")
             return
@@ -153,14 +184,13 @@ def show_error_summary(db):
 def show_error_messages(db):
     """显示错误信息"""
     try:
-        conn = db.get_connection()
         # 查询有错误的记录
-        df = pd.read_sql_query("""
+        df = execute_query_to_dataframe(db, """
             SELECT hbnb_number, name, error_count, error_baggage, error_passport, error_name, error_visa, error_other, validated_at
-            FROM hbpr_full_records 
+            FROM hbpr_full_records
             WHERE is_validated = 1 AND is_valid = 0 AND error_count > 0
             ORDER BY validated_at DESC, hbnb_number
-        """, conn)
+        """)
         if df.empty:
             st.info("ℹ️ No error messages found. All processed records are valid!")
             return

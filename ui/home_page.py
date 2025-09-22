@@ -6,7 +6,6 @@ Home page for HBPR UI - System overview and quick actions
 import streamlit as st
 import pandas as pd
 from ui.common import apply_global_settings, get_hbpr_database_client, is_db_available
-import os
 from ui.components.home_metrics import get_home_summary
 from ui.components.main_stats import get_and_display_main_statistics
 
@@ -69,7 +68,7 @@ def show_home_page():
             st.error(f"❌ Error loading home summary: {e}")
 
     # 显示缺失号码表格
-    missing_numbers = all_stats.get('missing_numbers', []) if all_stats else []
+    missing_numbers = db.get_all_statistics().get('missing_numbers', []) if db.get_all_statistics() else []
     if missing_numbers:
         st.subheader("🚫 Missing HBNB Numbers")
         # 分页显示缺失号码
@@ -89,16 +88,6 @@ def show_home_page():
         st.dataframe(missing_df, use_container_width=True)
         if total_pages > 1:
             st.info(f"Showing page {page} of {total_pages} ({len(page_missing)} of {len(missing_numbers)} missing numbers)")
-    else:
-        messages.append("✅ No missing HBNB numbers found!")
-    # 显示消息
-    msg_length = len(messages)
-    if msg_length > 0:
-        # 根据消息数量动态创建列
-        cols = st.columns(msg_length)
-        for i, message in enumerate(messages):
-            with cols[i]:
-                st.success(message)
     st.markdown("---")
     # 最近活动
     st.subheader("📝 导航指南")

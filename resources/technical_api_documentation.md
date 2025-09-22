@@ -4,12 +4,14 @@
 
 The Flight Data Processing System is a comprehensive Python application for processing and analyzing HBPR (Hotel Booking Passenger Record) data. It utilizes a centralized in-memory database architecture for high performance and data consistency. A dedicated HTTP server manages the SQLite database in memory, with the Streamlit UI acting as a client. This client-server model, running locally, ensures that all parts of the application interact with a single, consistent data source. The system also features automatic persistence of the in-memory database to disk.
 
-The system validates and parses records, stores them in the database, and provides a modern Streamlit-based UI for database building, record processing, airline command analysis with timeline versioning, and Excel output generation by mapping TKNE to CKIN CCRD data.
+The system validates and parses records, stores them in the database, and provides a modern Streamlit-based UI for database building, record processing with integrated command functionality and timeline versioning, and Excel output generation by mapping TKNE to CKIN CCRD data.
 
 **Key Features:**
 - **Centralized In-Memory Database Server**: High-performance client-server architecture where a dedicated Python HTTP server manages the database in-memory for each user session.
 - **Unified UI Client**: The entire Streamlit UI acts as a client, communicating with the database server via HTTP requests, ensuring data consistency.
 - **Automatic Data Persistence**: Changes made in memory are automatically saved back to the source file by the server.
+- **Modular UI Architecture**: Organized tab-based interfaces with separate sub-modules for maintainability and clean code structure.
+- **Remote Database Compatibility**: Seamless pandas integration with custom RemoteSqliteConnection objects, eliminating SQLAlchemy warnings.
 - Multi-source database discovery with visual location indicators (📁 Custom, 🏠 Default, 📄 Root)
 - Native Windows folder picker integration (topmost) with custom folder persistence
 - Centralized database selection with flight information and session persistence
@@ -17,7 +19,7 @@ The system validates and parses records, stores them in the database, and provid
 - Intelligent statistics caching with automatic invalidation on updates
 - Accepted passengers tracking with infant count and class split (Business/Economy)
 - Excel Processor: XLS/XLSX import, strict header validation, TKNE ↔ CKIN CCRD mapping, formatted EMD Excel export
-- Command analysis: import, manual edit, view, timeline versioning, and maintenance/migration
+- Command functionality integrated into Process Records page with timeline versioning
 - TKNE-aware calculations and compatibility handling
 - **Data Cleaning & Export Solutions**: Comprehensive data sanitization at input, storage, and export stages to prevent binary/hexadecimal character issues
 - **Deleted Passenger Analytics**: Comprehensive tracking of deleted passengers with XRES property classification and original boarding number extraction
@@ -49,17 +51,28 @@ FlightCheckPy/
 │   │   └── home_metrics.py     # Home page metrics and debug information
 │   ├── login_page.py           # Authentication interface
 │   ├── home_page.py            # System overview with real-time statistics
-│   ├── database_page.py        # Database management and construction
-│   ├── process_records_page.py # Record processing navigation (batch/single/simple/sort/export)
-│   ├── command_analysis_page.py # Command processing, timeline view, and maintenance
+│   ├── database_page.py        # Database management orchestrator
+│   ├── process_records_page.py # Record processing navigation orchestrator
 │   ├── excel_processor_page.py # Excel upload and EMD export UI
 │   ├── settings_page.py        # System configuration and about info
-│   └── process_records/        # Sub-modules for record processing
-│       ├── process_all.py      # Batch processing functionality
-│       ├── add_edit_record.py  # Single record editing
-│       ├── simple_record.py    # Simple record creation
-│       ├── sort_records.py     # Record viewing and filtering
-│       └── export_data.py      # Data export functionality with cleaning
+│   ├── database/               # Database management sub-modules
+│   │   ├── __init__.py
+│   │   ├── operations.py       # Database operations (HBPR, Commands, Export)
+│   │   ├── simple.py          # Simple records management
+│   │   └── sort.py            # Record sorting and filtering
+│   └── process_records/        # Record processing sub-modules
+│       ├── __init__.py
+│       ├── info.py            # Processing information display
+│       ├── add_hbprs.py       # HBPR file upload with duplicate handling
+│       ├── edit_hbpr.py       # Single HBPR record editing
+│       ├── add_commands.py    # Command file import
+│       ├── edit_command.py    # Single command editing
+│       ├── timeline.py        # HBPR/Commands timeline with radio switcher
+│       ├── process_all.py     # Batch processing functionality
+│       ├── add_edit_record.py # Legacy single record editing
+│       ├── simple_record.py   # Simple record creation
+│       ├── sort_records.py    # Record viewing and filtering
+│       └── export_data.py     # Data export functionality with cleaning
 ├── remote_db/                  # In-memory database server and client components
 │   ├── remote_sqlite_adapter.py # HTTP-to-SQLite adapter layer
 │   ├── hbpr_database_client.py # Remote HbprDatabase API client
@@ -535,7 +548,7 @@ def get_home_summary() -> Dict[str, Any]:
     Features:
     - Ensures views exist before querying
     - Deduplication logic prevents double-counting passengers with multiple ID staff properties
-    - Integrates with command analysis for compartment configuration
+    - Integrates with command functionality in Process Records for compartment configuration
     """
 
 def get_debug_data() -> Dict[str, object]:
@@ -646,6 +659,97 @@ if db_client:
 - **Filtering**: Only printable ASCII characters (32-126) and safe whitespace preserved
 - **Normalization**: Multiple spaces collapsed, empty lines cleaned
 - **Validation**: Detection of cleaning needs for user awareness
+
+### Remote Database Compatibility
+
+**Location**: Multiple UI files with `execute_query_to_dataframe()` helper functions
+
+**Purpose**: Ensures pandas compatibility with `RemoteSqliteConnection` objects used in the remote database architecture.
+
+#### Problem Solved
+The remote database architecture uses custom `RemoteSqliteConnection` and `RemoteCursor` objects that mimic sqlite3 behavior but are not recognized by pandas' `read_sql_query()` method, causing:
+- `UserWarning: pandas only supports SQLAlchemy connectable (engine/connection) or database string URI or sqlite3 DBAPI2 connection`
+- Compatibility issues with pandas DataFrame operations
+
+#### Solution Implementation
+```python
+def execute_query_to_dataframe(db, query, params=None):
+    """
+    Execute SQL query using remote connection and return pandas DataFrame
+    Bypasses pandas compatibility issues by using cursor directly
+    """
+    conn = db.get_connection()
+    cursor = conn.cursor()
+    cursor.execute(query, params or [])
+
+    # Extract column names and data manually
+    columns = [desc[0] for desc in cursor.description] if cursor.description else []
+    rows = cursor.fetchall()
+
+    # Create DataFrame from results
+    return pd.DataFrame(rows, columns=columns) if columns and rows else pd.DataFrame()
+```
+
+#### Files Updated
+- `ui/process_records/process_all.py` - Error summary and messages
+- `ui/process_records/sort_records.py` - Record filtering display
+- `ui/process_records/export_data.py` - Data export operations
+- `ui/database/operations.py` - Database export operations
+
+#### Benefits
+- ✅ Eliminates pandas SQLAlchemy warnings
+- ✅ Maintains compatibility with both remote and local database architectures
+- ✅ Preserves all existing functionality
+- ✅ No performance degradation
+- ✅ Clean error handling
+
+### Modular UI Architecture
+
+**Purpose**: Implements a consistent, maintainable structure for complex UI pages with multiple tabs.
+
+#### Architecture Pattern
+```
+Page Orchestrator (e.g., database_page.py, process_records_page.py)
+├── Tab coordination and navigation
+├── Session state management
+└── Sub-module imports
+
+Individual Tab Modules (in page-specific subdirectories)
+├── Separate .py files for each tab
+├── Focused functionality per tab
+├── Reusable helper functions
+└── Clean import structure
+```
+
+#### Implementation Benefits
+- **Separation of Concerns**: Each tab in its own file
+- **Maintainability**: Easier to modify individual features
+- **Code Organization**: Logical grouping of related functionality
+- **Import Clarity**: Explicit dependencies between modules
+- **Testing**: Isolated testing of individual tab functions
+
+#### Applied To
+- **Database Page**: `operations.py`, `simple.py`, `sort.py`
+- **Process Records Page**: `info.py`, `add_hbprs.py`, `edit_hbpr.py`, `add_commands.py`, `edit_command.py`, `timeline.py`
+
+#### Directory Structure
+```
+ui/
+├── database_page.py          # Orchestrator
+├── database/                 # Sub-modules
+│   ├── operations.py
+│   ├── simple.py
+│   └── sort.py
+├── process_records_page.py   # Orchestrator
+└── process_records/          # Sub-modules
+    ├── info.py
+    ├── add_hbprs.py
+    ├── edit_hbpr.py
+    ├── add_commands.py
+    ├── edit_command.py
+    ├── timeline.py
+    └── [legacy files...]
+```
 
 ### Platform Requirements
 
@@ -1399,7 +1503,6 @@ from ui.login_page import show_login_page
 from ui.home_page import show_home_page
 from ui.database_page import show_database_management
 from ui.process_records_page import show_process_records
-from ui.command_analysis_page import show_command_analysis
 from ui.excel_processor_page import show_excel_processor
 from ui.settings_page import show_settings
 ```
@@ -1527,39 +1630,57 @@ def show_data_cleaning() -> None:
 
 ### 5. Process Records Page
 
-**Location**: `ui/process_records_page.py`
+**Location**: `ui/process_records_page.py`, `ui/process_records/`
 
-**Purpose**: Provides interface for processing individual HBPR records and manual input with integrated data cleaning.
+**Purpose**: Orchestrates record processing interface with modular tab-based organization.
 
 ```python
-def show_process_records_page() -> None:
+def show_process_records() -> None:
     """
-    Display record processing interface
-    
+    Main orchestrator for record processing interface
+
     Features:
-    - Database selection
-    - HBPR record processing
-    - Manual input for full and simple records
-    - Validation results display
-    - Error handling and user feedback
-    - Integrated data cleaning for user input
+    - Tab-based navigation (Info, Add HBPRs, Edit HBPR, Add Commands, Edit Command, Timeline)
+    - Modular sub-module architecture
+    - Session state management for tab persistence
     """
 
-def validate_full_hbpr_record(record_content: str) -> Tuple[bool, List[str]]:
-    """
-    Validate full HBPR record with automatic data cleaning
-    
-    Args:
-        record_content (str): Raw HBPR record content
-        
-    Returns:
-        Tuple[bool, List[str]]: Validation result and error messages
-        
-    Features:
-    - Automatic cleaning of user input using cleanHbprRecordContent()
-    - Prevention of problematic characters in manual input
-    - Comprehensive validation after cleaning
-    """
+# Sub-module functions:
+def show_info_tab() -> None:
+    """Display error summary and messages without processing buttons"""
+
+def show_add_hbprs_tab() -> None:
+    """Handle HBPR file upload with smart duplicate detection"""
+
+def show_edit_hbpr_tab() -> None:
+    """Single HBPR record editing interface"""
+
+def show_add_commands_tab() -> None:
+    """Command file import functionality"""
+
+def show_edit_command_tab() -> None:
+    """Single command editing interface"""
+
+def show_timeline_tab() -> None:
+    """Timeline view with radio switcher for HBPR vs Commands history"""
+```
+
+#### Process Records Sub-modules
+
+**Location**: `ui/process_records/`
+
+```
+├── info.py            # Error display only (no buttons)
+├── add_hbprs.py       # HBPR file upload with duplicate handling
+├── edit_hbpr.py       # Single HBPR record editing
+├── add_commands.py    # Command file import
+├── edit_command.py    # Single command editing
+├── timeline.py        # HBPR/Commands timeline with radio switcher
+├── process_all.py     # Batch processing and error functions
+├── add_edit_record.py # Legacy record editing functions
+├── simple_record.py   # Simple record creation
+├── sort_records.py    # Record viewing and filtering
+└── export_data.py     # Data export functionality
 ```
 
 ### 6. Common Utilities
@@ -1701,17 +1822,16 @@ main()
 ├── Page navigation and routing
 │   ├── show_home_page() (real-time system overview)
 │   ├── show_database_management()
+│   │   ├── show_database_operations() (HBPR, Commands, Export operations)
+│   │   ├── show_simple_records() (simple record management)
+│   │   └── show_sort_records() (record sorting and filtering)
 │   ├── show_process_records_page()
-│   │   ├── show_process_all_records() (batch processing)
-│   │   ├── show_add_edit_record() (single record editing)
-│   │   ├── show_simple_record() (simple record creation)
-│   │   ├── show_sort_records() (record viewing and filtering)
-│   │   └── show_export_data() (data export)
-│   ├── show_command_analysis_page()
-│   │   ├── import_commands() (command file processing)
-│   │   ├── add_edit_command_data() (manual command entry)
-│   │   ├── view_command_data() (command viewing)
-│   │   └── command_statistics() (command stats)
+│   │   ├── show_info_tab() (error display only)
+│   │   ├── show_add_hbprs_tab() (HBPR file upload with duplicate handling)
+│   │   ├── show_edit_hbpr_tab() (single HBPR record editing)
+│   │   ├── show_add_commands_tab() (command file import)
+│   │   ├── show_edit_command_tab() (single command editing)
+│   │   └── show_timeline_tab() (HBPR/Commands timeline with radio switcher)
 │   └── show_settings()
 └── File cleanup and logout handling
 ```
@@ -2144,7 +2264,7 @@ except sqlite3.OperationalError:
 - **Batch processing**: Database cleaning operations use transactions
 - **Memory management**: Line-by-line processing for large files
 
-This technical documentation provides comprehensive information about the HBPR Processing System's dual architecture approach:
+This technical documentation provides comprehensive information about the HBPR Processing System's dual architecture approach with enhanced modular UI design:
 
 ## 🏗️ Architecture Summary
 
@@ -2156,14 +2276,17 @@ This technical documentation provides comprehensive information about the HBPR P
 
 ### Remote HTTP Architecture (Alternative)
 - **Best for**: Multi-user environments, LAN deployments, centralized management
-- **Features**: Network-based access, user isolation, scalable deployment
+- **Features**: Network-based access, user isolation, scalable deployment, pandas compatibility
 - **Location**: `remote_db/` directory
 - **Performance**: Network latency overhead, suitable for distributed systems
 
 ### Unified API
 Both architectures provide identical APIs, allowing seamless switching between local and remote database operations without code changes. The system automatically detects available architecture and provides transparent operation.
 
-### Key Features
+### Enhanced Features (Version 0.63)
+- **Modular UI Architecture**: Organized tab-based interfaces with separate sub-modules for maintainability
+- **Remote Database Compatibility**: Seamless pandas integration with custom connection objects
+- **Streamlined Navigation**: Consolidated Process Records page with integrated command functionality
 - **Automatic Persistence**: Changes saved to disk automatically
 - **Data Cleaning**: Comprehensive sanitization at input, storage, and export
 - **Statistics Caching**: Efficient data retrieval with automatic invalidation
@@ -2171,4 +2294,4 @@ Both architectures provide identical APIs, allowing seamless switching between l
 - **Error Handling**: Robust exception management across all layers
 - **Cross-Platform**: Windows-native folder picker and path handling
 
-The system is designed for flexibility, allowing deployment in both traditional single-user environments and modern distributed, multi-user architectures.
+The system is designed for flexibility, allowing deployment in both traditional single-user environments and modern distributed, multi-user architectures with a clean, maintainable codebase structure.

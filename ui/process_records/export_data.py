@@ -12,6 +12,38 @@ from io import BytesIO
 from ui.common import get_hbpr_database_client, is_db_available
 
 
+def execute_query_to_dataframe(db, query, params=None):
+    """
+    Execute a SQL query using the remote connection and return results as pandas DataFrame.
+    This avoids pandas compatibility issues with RemoteSqliteConnection.
+    """
+    try:
+        conn = db.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(query, params or [])
+
+        # Get column names from cursor description
+        if cursor.description:
+            columns = [desc[0] for desc in cursor.description]
+        else:
+            columns = []
+
+        # Get all rows
+        rows = cursor.fetchall()
+
+        # Create DataFrame
+        if columns and rows:
+            return pd.DataFrame(rows, columns=columns)
+        elif columns:
+            return pd.DataFrame(columns=columns)
+        else:
+            return pd.DataFrame()
+
+    except Exception as e:
+        st.error(f"❌ Error executing query: {str(e)}")
+        return pd.DataFrame()
+
+
 def clean_text_for_export(text: str) -> str:
     """
     清理文本数据，移除或替换无法在Excel/CSV中使用的字符
@@ -98,22 +130,20 @@ def show_export_data():
             st.error("❌ Database connection not available.")
             return
             
-        conn = db.get_connection()
-        
         # 获取所有已处理的记录，但排除可能有问题的record_content字段
-        df = pd.read_sql_query("""
-            SELECT hbnb_number, created_at, is_validated, is_valid, boarding_number, 
-                   pnr, name, seat, class, destination, bag_piece, bag_weight, 
-                   bag_allowance, ff, pspt_name, pspt_exp_date, ckin_msg, asvc_msg, 
-                   expc_piece, expc_weight, asvc_piece, fba_piece, ifba_piece, 
-                   has_infant, flyer_benefit, is_ca_flyer, inbound_flight, 
-                   outbound_flight, properties, tkne, error_count, error_baggage, 
-                   error_passport, error_name, error_visa, error_other, validated_at, 
+        df = execute_query_to_dataframe(db, """
+            SELECT hbnb_number, created_at, is_validated, is_valid, boarding_number,
+                   pnr, name, seat, class, destination, bag_piece, bag_weight,
+                   bag_allowance, ff, pspt_name, pspt_exp_date, ckin_msg, asvc_msg,
+                   expc_piece, expc_weight, asvc_piece, fba_piece, ifba_piece,
+                   has_infant, flyer_benefit, is_ca_flyer, inbound_flight,
+                   outbound_flight, properties, tkne, error_count, error_baggage,
+                   error_passport, error_name, error_visa, error_other, validated_at,
                    bol_duplicate
-            FROM hbpr_full_records 
+            FROM hbpr_full_records
             WHERE is_validated = 1
             ORDER BY hbnb_number
-        """, conn)
+        """)
         
         if df.empty:
             st.info("ℹ️ No processed records to export.")
@@ -171,16 +201,37 @@ def show_export_data():
         st.error("💡 如果错误与数据格式相关，请尝试使用'Download as Orig Txt'选项导出原始数据。")
 
 
-def export_as_origin_txt(conn: sqlite3.Connection) -> str:
+def export_as_origin_txt(conn) -> str:
     """导出为原始txt格式"""
     try:
-        # 只导出is_validated = 1的记录
-        df = pd.read_sql_query("""
-            SELECT record_content 
-            FROM hbpr_full_records 
-            WHERE is_validated = 1
-            ORDER BY hbnb_number
-        """, conn)
+        # Check if this is a remote connection or regular sqlite3 connection
+        if hasattr(conn, 'cursor') and hasattr(conn.cursor(), 'execute'):
+            # This is likely a RemoteSqliteConnection
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT record_content
+                FROM hbpr_full_records
+                WHERE is_validated = 1
+                ORDER BY hbnb_number
+            """)
+
+            # Get column names and rows manually
+            columns = [desc[0] for desc in cursor.description] if cursor.description else ['record_content']
+            rows = cursor.fetchall()
+
+            # Create DataFrame from results
+            if rows:
+                df = pd.DataFrame(rows, columns=columns)
+            else:
+                df = pd.DataFrame(columns=columns)
+        else:
+            # This is a regular sqlite3 connection, use pandas
+            df = pd.read_sql_query("""
+                SELECT record_content
+                FROM hbpr_full_records
+                WHERE is_validated = 1
+                ORDER BY hbnb_number
+            """, conn)
         
         if df.empty:
             return "No records to export."

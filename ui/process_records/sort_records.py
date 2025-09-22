@@ -11,6 +11,38 @@ import os
 from ui.common import get_hbpr_database_client, is_db_available
 
 
+def execute_query_to_dataframe(db, query, params=None):
+    """
+    Execute a SQL query using the remote connection and return results as pandas DataFrame.
+    This avoids pandas compatibility issues with RemoteSqliteConnection.
+    """
+    try:
+        conn = db.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(query, params or [])
+
+        # Get column names from cursor description
+        if cursor.description:
+            columns = [desc[0] for desc in cursor.description]
+        else:
+            columns = []
+
+        # Get all rows
+        rows = cursor.fetchall()
+
+        # Create DataFrame
+        if columns and rows:
+            return pd.DataFrame(rows, columns=columns)
+        elif columns:
+            return pd.DataFrame(columns=columns)
+        else:
+            return pd.DataFrame()
+
+    except Exception as e:
+        st.error(f"❌ Error executing query: {str(e)}")
+        return pd.DataFrame()
+
+
 def load_filter_config():
     """加载过滤配置文件"""
     try:
@@ -84,15 +116,14 @@ def show_sort_records():
             st.error("❌ Database connection not available.")
             return
 
-        conn = db.get_connection()
         # 查询已处理的记录，包括properties、ckin_msg和asvc_msg字段
-        df = pd.read_sql_query("""
+        df = execute_query_to_dataframe(db, """
             SELECT hbnb_number, boarding_number, name, seat, class, destination,
                    bag_piece, bag_weight, ff, ckin_msg, properties, asvc_msg, error_count
-            FROM hbpr_full_records 
+            FROM hbpr_full_records
             WHERE is_validated = 1
             ORDER BY hbnb_number
-        """, conn)
+        """)
         if df.empty:
             st.info("ℹ️ No processed records found.")
             return

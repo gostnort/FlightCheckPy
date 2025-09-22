@@ -115,7 +115,6 @@ def main():
     st.sidebar.title("📋 Navigation")
     # 使用增强的数据库选择器（自动加载到内存）
     custom_folder = st.session_state.get('custom_db_folder', None)
-    
     # 在侧边栏中使用自定义的数据库选择器
     with st.sidebar:
         # 创建一个临时容器来包装选择器
@@ -124,10 +123,8 @@ def main():
             selected_db_file, db_files = create_database_selectbox(
                 label="💾 选择数据库:",
                 key="global_db_select",
-                default_index=0,
                 custom_folder=custom_folder
             )
-    
     if not selected_db_file:
         st.sidebar.warning("⚠️ 未找到数据库")
         st.sidebar.info("💡 请先创建数据库")
@@ -175,7 +172,6 @@ def main():
     # Navigation links
     create_navigation_button("🗄️ Database", st.session_state.current_page, "🗄️ Database")
     create_navigation_button("🔍 Process Records", st.session_state.current_page, "🔍 Process Records")
-    create_navigation_button("📋 Other Commands", st.session_state.current_page, "📋 Other Commands")
     create_navigation_button("📊 Excel Processor", st.session_state.current_page, "📊 Excel Processor")
     # Settings page
     st.sidebar.markdown("---")
@@ -222,9 +218,6 @@ def main():
     elif current_page == "🔍 Process Records":
         from ui.process_records_page import show_process_records
         show_process_records()
-    elif current_page == "📋 Other Commands":
-        from ui.command_analysis_page import show_command_analysis
-        show_command_analysis()
     elif current_page == "📊 Excel Processor":
         from ui.excel_processor_page import show_excel_processor
         show_excel_processor()

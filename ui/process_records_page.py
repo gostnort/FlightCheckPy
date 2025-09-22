@@ -4,26 +4,26 @@ Process Records page for HBPR UI - Main navigation interface for record processi
 """
 
 import streamlit as st
-from ui.common import is_db_available
-from ui.process_records.add_edit_record import show_add_edit_record
-from ui.process_records.process_all import show_process_all_records
-from ui.process_records.simple_record import show_simple_record
-from ui.process_records.export_data import show_export_data
-from ui.process_records.sort_records import show_sort_records
+from ui.process_records.info import show_info_tab
+from ui.process_records.add_hbprs import show_add_hbprs_tab
+from ui.process_records.edit_hbpr import show_edit_hbpr_tab
+from ui.process_records.add_commands import show_add_commands_tab
+from ui.process_records.edit_command import show_edit_command_tab
+from ui.process_records.timeline import show_timeline_tab
 
 
 def show_process_records():
     """显示处理记录页面"""
     st.markdown("<h3>🔍 Process Records</h3>", unsafe_allow_html=True)
-    
-    if not is_db_available():
-        st.warning("⚠️ Please select a database from the sidebar to begin.")
+
+    if not st.session_state.get('authenticated', False):
+        st.warning("⚠️ Please log in first.")
         return
 
     try:
         # 定义标签页选项
-        tab_options = ["🚀 Process All", "✏️ Add/Edit", "🧻 Simple", "📋 Sort", "📤 Export"]
-        
+        tab_options = ["ℹ️ Info", "➕ Add HBPRs", "✏️ Edit a HBPR", "📝 Add Commands", "📋 Edit a Command", "📅 Timeline"]
+
         # 处理程序化标签页切换
         if hasattr(st.session_state, 'process_records_tab'):
             target_tab = st.session_state.process_records_tab
@@ -37,20 +37,22 @@ def show_process_records():
             default_index = 0
 
         # 使用tabs来控制页面
-        tab1, tab2, tab3, tab4, tab5 = st.tabs(tab_options)
+        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(tab_options)
 
         with tab1:
-            show_process_all_records()
+            show_info_tab()
         with tab2:
-            show_add_edit_record()
+            show_add_hbprs_tab()
         with tab3:
-            show_simple_record()
+            show_edit_hbpr_tab()
         with tab4:
-            show_sort_records()
+            show_add_commands_tab()
         with tab5:
-            show_export_data()
+            show_edit_command_tab()
+        with tab6:
+            show_timeline_tab()
 
     except Exception as e:
-        st.error(f"❌ Database not available: {str(e)}")
-        st.info("💡 Please build a database first in the Database Management page.")
+        st.error(f"❌ Error: {str(e)}")
+        st.info("💡 Please ensure you are logged in and have selected a database.")
 
