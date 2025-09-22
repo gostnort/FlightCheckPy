@@ -4,7 +4,6 @@ Reusable component for displaying main HBPR statistics
 """
 
 import streamlit as st
-from ui.common import get_hbpr_database_client
 
 
 def display_main_statistics(all_stats, db=None):
@@ -23,7 +22,6 @@ def display_main_statistics(all_stats, db=None):
     accepted_stats = all_stats.get('accepted_passengers_stats', {})
     deleted_stats = all_stats.get('deleted_passengers_stats', {})
     # First row: Main metrics
-    st.subheader("📊 Main Statistics")
     m1, m2, m3 = st.columns(3)
     with m1:
         max_hbnb = range_info.get('max', 0)

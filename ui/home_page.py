@@ -13,10 +13,8 @@ from ui.components.main_stats import get_and_display_main_statistics
 def show_home_page():
     """显示主页"""
     apply_global_settings()
-
     # Create two columns for layout
     col1, col2 = st.columns([2, 1])
-
     with col1:
         st.subheader("📊 Main Statistics")
         try:
@@ -24,18 +22,15 @@ def show_home_page():
             if not is_db_available():
                 st.warning("⚠️ Please select a database from the sidebar to begin.")
                 return
-
             # 使用内存数据库
             db = get_hbpr_database_client()
             if db is None:
                 st.error("❌ No database loaded in memory")
                 return
-
             with st.spinner("Loading database statistics..."):
-                get_and_display_main_statistics(db.get_all_statistics())
+                get_and_display_main_statistics(db)
         except Exception as e:
             st.error(f"❌ Error loading main statistics: {e}")
-
     with col2:
         st.subheader("📈 Home Summary")
         try:

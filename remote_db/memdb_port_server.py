@@ -13,7 +13,7 @@ import sqlite3
 import threading
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from urllib.parse import urlparse
+from urllib.parse import urlparse, unquote
 
 
 # Global variables to hold the in-memory database connection,
@@ -32,6 +32,25 @@ def _ensure_pragmas(conn: sqlite3.Connection) -> None:
         pass
 
 
+def _validate_database_schema(file_path: str) -> bool:
+    """
+    Validates that the database has the expected schema (required tables).
+    Returns True if the database has the expected structure, False otherwise.
+    """
+    try:
+        with sqlite3.connect(file_path) as conn:
+            cursor = conn.cursor()
+            # Check for required tables
+            required_tables = ['hbpr_full_records', 'hbpr_simple_records', 'commands']
+            for table in required_tables:
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,))
+                if not cursor.fetchone():
+                    return False
+            return True
+    except Exception as e:
+        return False
+
+
 def _load_db_into_memory(file_path: str) -> None:
     """
     Loads a SQLite database file from the given path into a new in-memory database.
@@ -39,6 +58,11 @@ def _load_db_into_memory(file_path: str) -> None:
     If a database is already loaded, it's closed after the new one is ready.
     """
     global _conn, _src_file_path
+
+    # Validate database schema before loading
+    if not _validate_database_schema(file_path):
+        raise ValueError(f"Database {file_path} does not have the expected schema. Required tables: hbpr_full_records, hbpr_simple_records, commands")
+
     # Create a new in-memory SQLite database connection.
     new_conn = sqlite3.connect(":memory:", check_same_thread=False)
     _ensure_pragmas(new_conn)
@@ -91,16 +115,18 @@ def _save_to_source() -> None:
             _conn.backup(fconn)
 
 
-def _list_db_files() -> list:
+def _list_db_files(directory: str = None) -> list:
     """
-    Lists all '.db' files in the 'databases' directory.
+    Lists all '.db' files in the specified directory.
+    If no directory is provided, defaults to 'databases' directory.
     Returns a list of file paths, sorted by creation time (most recent first).
     """
+    target_dir = directory if directory else "databases"
     files = []
-    if os.path.exists("databases"):
-        for name in os.listdir("databases"):
+    if os.path.exists(target_dir):
+        for name in os.listdir(target_dir):
             if name.lower().endswith(".db"):
-                files.append(os.path.join("databases", name))
+                files.append(os.path.join(target_dir, name))
     return sorted(files, key=lambda p: os.path.getctime(p), reverse=True)
 
 
@@ -124,13 +150,19 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         """Handles GET requests."""
-        path = urlparse(self.path).path
+        parsed = urlparse(self.path)
+        path = parsed.path
+        query_params = dict(q.split('=', 1) for q in parsed.query.split('&') if q)
+
         if path == "/health":
             # Health check endpoint: returns server status and current database file.
             return self._send(200, {"ok": True, "db": os.path.basename(_src_file_path) if _src_file_path else None})
         if path == "/databases/list":
-            # Lists available database files.
-            return self._send(200, {"files": _list_db_files()})
+            # Lists available database files, optionally from a custom directory.
+            directory = query_params.get("directory")
+            if directory:
+                directory = unquote(directory)
+            return self._send(200, {"files": _list_db_files(directory)})
         return self._send(404, {"error": "not_found"})
 
     def do_POST(self):
@@ -144,6 +176,14 @@ class Handler(BaseHTTPRequestHandler):
             body = {}
 
         try:
+            if path == "/database/validate":
+                # Validates that a database file has the expected schema.
+                file_path = body.get("path")
+                if not file_path or not os.path.exists(file_path):
+                    return self._send(400, {"valid": False, "error": "invalid_path"})
+                valid = _validate_database_schema(file_path)
+                return self._send(200, {"valid": valid})
+
             if path == "/database/load":
                 # Loads a new database file into memory.
                 # If a database is already loaded, it's backed up first.

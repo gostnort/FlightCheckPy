@@ -14,7 +14,6 @@ from urllib.error import URLError
 from remote_db.db_port_client import DbPortClient
 from remote_db.remote_sqlite_adapter import RemoteSqliteConnection
 from scripts.hbpr_info_processor import HbprDatabase
-import os
 
 
 def get_icon_base64(path):
@@ -184,42 +183,56 @@ def load_database(path: str):
 def create_database_selectbox(label="💾 Select Database:", key="global_db_select", custom_folder=None):
     """
     Creates a selectbox for DB selection and handles loading it into memory.
-    (This replaces the one from the deleted database_manager.py)
+    Now supports custom folders via session state or parameter.
+    Only shows databases with valid schema.
     """
     client = get_db_port_client()
     db_files = []
-
+    valid_db_files = []
+    # Use custom folder from session state if available, otherwise use parameter
+    active_custom_folder = st.session_state.get('custom_db_folder') or custom_folder
     if client:
         try:
-            # The server lists files from its 'databases' directory.
-            # The 'custom_folder' parameter is not currently supported by the server and is ignored.
-            db_files = client.list_databases()
+            # List databases from custom folder if specified, otherwise from default 'databases' folder
+            db_files = client.list_databases(active_custom_folder)
+            # Validate each database schema
+            for db_file in db_files:
+                try:
+                    validation_result = client.validate_database_schema(db_file)
+                    if validation_result.get("valid", False):
+                        valid_db_files.append(db_file)
+                    else:
+                        print(f"Database {db_file} has invalid schema, skipping")
+                except Exception as e:
+                    print(f"Failed to validate database {db_file}: {e}")
+                    # Skip databases that can't be validated
+                    pass
         except Exception:
             db_files = []
-
-    if not db_files:
-        st.selectbox(label, ["No databases found in 'databases/' folder"], disabled=True)
+    if not valid_db_files:
+        folder_desc = f"'{active_custom_folder}'" if active_custom_folder else "'databases/'"
+        if db_files and not valid_db_files:
+            # There are DB files but none are valid
+            st.selectbox(label, [f"No compatible databases found in {folder_desc} folder"], disabled=True)
+        else:
+            # No DB files at all
+            st.selectbox(label, [f"No databases found in {folder_desc} folder"], disabled=True)
         return None, []
-
     # Get current selection from session state to compare against widget state
     current_selection_key = f"db_selection_{key}"
     previous_selection = st.session_state.get(current_selection_key)
-
     # Find index of previous selection to set the widget correctly
     try:
-        current_index = db_files.index(previous_selection) if previous_selection in db_files else 0
+        current_index = valid_db_files.index(previous_selection) if previous_selection in valid_db_files else 0
     except (ValueError, TypeError):
         current_index = 0
-
-    selected_db_file = st.selectbox(label, db_files, index=current_index, key=key)
-
+    selected_db_file = st.selectbox(label, valid_db_files, index=current_index, key=key)
     # If selection has changed, or if nothing is loaded yet, load the DB
     if (selected_db_file and selected_db_file != previous_selection) or (not is_db_available() and selected_db_file):
         if load_database(selected_db_file):
             st.session_state[current_selection_key] = selected_db_file
             st.rerun()
-
-    return selected_db_file, db_files
+    return selected_db_file, valid_db_files
 
 
 def apply_global_settings():

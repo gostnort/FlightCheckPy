@@ -57,7 +57,9 @@ FlightCheckPy/
 │   ├── settings_page.py        # System configuration and about info
 │   ├── database/               # Database management sub-modules
 │   │   ├── __init__.py
-│   │   ├── operations.py       # Database operations (HBPR, Commands, Export)
+│   │   ├── hbpr.py             # HBPR operations (Create, Process, Erase, Save)
+│   │   ├── commands.py         # Commands operations (Migrate, Clear)
+│   │   ├── export.py           # Export operations (CSV, TXT)
 │   │   ├── simple.py          # Simple records management
 │   │   └── sort.py            # Record sorting and filtering
 │   └── process_records/        # Record processing sub-modules
@@ -729,7 +731,7 @@ Individual Tab Modules (in page-specific subdirectories)
 - **Testing**: Isolated testing of individual tab functions
 
 #### Applied To
-- **Database Page**: `operations.py`, `simple.py`, `sort.py`
+- **Database Page**: `hbpr.py`, `commands.py`, `export.py`, `simple.py`, `sort.py`
 - **Process Records Page**: `info.py`, `add_hbprs.py`, `edit_hbpr.py`, `add_commands.py`, `edit_command.py`, `timeline.py`
 
 #### Directory Structure
@@ -737,17 +739,19 @@ Individual Tab Modules (in page-specific subdirectories)
 ui/
 ├── database_page.py          # Orchestrator
 ├── database/                 # Sub-modules
-│   ├── operations.py
-│   ├── simple.py
-│   └── sort.py
+│   ├── hbpr.py               # HBPR operations tab
+│   ├── commands.py           # Commands operations tab
+│   ├── export.py             # Export operations tab
+│   ├── simple.py             # Simple records tab
+│   └── sort.py               # Sort records tab
 ├── process_records_page.py   # Orchestrator
 └── process_records/          # Sub-modules
-    ├── info.py
-    ├── add_hbprs.py
-    ├── edit_hbpr.py
-    ├── add_commands.py
-    ├── edit_command.py
-    ├── timeline.py
+    ├── info.py               # Info tab
+    ├── add_hbprs.py          # Add HBPRs tab
+    ├── edit_hbpr.py          # Edit HBPR tab
+    ├── add_commands.py       # Add Commands tab
+    ├── edit_command.py       # Edit Command tab
+    ├── timeline.py           # Timeline tab
     └── [legacy files...]
 ```
 
@@ -1822,7 +1826,9 @@ main()
 ├── Page navigation and routing
 │   ├── show_home_page() (real-time system overview)
 │   ├── show_database_management()
-│   │   ├── show_database_operations() (HBPR, Commands, Export operations)
+│   │   ├── show_hbpr_operations() (HBPR file processing, processing, erasing, saving)
+│   │   ├── show_commands_operations() (timeline migration, command clearing)
+│   │   ├── show_export_operations() (CSV and TXT export)
 │   │   ├── show_simple_records() (simple record management)
 │   │   └── show_sort_records() (record sorting and filtering)
 │   ├── show_process_records_page()

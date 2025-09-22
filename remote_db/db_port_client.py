@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 
@@ -30,13 +31,23 @@ class DbPortClient:
         """Checks the health of the database server."""
         return self._get("/health")
 
-    def list_databases(self):
+    def list_databases(self, directory=None):
         """Retrieves a list of available database files from the server."""
-        return self._get("/databases/list").get("files", [])
+        path = "/databases/list"
+        if directory:
+            path += f"?directory={quote(directory)}"
+        return self._get(path).get("files", [])
 
     def load_database(self, path: str):
         """Requests the server to load a database file into memory."""
         return self._post("/database/load", {"path": path})
+
+    def validate_database_schema(self, path: str):
+        """Validates that a database file has the expected schema."""
+        try:
+            return self._post("/database/validate", {"path": path})
+        except Exception:
+            return {"valid": False, "error": "Failed to validate database"}
 
     def backup(self):
         """Requests the server to create a backup of the current in-memory database."""
