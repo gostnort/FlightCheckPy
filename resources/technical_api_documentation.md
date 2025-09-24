@@ -71,10 +71,16 @@ FlightCheckPy/
 │       ├── edit_command.py    # Single command editing
 │       ├── timeline.py        # HBPR/Commands timeline with radio switcher
 │       ├── process_all.py     # Batch processing functionality
-│       ├── add_edit_record.py # Legacy single record editing
-│       ├── simple_record.py   # Simple record creation
-│       ├── sort_records.py    # Record viewing and filtering
-│       └── export_data.py     # Data export functionality with cleaning
+│       ├── add_edit_record.py # Add or edit a record
+│       ├── add_hbprs.py       # Add multiple HBPR records
+│       ├── edit_command.py    # Edit a single command
+│       ├── edit_hbpr.py       # Edit a single HBPR record
+│       ├── export_data.py     # Export data to various formats
+│       ├── info.py            # Display processing information and errors
+│       ├── timeline.py        # Timeline visualization of record processing
+│   ├── README.md              # UI documentation
+├── start_ui.bat             # Batch script to start the UI
+├── start_ui.py              # Main Streamlit application runner
 ├── remote_db/                  # In-memory database server and client components
 │   ├── remote_sqlite_adapter.py # HTTP-to-SQLite adapter layer
 │   ├── hbpr_database_client.py # Remote HbprDatabase API client
@@ -1681,9 +1687,15 @@ def show_timeline_tab() -> None:
 ├── edit_command.py    # Single command editing
 ├── timeline.py        # HBPR/Commands timeline with radio switcher
 ├── process_all.py     # Batch processing and error functions
-├── add_edit_record.py # Legacy record editing functions
-├── simple_record.py   # Simple record creation
-├── sort_records.py    # Record viewing and filtering
+├── add_edit_record.py # Add or edit a record
+├── add_hbprs.py       # Add multiple HBPR records
+├── edit_command.py    # Edit a single command
+├── edit_hbpr.py       # Edit a single HBPR record
+├── export_data.py     # Export data to various formats
+├── info.py            # Display processing information and errors
+├── simple_record.py   # Simple record management
+├── sort_records.py    # Record sorting functionality
+├── timeline.py        # Timeline visualization of record processing
 └── export_data.py     # Data export functionality
 ```
 

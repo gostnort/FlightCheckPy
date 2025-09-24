@@ -362,6 +362,20 @@ class HBPRProcessor:
             self.generate_report(flight_id)
 
 
+def parse_flight_id_from_content(file_content: str) -> str | None:
+    """Parses file content to find the flight ID without full processing."""
+    lines = file_content.splitlines()
+    for line in lines:
+        line = line.strip()
+        if line.startswith('>HBPR:') or line.startswith('HBPR:'):
+            match = re.search(r'>HBPR:\s*([^*,]+)', line)
+            if match:
+                flight_info = match.group(1).strip()
+                flight_parts = flight_info.replace('/', '_').replace('*', '_')
+                return flight_parts
+    return None
+
+
 def main():
     """主函数 - 现在作为一个示例，展示如何使用HBPR处理器"""
     print("🧹 HBPR List Processor Tool")
