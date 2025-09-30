@@ -76,3 +76,14 @@ class DbPortClient:
         return self._post("/exec", {"sql": sql, "params": params or []})
 
 
+    def shutdown(self):
+        """
+        Requests the server to save the database and shutdown gracefully.
+        """
+        try:
+            return self._get("/shutdown")
+        except Exception:
+            # Server might close connection before responding, which is expected
+            return {"ok": True}
+
+

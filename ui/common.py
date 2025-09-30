@@ -157,6 +157,19 @@ def trigger_auto_save():
     return False
 
 
+def shutdown_db_server():
+    """关闭当前用户的数据库服务器"""
+    client = get_db_port_client()
+    if client:
+        try:
+            client.shutdown()
+            return True
+        except Exception:
+            # Server might already be down
+            return True
+    return False
+
+
 def load_database(path: str):
     """Requests the server to load a database file into memory."""
     client = get_db_port_client()

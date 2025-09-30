@@ -6,7 +6,7 @@ Data Cleaning Utility for HBPR Processing
 
 import re
 import logging
-from typing import List, Tuple, Optional
+from typing import List, Tuple
 
 
 # 设置日志
@@ -49,26 +49,39 @@ def clean_text_for_input(text: str, aggressive: bool = False) -> str:
     return cleaned
 
 
-def clean_hbpr_record_content(content: str) -> str:
+def clean_hbpr_record_content(content: str, hbnb_number: int = None) -> str:
     """
     专门清理HBPR记录内容
     Args:
         content (str): HBPR记录内容
+        hbnb_number (int): HBNB编号（可选，用于日志）
     Returns:
         str: 清理后的内容
     """
     if not content:
         return content
+    original_content = content
+    cleaned_content = clean_text_for_input(content, aggressive=True)
+    # 只有在实际清理了内容时才记录
+    if cleaned_content != original_content:
+        # 找到第一个被清理的字符位置
+        for i, (orig_char, clean_char) in enumerate(zip(original_content, cleaned_content)):
+            if orig_char != clean_char:
+                # 获取前后10个字符的上下文
+                start = max(0, i - 10)
+                end = min(len(original_content), i + 10)
+                context_orig = original_content[start:end]
+                context_clean = cleaned_content[start:end]
+                hbnb_info = f"HBNB {hbnb_number}: " if hbnb_number else ""
+                logger.warning(
+                    f"{hbnb_info}HBPR内容包含问题字符，已清理\n"
+                    f"  位置: 第{i+1}个字符\n"
+                    f"  原文: {repr(context_orig)}\n"
+                    f"  清理后: {repr(context_clean)}"
+                )
+                break
     
-    # 检查是否包含控制字符
-    has_control_chars = re.search(r'[\x00-\x1f\x7f]', content)
-    has_binary_chars = re.search(r'[^\x20-\x7e\n\r\t]', content)
-    
-    if has_control_chars or has_binary_chars:
-        logger.warning("HBPR content contains control or binary characters, cleaning...")
-        return clean_text_for_input(content, aggressive=True)
-    
-    return content
+    return cleaned_content
 
 
 def validate_and_clean_file_content(file_path: str, encoding: str = 'utf-8') -> Tuple[List[str], bool]:
@@ -123,111 +136,6 @@ def validate_and_clean_file_content(file_path: str, encoding: str = 'utf-8') -> 
     except Exception as e:
         logger.error(f"Error reading file {file_path}: {e}")
         raise
-
-
-def clean_database_content_before_save(content: str, field_name: str = "unknown") -> str:
-    """
-    在保存到数据库前清理内容
-    Args:
-        content (str): 要保存的内容
-        field_name (str): 字段名称（用于日志）
-    Returns:
-        str: 清理后的内容
-    """
-    if not content:
-        return content
-    
-    original_content = content
-    cleaned_content = clean_text_for_input(content)
-    
-    # Standardize line endings to \\n
-    cleaned_content = cleaned_content.replace('\\r\\n', '\\n').replace('\\r', '\\n')
-    
-    # Remove leading/trailing newlines and whitespace from the entire block, but preserve indentation
-    return cleaned_content.strip()
-
-
-def batch_clean_text_data(text_list: List[str], field_name: str = "unknown") -> List[str]:
-    """
-    批量清理文本数据
-    Args:
-        text_list (List[str]): 文本列表
-        field_name (str): 字段名称（用于日志）
-    Returns:
-        List[str]: 清理后的文本列表
-    """
-    if not text_list:
-        return text_list
-    
-    cleaned_list = []
-    cleaned_count = 0
-    
-    for i, text in enumerate(text_list):
-        if text:
-            original_text = text
-            cleaned_text = clean_text_for_input(text)
-            if cleaned_text != original_text:
-                cleaned_count += 1
-            cleaned_list.append(cleaned_text)
-        else:
-            cleaned_list.append(text)
-    
-    if cleaned_count > 0:
-        logger.info(f"Batch cleaned {cleaned_count} out of {len(text_list)} items in field '{field_name}'")
-    
-    return cleaned_list
-
-
-def get_cleaning_statistics(text: str) -> dict:
-    """
-    获取文本清理统计信息
-    Args:
-        text (str): 原始文本
-    Returns:
-        dict: 清理统计信息
-    """
-    if not text:
-        return {"total_chars": 0, "control_chars": 0, "binary_chars": 0, "needs_cleaning": False}
-    
-    stats = {
-        "total_chars": len(text),
-        "control_chars": len(re.findall(r'[\x00-\x1f\x7f]', text)),
-        "binary_chars": len(re.findall(r'[^\x20-\x7e\n\r\t]', text)),
-        "needs_cleaning": False
-    }
-    
-    stats["needs_cleaning"] = stats["control_chars"] > 0 or stats["binary_chars"] > 0
-    
-    return stats
-
-
-def preview_cleaning_effect(text: str, max_length: int = 100) -> dict:
-    """
-    预览清理效果
-    Args:
-        text (str): 原始文本
-        max_length (int): 最大显示长度
-    Returns:
-        dict: 清理预览信息
-    """
-    if not text:
-        return {"original": "", "cleaned": "", "changed": False}
-    
-    cleaned = clean_text_for_input(text)
-    changed = cleaned != text
-    
-    # 截断显示
-    original_preview = text[:max_length] + ("..." if len(text) > max_length else "")
-    cleaned_preview = cleaned[:max_length] + ("..." if len(cleaned) > max_length else "")
-    
-    return {
-        "original": original_preview,
-        "cleaned": cleaned_preview,
-        "changed": changed,
-        "original_length": len(text),
-        "cleaned_length": len(cleaned),
-        "statistics": get_cleaning_statistics(text)
-    }
 
 
 if __name__ == "__main__":

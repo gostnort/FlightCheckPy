@@ -134,7 +134,7 @@ class HBPRProcessor:
         record_content = '\n'.join(record_lines)
         
         # 清理记录内容，移除问题字符
-        cleaned_content = clean_hbpr_record_content(record_content)
+        cleaned_content = clean_hbpr_record_content(record_content, hbnb_num)
         if cleaned_content != record_content:
             print(f"⚠️  HBNB {hbnb_num} record content cleaned: {len(record_content)} -> {len(cleaned_content)} characters")
         
@@ -272,7 +272,7 @@ class HBPRProcessor:
         for hbnb_num, content in flight_data['full_records'].items():
             cleaned_content = self._clean_duplicate_headers(content)
             # 进一步清理内容，移除问题字符
-            final_content = clean_hbpr_record_content(cleaned_content)
+            final_content = clean_hbpr_record_content(cleaned_content, hbnb_num)
             cursor.execute(
                 'INSERT INTO hbpr_full_records (hbnb_number, record_content) VALUES (?, ?)',
                 (hbnb_num, final_content)
@@ -280,7 +280,7 @@ class HBPRProcessor:
         # 存储简单记录
         for hbnb_num, line in flight_data['simple_records'].items():
             # 清理简单记录内容
-            cleaned_line = clean_hbpr_record_content(line)
+            cleaned_line = clean_hbpr_record_content(line, hbnb_num)
             cursor.execute(
                 'INSERT INTO hbpr_simple_records (hbnb_number, record_line) VALUES (?, ?)',
                 (hbnb_num, cleaned_line)

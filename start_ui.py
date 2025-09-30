@@ -200,7 +200,7 @@ def build_tray():
         MenuItem("Open in Browser", open_in_browser),
         MenuItem("Quit", lambda icon, item: (stop_streamlit(), icon.stop()))
     )
-    tray_icon = Icon("StreamlitTray", icon_image, "Flight Check-0.62.1", menu)
+    tray_icon = Icon("StreamlitTray", icon_image, "Flight Check-0.63", menu)
     return tray_icon
 
 if __name__ == "__main__":

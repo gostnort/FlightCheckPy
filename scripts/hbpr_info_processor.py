@@ -1186,7 +1186,7 @@ class HbprDatabase:
         """创建简单HBPR记录"""
         try:
             # 清理记录内容，移除问题字符
-            cleaned_line = clean_hbpr_record_content(record_line)
+            cleaned_line = clean_hbpr_record_content(record_line, hbnb_number)
             if cleaned_line != record_line:
                 print(f"⚠️  HBNB {hbnb_number} simple record cleaned before saving: {len(record_line)} -> {len(cleaned_line)} characters")
             
@@ -1215,7 +1215,7 @@ class HbprDatabase:
         """创建完整HBPR记录"""
         try:
             # 清理记录内容，移除问题字符
-            cleaned_content = clean_hbpr_record_content(record_content)
+            cleaned_content = clean_hbpr_record_content(record_content, hbnb_number)
             if cleaned_content != record_content:
                 print(f"⚠️  HBNB {hbnb_number} record content cleaned before saving: {len(record_content)} -> {len(cleaned_content)} characters")
             

@@ -41,13 +41,13 @@ def _validate_database_schema(file_path: str) -> bool:
         with sqlite3.connect(file_path) as conn:
             cursor = conn.cursor()
             # Check for required tables
-            required_tables = ['hbpr_full_records', 'hbpr_simple_records', 'commands']
+            required_tables = ['hbpr_full_records', 'hbpr_simple_records']
             for table in required_tables:
                 cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,))
                 if not cursor.fetchone():
                     return False
             return True
-    except Exception as e:
+    except Exception:
         return False
 
 
@@ -163,6 +163,17 @@ class Handler(BaseHTTPRequestHandler):
             if directory:
                 directory = unquote(directory)
             return self._send(200, {"files": _list_db_files(directory)})
+        if path == "/shutdown":
+            # Shutdown endpoint: saves database and stops the server.
+            try:
+                if _conn and _src_file_path:
+                    _save_to_source()
+                self._send(200, {"ok": True, "message": "Server shutting down"})
+                # Shutdown the server in a separate thread to allow response to be sent
+                threading.Thread(target=lambda: self.server.shutdown(), daemon=True).start()
+                return
+            except Exception as e:
+                return self._send(500, {"error": str(e)})
         return self._send(404, {"error": "not_found"})
 
     def do_POST(self):

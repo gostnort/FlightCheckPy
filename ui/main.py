@@ -6,14 +6,12 @@ Main UI coordinator for Flight Check python
 import streamlit as st
 import os
 import sys
-import tkinter as tk
-from tkinter import filedialog
 from pathlib import Path
 # Add project root to Python path
 project_root = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(project_root))
 # Project-specific imports (after path setup)
-from ui.common import get_icon_base64, apply_global_settings, create_database_selectbox
+from ui.common import get_icon_base64, apply_global_settings, shutdown_db_server
 from ui.login_page import show_login_page
 from ui.home_page import show_home_page
 from ui.database_page import show_database_management
@@ -80,7 +78,7 @@ def create_navigation_button(page_name, current_page, button_text):
 def main():
     """Main UI function"""
     st.set_page_config(
-        page_title="Flight Check Py-0.62.1",
+        page_title="Flight Check Py-0.63",
         page_icon="resources/fcp.ico",
         layout="wide",
         initial_sidebar_state="expanded"
@@ -113,59 +111,14 @@ def main():
     setup_navigation_highlighting()
     # Sidebar navigation
     st.sidebar.title("📋 Navigation")
-    # 使用增强的数据库选择器（自动加载到内存）
-    custom_folder = st.session_state.get('custom_db_folder', None)
-    # 在侧边栏中使用自定义的数据库选择器
+    
+    # 使用简化的数据库选择器
     with st.sidebar:
-        # 创建一个临时容器来包装选择器
-        container = st.container()
-        with container:
-            selected_db_file, db_files = create_database_selectbox(
-                label="💾 选择数据库:",
-                key="global_db_select",
-                custom_folder=custom_folder
-            )
-    if not selected_db_file:
-        st.sidebar.warning("⚠️ 未找到数据库")
-        st.sidebar.info("💡 请先创建数据库")
-    # Store selected database in session state for all pages to use
-    st.session_state.selected_database = selected_db_file
-    st.session_state.available_databases = db_files if selected_db_file else []
-    # Native Windows folder picker button and refresh button
-    col1, col2, col3 = st.sidebar.columns([3,1,1])
-    with col1:
-        open_db_clicked = st.button("🧾 Open DB", use_container_width=True)
-    with col3:
-        refresh_clicked = st.button("🔄", use_container_width=True, help="Refresh all content")
-    if open_db_clicked:
-        try:
-            # Create a root window and hide it
-            root = tk.Tk()
-            root.withdraw()
-            root.wm_attributes('-topmost', 1)
-            # Open Windows folder selection dialog
-            folder_path = filedialog.askdirectory(
-                title="Select Database Folder",
-                initialdir=st.session_state.get('custom_db_folder', os.getcwd())
-            )
-            # Clean up the root window
-            root.destroy()
-            if folder_path:
-                st.session_state.custom_db_folder = folder_path
-                st.sidebar.success(f"📁 Selected: {os.path.basename(folder_path)}")
-                st.rerun()
-        except Exception as e:
-            st.sidebar.error(f"❌ Error opening folder dialog: {str(e)}")
-    # Handle refresh button click
-    if refresh_clicked:
-        st.rerun()
-    # Show current custom folder if set
-    current_custom_folder = st.session_state.get('custom_db_folder', '')
-    if current_custom_folder:
-        st.sidebar.caption(f"📁 Custom: {os.path.basename(current_custom_folder)}")
-        if st.sidebar.button("🗑️ Clear Custom Folder", use_container_width=True):
-            st.session_state.custom_db_folder = ''
-            st.rerun()
+        from ui.components.database_selector import render_sidebar_database_selector
+        
+        # 渲染数据库选择器
+        render_sidebar_database_selector()
+        
     st.sidebar.markdown("---")
     # Home page
     create_navigation_button("🏠 Home", st.session_state.current_page, "🏠 Home")
@@ -184,9 +137,14 @@ def main():
                 os.remove(st.session_state.uploaded_file_path)
             except Exception:
                 pass
+        # Shutdown the database server for this user
+        shutdown_db_server()
+        # Clear session state
         st.session_state.authenticated = False
         st.session_state.username = None
         st.session_state.uploaded_file_path = None
+        st.session_state.db_service_port = None
+        st.session_state.db_service_host = None
         st.rerun()
     # Update previous page before creating navigation
     st.session_state.previous_page = st.session_state.current_page
@@ -208,7 +166,7 @@ def main():
         st.markdown("""
         <div style="display: flex; align-items: center; gap: 10px;">
             <img src="data:image/x-icon;base64,{}" width="64" height="64">
-            <h3 style="margin: 0;">Flight Check 0.62.1 --- Python</h3>
+            <h3 style="margin: 0;">Flight Check 0.63 --- Python</h3>
         </div>
         """.format(get_icon_base64("resources/fcp.ico")), unsafe_allow_html=True)
         st.markdown("---")
