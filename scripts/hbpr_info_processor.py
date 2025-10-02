@@ -1043,14 +1043,13 @@ class HbprDatabase:
         """重新计算并更新missing_numbers表"""
         try:
             cursor = self.conn.cursor()
-            # 检查是否存在missing_numbers表，如果不存在则创建
+            # 检查是否存在missing_numbers表如果不存在则创建从JSON配置读取
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='missing_numbers'")
             if not cursor.fetchone():
-                cursor.execute('''
-                    CREATE TABLE missing_numbers (
-                        hbnb_number INTEGER PRIMARY KEY
-                    )
-                ''')
+                from scripts.schema_utils import SchemaUtils
+                utils = SchemaUtils()
+                create_sql = utils.generate_create_table_sql('missing_numbers')
+                cursor.execute(create_sql)
                 print("Created missing_numbers table")
             # 获取所有现有的HBNB号码（包括完整记录和简单记录）
             cursor.execute("SELECT hbnb_number FROM hbpr_full_records ORDER BY hbnb_number")
@@ -1185,20 +1184,16 @@ class HbprDatabase:
     def create_simple_record(self, hbnb_number: int, record_line: str):
         """创建简单HBPR记录"""
         try:
-            # 清理记录内容，移除问题字符
+            # 清理记录内容移除问题字符
             cleaned_line = clean_hbpr_record_content(record_line, hbnb_number)
             if cleaned_line != record_line:
                 print(f"⚠️  HBNB {hbnb_number} simple record cleaned before saving: {len(record_line)} -> {len(cleaned_line)} characters")
-            
             cursor = self.conn.cursor()
-            # 确保hbpr_simple_records表存在
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS hbpr_simple_records (
-                    hbnb_number INTEGER PRIMARY KEY,
-                    record_line TEXT NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
+            # 确保hbpr_simple_records表存在从JSON配置读取
+            from scripts.schema_utils import SchemaUtils
+            utils = SchemaUtils()
+            create_sql = utils.generate_create_table_sql('hbpr_simple_records')
+            cursor.execute(create_sql)
             # 插入简单记录
             cursor.execute(
                 'INSERT OR REPLACE INTO hbpr_simple_records (hbnb_number, record_line) VALUES (?, ?)',
@@ -1752,20 +1747,14 @@ class HbprDatabase:
 
 
     def create_duplicate_record_table(self):
-        """创建duplicate_record表"""
+        """创建duplicate_record表从JSON配置读取"""
         try:
             cursor = self.conn.cursor()
-            # 创建duplicate_record表
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS duplicate_record (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    hbnb_number INTEGER NOT NULL,
-                    original_hbnb_id INTEGER NOT NULL,
-                    record_content TEXT NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (original_hbnb_id) REFERENCES hbpr_full_records(hbnb_number)
-                )
-            ''')
+            # 创建duplicate_record表从JSON配置读取
+            from scripts.schema_utils import SchemaUtils
+            utils = SchemaUtils()
+            create_sql = utils.generate_create_table_sql('duplicate_record')
+            cursor.execute(create_sql)
             self.conn.commit()
             print("Created duplicate_record table")
         except sqlite3.Error as e:

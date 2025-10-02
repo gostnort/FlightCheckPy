@@ -20,30 +20,28 @@ from ui.common import (
 def show_database_management():
     """显示数据库管理界面"""
     st.subheader("🗄️ Database Management")
-    
     # 显示当前数据库信息
     current_db = get_database_name()
     if current_db and current_db != "N/A" and current_db != "Error":
         st.info(f"📂 当前数据库: **{current_db}**")
     else:
         st.warning("⚠️ 未加载数据库 - 可以从下方选择或浏览文件夹")
-    
     st.markdown("---")
-    
     # 数据库操作
     col1, col2, col3 = st.columns(3)
-    
     with col1:
         st.markdown("### 📁 文件夹管理")
         render_folder_management()
-    
     with col2:
         st.markdown("### 💾 数据库操作")
         render_database_operations()
-    
     with col3:
         st.markdown("### 📊 数据库信息")
         render_database_info()
+    # 添加数据库迁移部分
+    st.markdown("---")
+    st.markdown("### 🔧 数据库维护")
+    render_database_migration()
 
 
 def render_folder_management():
@@ -143,15 +141,12 @@ def render_database_operations():
 
 def render_database_info():
     """渲染数据库信息部分"""
-    
     if not is_db_available():
         st.info("📊 无数据库信息")
         return
-    
     client = get_db_port_client()
     if not client:
         return
-    
     try:
         # 获取数据库健康状态
         health = client.health()
@@ -159,24 +154,93 @@ def render_database_info():
             st.success("✅ 服务状态: 正常")
         else:
             st.error("❌ 服务状态: 异常")
-        
-        # 获取更多信息（如果服务器支持）
+        # 获取更多信息如果服务器支持
         db_name = get_database_name()
         if db_name and db_name != "N/A":
             st.metric("数据库名称", db_name)
-            
             # 尝试获取数据库大小等信息
             custom_folder = st.session_state.get('custom_db_folder', 'databases')
             db_path = Path(custom_folder) / db_name
-            
             if db_path.exists():
                 size_mb = db_path.stat().st_size / (1024 * 1024)
                 st.metric("文件大小", f"{size_mb:.2f} MB")
-                
                 # 修改时间
                 import datetime
                 mtime = datetime.datetime.fromtimestamp(db_path.stat().st_mtime)
                 st.metric("最后修改", mtime.strftime("%Y-%m-%d %H:%M"))
-        
     except Exception as e:
         st.error(f"❌ 获取信息失败: {e}")
+
+
+def render_database_migration():
+    """渲染数据库迁移部分"""
+    if not is_db_available():
+        st.info("ℹ️ 请先加载数据库")
+        return
+    # 导入必要的模块
+    try:
+        from ui.common import get_hbpr_database_client
+        from scripts.database_migration import DatabaseMigrator
+    except Exception as e:
+        st.error(f"❌ 导入模块失败: {e}")
+        return
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.markdown("#### 🔄 自动迁移")
+        if st.button("🚀 迁移数据库", use_container_width=True, type="primary", help="自动检测并迁移数据库结构到最新版本"):
+            with st.spinner("正在迁移数据库结构..."):
+                try:
+                    db_client = get_hbpr_database_client()
+                    if db_client:
+                        conn = db_client.get_connection()
+                        migrator = DatabaseMigrator(conn)
+                        result = migrator.migrate_database(silent=False)
+                        if result['success']:
+                            st.success(f"✅ {result['message']}")
+                            # 自动保存
+                            trigger_auto_save()
+                            st.rerun()
+                        else:
+                            st.warning(f"⚠️ {result['message']}")
+                            if not result['hbpr']:
+                                st.error("❌ HBPR表迁移失败")
+                            if not result['commands']:
+                                st.error("❌ Commands表迁移失败")
+                    else:
+                        st.error("❌ 无法获取数据库连接")
+                except Exception as e:
+                    st.error(f"❌ 迁移失败: {e}")
+                    import traceback
+                    st.text(traceback.format_exc())
+    with col2:
+        st.markdown("#### 📋 验证结构")
+        if st.button("🔍 验证数据库结构", use_container_width=True, help="检查数据库结构是否符合最新规范"):
+            with st.spinner("正在验证数据库结构..."):
+                try:
+                    db_client = get_hbpr_database_client()
+                    if db_client:
+                        conn = db_client.get_connection()
+                        migrator = DatabaseMigrator(conn)
+                        if migrator.verify_migration():
+                            st.success("✅ 数据库结构完整")
+                        else:
+                            st.warning("⚠️ 数据库结构需要更新")
+                    else:
+                        st.error("❌ 无法获取数据库连接")
+                except Exception as e:
+                    st.error(f"❌ 验证失败: {e}")
+    with col3:
+        st.markdown("#### ℹ️ 结构信息")
+        try:
+            db_client = get_hbpr_database_client()
+            if db_client:
+                conn = db_client.get_connection()
+                migrator = DatabaseMigrator(conn)
+                schema_version = migrator.get_schema_version()
+                st.metric("结构版本", schema_version)
+                # 显示配置文件位置
+                st.caption("📄 配置文件: scripts/database_schema.json")
+            else:
+                st.info("ℹ️ 无结构信息")
+        except Exception as e:
+            st.error(f"❌ 获取信息失败: {e}")

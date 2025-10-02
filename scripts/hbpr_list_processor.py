@@ -184,76 +184,18 @@ class HBPRProcessor:
 
 
     def create_tables_if_not_exist(self) -> None:
-        """为指定航班创建SQLite数据库表（如果不存在）"""
+        """为指定航班创建SQLite数据库表如果不存在从JSON配置读取表结构"""
+        from scripts.schema_utils import SchemaUtils
         cursor = self.conn.cursor()
-        # 创建航班信息表
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS flight_info (
-                flight_id TEXT PRIMARY KEY,
-                flight_number TEXT NOT NULL,
-                flight_date TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        # 创建完整记录表 - 包含所有必要的列
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS hbpr_full_records (
-                hbnb_number INTEGER PRIMARY KEY,
-                record_content TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                is_validated BOOLEAN DEFAULT 0,
-                is_valid BOOLEAN,
-                boarding_number INTEGER,
-                pnr TEXT,
-                name TEXT,
-                seat TEXT,
-                class TEXT,
-                destination TEXT,
-                bag_piece INTEGER,
-                bag_weight INTEGER,
-                bag_allowance INTEGER,
-                ff TEXT,
-                pspt_name TEXT,
-                pspt_exp_date TEXT,
-                ckin_msg TEXT,
-                asvc_msg TEXT,
-                expc_piece INTEGER,
-                expc_weight INTEGER,
-                asvc_piece INTEGER,
-                fba_piece INTEGER,
-                ifba_piece INTEGER,
-                has_infant BOOLEAN DEFAULT 0,
-                flyer_benefit INTEGER,
-                is_ca_flyer BOOLEAN,
-                inbound_flight TEXT,
-                outbound_flight TEXT,
-                properties TEXT,
-                tkne TEXT,
-                error_count INTEGER,
-                error_baggage TEXT,
-                error_passport TEXT,
-                error_name TEXT,
-                error_visa TEXT,
-                error_other TEXT,
-                validated_at TIMESTAMP,
-                bol_duplicate BOOLEAN DEFAULT 0
-            )
-        ''')
-        # 创建简单记录表
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS hbpr_simple_records (
-                hbnb_number INTEGER PRIMARY KEY,
-                record_line TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        # 创建缺失号码表
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS missing_numbers (
-                hbnb_number INTEGER PRIMARY KEY,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
+        utils = SchemaUtils()
+        # 创建所有必要的表从JSON配置读取
+        tables_to_create = ['flight_info', 'hbpr_full_records', 'hbpr_simple_records', 'missing_numbers']
+        for table_name in tables_to_create:
+            try:
+                create_sql = utils.generate_create_table_sql(table_name)
+                cursor.execute(create_sql)
+            except Exception as e:
+                print(f"Warning: Could not create table {table_name}: {e}")
         self.conn.commit()
         print("Database tables ensured to exist.")
 

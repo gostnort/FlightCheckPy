@@ -519,6 +519,139 @@ class CommandProcessor:
             return []
 
 
+    def parse_single_command(self, raw_input: str) -> Optional[Dict[str, Any]]:
+        """
+        Parse a single command from raw input text
+        Args:
+            raw_input (str): Raw command text input
+        Returns:
+            Optional[Dict[str, Any]]: Parsed command info or None
+        """
+        try:
+            commands = self.parse_commands_from_text(raw_input)
+            if commands and len(commands) > 0:
+                return commands[0]
+            return None
+        except Exception:
+            return None
+
+
+    def delete_command(self, command_full: str) -> bool:
+        """
+        Delete a command and all its versions from the database
+        Args:
+            command_full (str): Full command string to delete
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        if not self.conn:
+            return False
+        conn = self.conn
+        try:
+            # 检查commands表是否存在
+            cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='commands'")
+            if not cursor.fetchone():
+                return False
+            # 开始事务
+            conn.execute("BEGIN TRANSACTION")
+            # 删除该命令的所有版本
+            conn.execute("DELETE FROM commands WHERE command_full = ?", (command_full,))
+            # 提交事务
+            conn.commit()
+            return True
+        except Exception as e:
+            # 错误时回滚
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            return False
+
+
+    def restore_version(self, command_full: str, version_num: int) -> bool:
+        """
+        Restore a specific version of a command as the latest version
+        Args:
+            command_full (str): Full command string
+            version_num (int): Version number to restore
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        if not self.conn:
+            return False
+        conn = self.conn
+        try:
+            # 获取指定版本的数据
+            cursor = conn.execute("""
+                SELECT command_type, flight_number, flight_date, content 
+                FROM commands 
+                WHERE command_full = ? AND version = ?
+            """, (command_full, version_num))
+            version_data = cursor.fetchone()
+            if not version_data:
+                return False
+            command_type, flight_number, flight_date, content = version_data
+            # 开始事务
+            conn.execute("BEGIN TRANSACTION")
+            # 标记所有版本为不是最新
+            conn.execute("""
+                UPDATE commands 
+                SET is_latest = FALSE 
+                WHERE command_full = ?
+            """, (command_full,))
+            # 获取当前最大版本号
+            cursor = conn.execute("""
+                SELECT MAX(version) FROM commands WHERE command_full = ?
+            """, (command_full,))
+            max_version = cursor.fetchone()[0]
+            new_version = max_version + 1 if max_version else 1
+            # 获取原始版本的id作为parent_id
+            cursor = conn.execute("""
+                SELECT id FROM commands WHERE command_full = ? AND version = ?
+            """, (command_full, version_num))
+            parent_row = cursor.fetchone()
+            parent_id = parent_row[0] if parent_row else None
+            # 插入恢复的版本作为新的最新版本
+            conn.execute("""
+                INSERT INTO commands (
+                    command_full, command_type, flight_number, flight_date, 
+                    content, version, parent_id, is_latest, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """, (
+                command_full, command_type, flight_number, flight_date,
+                content, new_version, parent_id
+            ))
+            # 提交事务
+            conn.commit()
+            return True
+        except Exception as e:
+            # 错误时回滚
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            return False
+
+
+    def migrate_to_timeline(self) -> bool:
+        """
+        Migrate old database schema to support timeline/versioning
+        现在使用统一的DatabaseMigrator进行迁移
+        Returns:
+            bool: True if migration was performed, False if already up to date
+        """
+        if not self.conn:
+            return False
+        try:
+            # 使用统一的DatabaseMigrator进行迁移
+            from scripts.database_migration import DatabaseMigrator
+            migrator = DatabaseMigrator(self.conn)
+            result = migrator.migrate_database(silent=True)
+            return result['commands']
+        except Exception as e:
+            return False
+
+
     def erase_commands_table(self) -> bool:
         """
         Erase all data from the commands table

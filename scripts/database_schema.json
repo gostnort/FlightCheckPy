@@ -1,0 +1,104 @@
+{
+  "version": "1.0",
+  "description": "Centralized database schema configuration for FlightCheckPy",
+  "tables": {
+    "flight_info": {
+      "columns": [
+        {"name": "flight_id", "type": "TEXT", "constraint": "PRIMARY KEY"},
+        {"name": "flight_number", "type": "TEXT", "constraint": "NOT NULL"},
+        {"name": "flight_date", "type": "TEXT", "constraint": "NOT NULL"},
+        {"name": "created_at", "type": "TIMESTAMP", "constraint": "DEFAULT CURRENT_TIMESTAMP"}
+      ]
+    },
+    "hbpr_full_records": {
+      "columns": [
+        {"name": "hbnb_number", "type": "INTEGER", "constraint": "PRIMARY KEY"},
+        {"name": "record_content", "type": "TEXT", "constraint": "NOT NULL"},
+        {"name": "created_at", "type": "TIMESTAMP", "constraint": "DEFAULT CURRENT_TIMESTAMP"},
+        {"name": "is_validated", "type": "BOOLEAN", "constraint": "DEFAULT 0"},
+        {"name": "is_valid", "type": "BOOLEAN", "constraint": ""},
+        {"name": "boarding_number", "type": "INTEGER", "constraint": ""},
+        {"name": "pnr", "type": "TEXT", "constraint": ""},
+        {"name": "name", "type": "TEXT", "constraint": ""},
+        {"name": "seat", "type": "TEXT", "constraint": ""},
+        {"name": "class", "type": "TEXT", "constraint": ""},
+        {"name": "destination", "type": "TEXT", "constraint": ""},
+        {"name": "bag_piece", "type": "INTEGER", "constraint": ""},
+        {"name": "bag_weight", "type": "INTEGER", "constraint": ""},
+        {"name": "bag_allowance", "type": "INTEGER", "constraint": ""},
+        {"name": "ff", "type": "TEXT", "constraint": ""},
+        {"name": "pspt_name", "type": "TEXT", "constraint": ""},
+        {"name": "pspt_exp_date", "type": "TEXT", "constraint": ""},
+        {"name": "ckin_msg", "type": "TEXT", "constraint": ""},
+        {"name": "asvc_msg", "type": "TEXT", "constraint": ""},
+        {"name": "expc_piece", "type": "INTEGER", "constraint": ""},
+        {"name": "expc_weight", "type": "INTEGER", "constraint": ""},
+        {"name": "asvc_piece", "type": "INTEGER", "constraint": ""},
+        {"name": "fba_piece", "type": "INTEGER", "constraint": ""},
+        {"name": "ifba_piece", "type": "INTEGER", "constraint": ""},
+        {"name": "has_infant", "type": "BOOLEAN", "constraint": "DEFAULT 0"},
+        {"name": "flyer_benefit", "type": "INTEGER", "constraint": ""},
+        {"name": "is_ca_flyer", "type": "BOOLEAN", "constraint": ""},
+        {"name": "inbound_flight", "type": "TEXT", "constraint": ""},
+        {"name": "outbound_flight", "type": "TEXT", "constraint": ""},
+        {"name": "properties", "type": "TEXT", "constraint": ""},
+        {"name": "tkne", "type": "TEXT", "constraint": ""},
+        {"name": "error_count", "type": "INTEGER", "constraint": ""},
+        {"name": "error_baggage", "type": "TEXT", "constraint": ""},
+        {"name": "error_passport", "type": "TEXT", "constraint": ""},
+        {"name": "error_name", "type": "TEXT", "constraint": ""},
+        {"name": "error_visa", "type": "TEXT", "constraint": ""},
+        {"name": "error_other", "type": "TEXT", "constraint": ""},
+        {"name": "validated_at", "type": "TIMESTAMP", "constraint": ""},
+        {"name": "bol_duplicate", "type": "BOOLEAN", "constraint": "DEFAULT 0"},
+        {"name": "is_deleted", "type": "INTEGER", "constraint": "DEFAULT 0"}
+      ]
+    },
+    "hbpr_simple_records": {
+      "columns": [
+        {"name": "hbnb_number", "type": "INTEGER", "constraint": "PRIMARY KEY"},
+        {"name": "record_line", "type": "TEXT", "constraint": "NOT NULL"},
+        {"name": "created_at", "type": "TIMESTAMP", "constraint": "DEFAULT CURRENT_TIMESTAMP"}
+      ]
+    },
+    "missing_numbers": {
+      "columns": [
+        {"name": "hbnb_number", "type": "INTEGER", "constraint": "PRIMARY KEY"},
+        {"name": "created_at", "type": "TIMESTAMP", "constraint": "DEFAULT CURRENT_TIMESTAMP"}
+      ]
+    },
+    "duplicate_record": {
+      "columns": [
+        {"name": "id", "type": "INTEGER", "constraint": "PRIMARY KEY AUTOINCREMENT"},
+        {"name": "hbnb_number", "type": "INTEGER", "constraint": "NOT NULL"},
+        {"name": "original_hbnb_id", "type": "INTEGER", "constraint": "NOT NULL"},
+        {"name": "record_content", "type": "TEXT", "constraint": "NOT NULL"},
+        {"name": "created_at", "type": "TIMESTAMP", "constraint": "DEFAULT CURRENT_TIMESTAMP"}
+      ],
+      "foreign_keys": [
+        {"column": "original_hbnb_id", "references": "hbpr_full_records(hbnb_number)"}
+      ]
+    },
+    "commands": {
+      "columns": [
+        {"name": "id", "type": "INTEGER", "constraint": "PRIMARY KEY AUTOINCREMENT"},
+        {"name": "command_full", "type": "TEXT", "constraint": "NOT NULL"},
+        {"name": "command_type", "type": "TEXT", "constraint": ""},
+        {"name": "flight_number", "type": "TEXT", "constraint": ""},
+        {"name": "flight_date", "type": "TEXT", "constraint": ""},
+        {"name": "content", "type": "TEXT", "constraint": ""},
+        {"name": "version", "type": "INTEGER", "constraint": "DEFAULT 1"},
+        {"name": "parent_id", "type": "INTEGER", "constraint": ""},
+        {"name": "is_latest", "type": "BOOLEAN", "constraint": "DEFAULT TRUE"},
+        {"name": "created_at", "type": "TIMESTAMP", "constraint": "DEFAULT CURRENT_TIMESTAMP"},
+        {"name": "updated_at", "type": "TIMESTAMP", "constraint": "DEFAULT CURRENT_TIMESTAMP"}
+      ],
+      "indexes": [
+        {"name": "idx_commands_timeline", "columns": ["command_full", "version"]},
+        {"name": "idx_commands_parent", "columns": ["parent_id"]},
+        {"name": "idx_commands_latest", "columns": ["command_full", "is_latest"]}
+      ]
+    }
+  }
+}
+

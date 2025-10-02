@@ -1891,6 +1891,21 @@ In-Memory DB Query → Data Extraction → Data Cleaning/Formatting → File Gen
 - **Format Safety**: Ensures compatibility with spreadsheet applications
 - **Data Integrity**: Preserves essential information while removing problematic characters
 
+## Centralized Schema and Migration
+
+The database schema is now centralized in a single JSON configuration and applied uniformly across the system.
+
+- JSON schema: `scripts/database_schema.json`
+- SQL generation utilities: `scripts/schema_utils.py`
+- Unified migrator: `scripts/database_migration.py`
+- UI integration: Database Management → “迁移数据库” button in `ui/database/management.py`
+- Deprecated: `scripts/commands_migration.py` (functionality merged into the unified migrator)
+
+Benefits:
+- Single source of truth for all tables and indexes
+- One-click migration from the UI; automatic creation of missing tables/columns
+- Consistent structure across scripts (`hbpr_info_processor.py`, `hbpr_list_processor.py`, `command_processor.py`)
+
 ## 🗄️ Database Schema
 
 ### Core Tables
@@ -1954,7 +1969,8 @@ CREATE TABLE hbpr_simple_records (
 #### missing_numbers
 ```sql
 CREATE TABLE missing_numbers (
-    hbnb_number INTEGER PRIMARY KEY
+    hbnb_number INTEGER PRIMARY KEY,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 ```
 
@@ -1962,9 +1978,43 @@ CREATE TABLE missing_numbers (
 ```sql
 CREATE TABLE flight_info (
     flight_id TEXT PRIMARY KEY,
-    flight_number TEXT,
-    flight_date TEXT
+    flight_number TEXT NOT NULL,
+    flight_date TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+```
+
+#### duplicate_record
+```sql
+CREATE TABLE duplicate_record (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    hbnb_number INTEGER NOT NULL,
+    original_hbnb_id INTEGER NOT NULL,
+    record_content TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (original_hbnb_id) REFERENCES hbpr_full_records(hbnb_number)
+);
+```
+
+#### commands
+```sql
+CREATE TABLE commands (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    command_full TEXT NOT NULL,
+    command_type TEXT,
+    flight_number TEXT,
+    flight_date TEXT,
+    content TEXT,
+    version INTEGER DEFAULT 1,
+    parent_id INTEGER,
+    is_latest BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+-- Indexes
+CREATE INDEX idx_commands_timeline ON commands(command_full, version);
+CREATE INDEX idx_commands_parent ON commands(parent_id);
+CREATE INDEX idx_commands_latest ON commands(command_full, is_latest);
 ```
 
 ## 🚀 Usage Examples
