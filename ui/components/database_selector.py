@@ -88,8 +88,6 @@ def render_sidebar_database_selector():
                 with st.spinner("加载中..."):
                     if load_database(selected):
                         st.success("✅ 已加载")
-                        # 清除未保存状态
-                        st.session_state.db_has_unsaved_changes = False
                         st.rerun()
                     else:
                         st.error("❌ 加载失败")

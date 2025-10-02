@@ -93,29 +93,23 @@ def render_folder_management():
 
 
 def render_database_operations():
-    """渲染数据库操作部分"""
-    
+    """渲染数据库操作部分"""  
     # 保存数据库
     if st.button("💾 保存当前数据库", use_container_width=True, type="primary"):
         if is_db_available():
             with st.spinner("正在保存..."):
                 if trigger_auto_save():
                     st.success("✅ 数据库已保存")
-                    # 清除未保存状态
-                    st.session_state.db_has_unsaved_changes = False
                     st.rerun()
                 else:
                     st.error("❌ 保存失败")
         else:
-            st.warning("⚠️ 没有加载的数据库")
-    
+            st.warning("⚠️ 没有加载的数据库")   
     # 刷新数据库列表
     if st.button("🔄 刷新数据库列表", use_container_width=True):
-        st.rerun()
-    
+        st.rerun()   
     # 加载数据库
-    st.markdown("#### 📥 加载其他数据库")
-    
+    st.markdown("#### 📥 加载其他数据库")   
     client = get_db_port_client()
     if client:
         custom_folder = st.session_state.get('custom_db_folder')
@@ -124,13 +118,9 @@ def render_database_operations():
             # 验证数据库
             valid_db_files = []
             for db_file in db_files:
-                try:
-                    validation_result = client.validate_database_schema(db_file)
-                    if validation_result.get("valid", False):
-                        valid_db_files.append(db_file)
-                except:
-                    pass
-            
+                validation_result = client.validate_database_schema(db_file)
+                if validation_result.get("valid", False):
+                    valid_db_files.append(db_file)
             if valid_db_files:
                 selected_db = st.selectbox(
                     "选择数据库:",
@@ -138,19 +128,15 @@ def render_database_operations():
                     format_func=lambda x: Path(x).name,
                     key="management_db_selector"
                 )
-                
                 if st.button("📥 加载选中的数据库", use_container_width=True):
                     with st.spinner("正在加载..."):
                         if load_database(selected_db):
                             st.success(f"✅ 已加载: {Path(selected_db).name}")
-                            # 清除未保存状态
-                            st.session_state.db_has_unsaved_changes = False
                             st.rerun()
                         else:
                             st.error("❌ 加载失败")
             else:
-                st.info("📭 未找到有效的数据库文件")
-                
+                st.info("📭 未找到有效的数据库文件")               
         except Exception as e:
             st.error(f"❌ 获取数据库列表失败: {e}")
 

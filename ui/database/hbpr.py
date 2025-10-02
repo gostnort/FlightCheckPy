@@ -8,8 +8,6 @@ import streamlit as st
 from pathlib import Path
 from ui.common import (
     get_hbpr_database_client,
-    get_db_port_client,
-    is_db_available,
     get_database_name,
     trigger_auto_save,
     load_database
@@ -28,19 +26,15 @@ def show_hbpr_operations():
         st.warning("⚠️ 未加载数据库 - 可以从下方选择或浏览文件夹")
     # 操作按钮
     col1, col2, col3 = st.columns(3)
-    
     with col1:
         if st.button("📤 创建新数据库", use_container_width=True, help="从HBPR列表文件创建新数据库"):
             st.session_state.show_create_db = True
-    
     with col2:
         if st.button("🔄 处理所有记录", use_container_width=True, help="运行CHbpr处理所有记录"):
-            process_all_records()
-    
+            process_all_records() 
     with col3:
         if st.button("🧹 清除处理结果", use_container_width=True, help="清除所有处理结果"):
-            erase_processing_results()
-    
+            erase_processing_results()   
     # 处理创建新数据库
     if st.session_state.get('show_create_db', False):
         create_database_from_file()
@@ -173,14 +167,11 @@ def create_database_from_file():
             help="上传HBPR列表文件（如sample_hbpr.txt）",
             key="hbpr_uploader"
         )
-        
         col1, col2 = st.columns(2)
-        
         with col2:
             if st.button("❌ 取消", use_container_width=True):
                 st.session_state.show_create_db = False
                 st.rerun()
-        
         if uploaded_file is not None:
             file_content = uploaded_file.getvalue().decode("utf-8")
             
@@ -199,44 +190,33 @@ def create_db_from_content(file_content: str):
         if not flight_id:
             st.error("❌ 无法从文件中解析航班号")
             return
-        
         # 确定数据库路径
         db_folder = st.session_state.get('custom_db_folder', 'databases')
         db_path = Path(db_folder) / f"{flight_id}.db"
-        
         if db_path.exists():
             st.error(f"❌ 数据库 {flight_id}.db 已存在")
             return
-        
         with st.spinner(f"正在创建数据库 {flight_id}.db..."):
             # 创建数据库
             import sqlite3
             conn = sqlite3.connect(str(db_path))
-            
             # 使用HBPRProcessor处理
             processor = HBPRProcessor(conn)
             processor.process(file_content)
-            
             # 获取统计信息
             flight_data = processor.flight_data[flight_id]
-            record_count = len(flight_data['hbnb_numbers'])
-            
+            record_count = len(flight_data['hbnb_numbers']) 
             conn.close()
-            
             st.success(f"✅ 创建数据库成功！包含 {record_count} 条记录")
-            
             # 加载到内存服务器
             if load_database(str(db_path)):
-                st.success("✅ 数据库已加载到服务器")
-                
                 # 清理状态
                 st.session_state.show_create_db = False
                 
-                # 自动开始处理
-                if st.button("🚀 立即处理所有记录"):
-                    st.rerun()
+                # 自动处理所有记录
+                st.info("🔄 开始自动处理所有记录...")
+                process_all_records()
             else:
-                st.error("❌ 无法加载数据库到服务器")
-                
+                st.error("❌ 无法加载数据库到服务器")               
     except Exception as e:
         st.error(f"❌ 创建数据库失败: {str(e)}")

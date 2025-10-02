@@ -153,17 +153,23 @@ class HbprDatabaseClient:
 A set of functions that manage the lifecycle of the database client within the Streamlit UI, storing client instances in the session state to be shared across pages.
 ```python
 # Key functions in ui/common.py
-def ensure_memdb_server(username: str) -> bool:
-    # Starts the memdb_port_server.py process for the user session.
+def ensure_memdb_server(username: str) -> Tuple[bool, int, str]:
+    """
+    Start per-user memdb_port_server if not running.
+    Returns (started_now, port, message). If already running, returns (False, port, "User already logged in on this host").
+    """
 
 def get_db_port_client() -> Optional[DbPortClient]:
-    # Gets/creates the low-level DbPortClient for the current session.
+    """Get/create the low-level DbPortClient bound to 127.0.0.1 and session port."""
 
-def get_hbpr_database_client() -> Optional[HbprDatabaseClient]:
-    # Gets/creates the high-level HbprDatabaseClient for the current session.
+def get_hbpr_database_client() -> Optional[HbprDatabase]:
+    """Get/create the HbprDatabase instance backed by RemoteSqliteConnection."""
 
 def load_database(file_path: str) -> bool:
-    # Instructs the server to load a database file into memory.
+    """Instruct the server to load a database file into memory (resets caches)."""
+
+def trigger_auto_save() -> bool:
+    """Persist the in-memory database back to its source file and clear unsaved flag."""
 ```
 
 ### Environment Configuration
@@ -699,10 +705,9 @@ def execute_query_to_dataframe(db, query, params=None):
 ```
 
 #### Files Updated
-- `ui/process_records/process_all.py` - Error summary and messages
-- `ui/process_records/sort_records.py` - Record filtering display
-- `ui/process_records/export_data.py` - Data export operations
-- `ui/database/operations.py` - Database export operations
+- `ui/database/export.py` - Database-export display helpers and DataFrame query helper
+- `ui/database/sort.py` - Record sorting UI with DataFrame query helper
+- `ui/process_records/info.py` - Processing info and DataFrame query helper
 
 #### Benefits
 - ✅ Eliminates pandas SQLAlchemy warnings
@@ -1625,16 +1630,35 @@ def show_database_maintenance() -> None:
     - Performance optimization
     """
 
-def show_data_cleaning() -> None:
+```
+
+### 4.1 HBPR Operations Tab
+
+**Location**: `ui/database/hbpr.py`
+
+```python
+def show_hbpr_operations() -> None:
     """
-    Display data cleaning interface
-    
-    Features:
-    - Clean existing database records
-    - Remove problematic characters
-    - Cleaning progress tracking
-    - Results reporting
-    - Integration with clean_database_data.py utility
+    HBPR operations UI including:
+    - Create new DB from uploaded HBPR list file
+    - Process all records via CHbpr and update DB
+    - Erase processing results via HbprDatabase.erase_splited_records()
+    - Auto-save integration and unsaved-changes indicator
+    """
+
+def process_all_records() -> None:
+    """Iterate all hbpr_full_records, run CHbpr, and update rows."""
+
+def erase_processing_results() -> None:
+    """Confirm and call db.erase_splited_records(); auto-save and rerun."""
+
+def create_database_from_file() -> None:
+    """Upload .txt HBPR list and trigger creation when confirmed."""
+
+def create_db_from_content(file_content: str) -> None:
+    """
+    Parse flight ID via scripts.hbpr_list_processor.parse_flight_id_from_content,
+    build DB file with HBPRProcessor, load into memory, then auto-process all.
     """
 ```
 
@@ -1730,57 +1754,18 @@ def parse_hbnb_input(input_text: str) -> List[int]:
     """
 ```
 
-### 7. Database Management UI Functions
+### 7. Database Selection Components
 
-**Location**: `ui/components/database_manager.py`
+**Locations**:
+- `ui/common.py` → `create_database_selectbox()` inline helper for main pages
+- `ui/components/database_selector.py` → `render_sidebar_database_selector()` for sidebar selector
 
 ```python
-def create_database_selectbox(label: str = "Select database:",
-                            key: str = None,
-                            default_index: int = 0,
-                            custom_folder: str = None) -> Tuple[str, List[str]]:
-    """
-    Create database selection widget with custom folder support
+def create_database_selectbox(label: str = "💾 Select Database:", key: str = "global_db_select", custom_folder: Optional[str] = None) -> Tuple[Optional[str], List[str]]:
+    """Create database selection widget, validate schema via server, and load selection."""
 
-    Args:
-        label (str): Widget label
-        key (str): Widget key for session state
-        default_index (int): Default selection index
-        custom_folder (str): Custom database folder path
-        
-    Returns:
-        Tuple[str, List[str]]: Selected database file, all database files
-    """
-
-def get_sorted_database_files(sort_by: str = 'creation_time', 
-                            reverse: bool = True,
-                            custom_folder: str = None) -> List[str]:
-    """
-    Get sorted list of database files from multiple sources
-    
-    Args:
-        sort_by (str): Sort criteria ('creation_time', 'modification_time', 'name')
-        reverse (bool): Whether to reverse sort order
-        custom_folder (str): Custom database folder path to include in search
-        
-    Returns:
-        List[str]: Sorted list of database file paths from all sources
-        
-    Features:
-        - Searches custom folder first (if provided)
-        - Searches default databases/ folder
-        - Searches root directory as fallback
-        - Removes duplicates automatically
-        - Supports multiple sort criteria
-    """
-
-def get_database_path() -> Optional[str]:
-    """
-    Get currently loaded database file path from database manager
-
-    Returns:
-        Optional[str]: Path to loaded database file or None
-    """
+def render_sidebar_database_selector() -> None:
+    """Sidebar selector with current DB indicator and explicit Load button."""
 ```
 
 ## 🔗 Function Dependencies and Call Hierarchy
@@ -1891,9 +1876,9 @@ Folder Picker Button → Native Windows Dialog → Path Selection → Session St
 In-Memory DB Query → Filter by boarding_number IS NOT NULL → Apply Filters → Pagination → Statistics Calculation → UI Display
 ```
 
-### 6. TKNE-Based Acceptance Rate Calculation
+### 6. TKNE-Based Acceptance Rate Calculation (availability-aware)
 ```
-In-Memory DB Query → Count records with TKNE IS NOT NULL AND TKNE != '' → Count accepted passengers → Calculate rate → UI Display
+In-Memory DB Query → Count records with TKNE IS NOT NULL AND TKNE != '' (fallback to 0 if column missing) → Count accepted passengers → Calculate rate → UI Display
 ```
 
 ### 7. Data Export Pipeline with Cleaning
@@ -2215,13 +2200,13 @@ if remote_host and remote_port:
     db_manager = get_manager()
     st.info("📡 Using remote database server")
 else:
-    # Use local architecture
-    from ui.components.database_manager import db_manager
-    st.info("💻 Using local database")
+    # Use local architecture (remote-style API via per-port server)
+    from ui.common import get_hbpr_database_client
+    st.info("💻 Using local per-port in-memory database")
 
-# Same API works for both architectures
-db = db_manager.get_database()
-stats = db.get_all_statistics()
+# Same API works for both architectures (via HbprDatabase/HbprDatabaseClient-compatible interface)
+db = get_hbpr_database_client()
+stats = db.get_all_statistics() if db else {}
 ```
 
 ## 🔧 Error Handling

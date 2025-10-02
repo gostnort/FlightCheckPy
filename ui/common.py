@@ -32,7 +32,8 @@ def authenticate_user(username):
     # Obfuscated valid usernames (SHA256 hashes)
     valid_usernames = [
         'c7c5b358d4097f8e2798c54f2ab6c3574a0cc82c87a3acf4ac9f038af4f75d2c',
-        '9fe93417853739c1c18c2e8b051860d1a317824f1aa91304d16f3fe832486f7a'
+        '9fe93417853739c1c18c2e8b051860d1a317824f1aa91304d16f3fe832486f7a',
+        '239127e09157cbafb6212123b102aa1103241946b3684c232c44b8367c3a4d47'
     ]
     # Hash the provided username
     username_hash = hashlib.sha256(username.encode()).hexdigest()
@@ -46,6 +47,7 @@ def _port_for_username(username: str) -> int:
     mapping = {
         'c7c5b358d4097f8e2798c54f2ab6c3574a0cc82c87a3acf4ac9f038af4f75d2c': 51201,
         '9fe93417853739c1c18c2e8b051860d1a317824f1aa91304d16f3fe832486f7a': 51202,
+        '239127e09157cbafb6212123b102aa1103241946b3684c232c44b8367c3a4d47': 51203
     }
     return mapping.get(username_hash, 0)
 
@@ -145,11 +147,16 @@ def get_database_name():
 
 
 def trigger_auto_save():
-    """Saves the in-memory database to its source file."""
+    """
+    Saves the in-memory database to its source file.
+    Automatically clears the unsaved changes flag on success.
+    """
     client = get_db_port_client()
     if client:
         try:
             client.save()
+            # 清除未保存状态标志
+            st.session_state.db_has_unsaved_changes = False
             return True
         except Exception as e:
             st.toast(f"Error saving database: {e}")
@@ -171,7 +178,10 @@ def shutdown_db_server():
 
 
 def load_database(path: str):
-    """Requests the server to load a database file into memory."""
+    """
+    Requests the server to load a database file into memory.
+    Automatically clears the unsaved changes flag on success.
+    """
     client = get_db_port_client()
     port = st.session_state.get("db_service_port")
     if client and port:
@@ -183,6 +193,8 @@ def load_database(path: str):
                 del st.session_state[hbpr_client_key]
             
             client.load_database(path)
+            # 清除未保存状态标志（加载新数据库时重置状态）
+            st.session_state.db_has_unsaved_changes = False
             # Re-create the hbpr client on the next get() call
             return True
         except Exception as e:
