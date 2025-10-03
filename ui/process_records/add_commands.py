@@ -17,7 +17,6 @@ from scripts.command_processor import CommandProcessor
 
 def show_add_commands_tab():
     """显示添加命令标签页"""
-    st.subheader("📝 Add Commands")
     # 检查数据库是否可用
     if not is_db_available():
         st.warning("⚠️ Please select a database from the sidebar to begin.")

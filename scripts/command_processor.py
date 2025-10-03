@@ -568,6 +568,66 @@ class CommandProcessor:
             return False
 
 
+    def delete_latest_version(self, command_full: str) -> bool:
+        """
+        Delete only the latest version of a command
+        If there are older versions, the previous version becomes the latest
+        Args:
+            command_full (str): Full command string
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        if not self.conn:
+            return False
+        conn = self.conn
+        try:
+            # 检查commands表是否存在
+            cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='commands'")
+            if not cursor.fetchone():
+                return False
+            # 开始事务
+            conn.execute("BEGIN TRANSACTION")
+            # 获取最新版本
+            cursor = conn.execute("""
+                SELECT id, version 
+                FROM commands 
+                WHERE command_full = ? AND is_latest = TRUE
+            """, (command_full,))
+            latest = cursor.fetchone()
+            if not latest:
+                conn.rollback()
+                return False
+            latest_id, latest_version = latest
+            # 删除最新版本
+            conn.execute("DELETE FROM commands WHERE id = ?", (latest_id,))
+            # 检查是否还有其他版本
+            cursor = conn.execute("""
+                SELECT id, version 
+                FROM commands 
+                WHERE command_full = ? 
+                ORDER BY version DESC 
+                LIMIT 1
+            """, (command_full,))
+            previous = cursor.fetchone()
+            if previous:
+                # 将前一个版本标记为最新
+                conn.execute("""
+                    UPDATE commands 
+                    SET is_latest = TRUE 
+                    WHERE id = ?
+                """, (previous[0],))
+            # 提交事务
+            conn.commit()
+            return True
+        except Exception as e:
+            # 错误时回滚
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            return False
+
+
     def restore_version(self, command_full: str, version_num: int) -> bool:
         """
         Restore a specific version of a command as the latest version
