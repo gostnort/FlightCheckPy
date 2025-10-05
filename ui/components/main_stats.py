@@ -32,10 +32,11 @@ def display_main_statistics(all_stats, db=None):
     with m3:
         adult = accepted_stats.get('total_accepted', 0)
         infant = accepted_stats.get('infant_count', 0)
-        b = accepted_stats.get('accepted_business', 0)
+        f = accepted_stats.get('accepted_first', 0)
+        c = accepted_stats.get('accepted_business', 0)
         y = accepted_stats.get('accepted_economy', 0)
         value = f"{adult}+{infant}Inf"
-        delta = f"{b}/{y}"
+        delta = f"{f}/{c}/{y}"
         st.metric("Accepted Passengers", value, delta)
     # Second row: Deleted passenger statistics and Missing BN
     st.subheader("🗑️ Deleted Passengers")

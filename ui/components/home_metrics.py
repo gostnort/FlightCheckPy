@@ -35,8 +35,13 @@ def _get_conn() -> sqlite3.Connection:
 def create_or_refresh_views() -> None:
     """Create views used by the home page. Idempotent.
     Views:
-    - vw_home_accepted_counts: totals for accepted pax (adults), infants, J/Y adult split
+    - vw_home_accepted_counts: totals for accepted pax (adults), infants, F/C/Y split
     - vw_home_flags: ID staff (SA, PAD-2, PAD-SA) counts by class, NOSHOW by class, INAD total
+    
+    数据库有三个主舱位:
+    - 'F' = First Class (头等舱) - 最高级，无ID员工
+    - 'C' = Business Class (公务舱) - 商务舱，有ID员工
+    - 'Y' = Economy Class (经济舱) - 经济舱，有ID员工
     """
     conn = _get_conn()
     cur = conn.cursor()
@@ -46,13 +51,15 @@ def create_or_refresh_views() -> None:
         """
         CREATE VIEW vw_home_accepted_counts AS
         SELECT
-            -- Total accepted passengers (boarding number present)
+            -- 已接受乘客总数 (boarding number present)
             SUM(CASE WHEN boarding_number IS NOT NULL AND boarding_number > 0 THEN 1 ELSE 0 END) AS total_accepted,
-            -- Adults with infant flag on the record
+            -- 带婴儿的成人
             SUM(CASE WHEN boarding_number IS NOT NULL AND boarding_number > 0 AND IFNULL(has_infant, 0) = 1 THEN 1 ELSE 0 END) AS infant_count,
-            -- Business cabin accepted (F/C)
-            SUM(CASE WHEN boarding_number IS NOT NULL AND boarding_number > 0 AND class IN ('F','C') THEN 1 ELSE 0 END) AS accepted_business,
-            -- Economy cabin accepted (Y)
+            -- 头等舱已接受 (F)
+            SUM(CASE WHEN boarding_number IS NOT NULL AND boarding_number > 0 AND class = 'F' THEN 1 ELSE 0 END) AS accepted_first,
+            -- 商务舱已接受 (C)
+            SUM(CASE WHEN boarding_number IS NOT NULL AND boarding_number > 0 AND class = 'C' THEN 1 ELSE 0 END) AS accepted_business,
+            -- 经济舱已接受 (Y)
             SUM(CASE WHEN boarding_number IS NOT NULL AND boarding_number > 0 AND class = 'Y' THEN 1 ELSE 0 END) AS accepted_economy
         FROM hbpr_full_records
         """
@@ -62,14 +69,14 @@ def create_or_refresh_views() -> None:
         """
         CREATE VIEW vw_home_flags AS
         SELECT
-            -- ID staff tickets: SA, PAD-2, PAD-SA (deduplicated by hbnb_number)
+            -- ID员工票: SA, PAD-2, PAD-SA (仅C和Y舱有，F舱无)
             (SELECT COUNT(DISTINCT hbnb_number) 
              FROM hbpr_full_records 
-             WHERE boarding_number IS NOT NULL AND boarding_number > 0 AND class IN ('F','C') AND (
+             WHERE boarding_number IS NOT NULL AND boarding_number > 0 AND class = 'C' AND (
                       INSTR(','||IFNULL(properties,'')||',', ',SA') > 0 OR
                       INSTR(','||IFNULL(properties,'')||',', ',PAD-2') > 0 OR
                       INSTR(','||IFNULL(properties,'')||',', ',PAD-SA') > 0
-                    )) AS id_j,
+                    )) AS id_c,
             (SELECT COUNT(DISTINCT hbnb_number) 
              FROM hbpr_full_records 
              WHERE boarding_number IS NOT NULL AND boarding_number > 0 AND class = 'Y' AND (
@@ -77,16 +84,22 @@ def create_or_refresh_views() -> None:
                       INSTR(','||IFNULL(properties,'')||',', ',PAD-2') > 0 OR
                       INSTR(','||IFNULL(properties,'')||',', ',PAD-SA') > 0
                     )) AS id_y,
-            -- NOSHOW: total - XRES - ID staff (SA, PAD-2, PAD-SA) - BN - empty_properties (deduplicated)
+            -- NOSHOW: 总数 - XRES - ID员工 (SA, PAD-2, PAD-SA) - BN - empty_properties
             (SELECT COUNT(DISTINCT hbnb_number) 
              FROM hbpr_full_records 
-             WHERE class IN ('F','C')
+             WHERE class = 'F'
+                      AND (boarding_number IS NULL OR boarding_number = 0)
+                      AND INSTR(','||IFNULL(properties,'')||',', ',XRES') = 0
+                      AND LENGTH(TRIM(IFNULL(properties,''))) > 0) AS noshow_f,
+            (SELECT COUNT(DISTINCT hbnb_number) 
+             FROM hbpr_full_records 
+             WHERE class = 'C'
                       AND (boarding_number IS NULL OR boarding_number = 0)
                       AND INSTR(','||IFNULL(properties,'')||',', ',XRES') = 0
                       AND INSTR(','||IFNULL(properties,'')||',', ',SA') = 0
                       AND INSTR(','||IFNULL(properties,'')||',', ',PAD-2') = 0
                       AND INSTR(','||IFNULL(properties,'')||',', ',PAD-SA') = 0
-                      AND LENGTH(TRIM(IFNULL(properties,''))) > 0) AS noshow_j,
+                      AND LENGTH(TRIM(IFNULL(properties,''))) > 0) AS noshow_c,
             (SELECT COUNT(DISTINCT hbnb_number) 
              FROM hbpr_full_records 
              WHERE class = 'Y'
@@ -96,7 +109,7 @@ def create_or_refresh_views() -> None:
                       AND INSTR(','||IFNULL(properties,'')||',', ',PAD-2') = 0
                       AND INSTR(','||IFNULL(properties,'')||',', ',PAD-SA') = 0
                       AND LENGTH(TRIM(IFNULL(properties,''))) > 0) AS noshow_y,
-            -- INAD: any record with INAD property (deduplicated)
+            -- INAD: 任何带有INAD属性的记录
             (SELECT COUNT(DISTINCT hbnb_number) 
              FROM hbpr_full_records 
              WHERE IFNULL(properties,'') LIKE '%INAD%') AS inad_total
@@ -105,23 +118,41 @@ def create_or_refresh_views() -> None:
     conn.commit()
 
 
-def _parse_cnf_from_text(text: str) -> Optional[Tuple[int, int]]:
-    """Extract CNF/JxYy from a block of SY command text.
-    Returns a tuple (j_compartment, y_compartment) if found.
+def _parse_cnf_from_text(text: str) -> Optional[Tuple[int, int, int]]:
+    """Extract CNF compartment numbers from SY command text.
+    Returns a tuple (f, j, y) where f=0 if not present.
+    
+    支持的格式:
+    - CNF/J36Y356 → (0, 36, 356)
+    - CNF/F8J42Y261 → (8, 42, 261)
+    - CNF/ F8 J42 Y261 (带空格)
     """
     if not text:
         return None
-    # Common patterns seen: CNF/J36Y356 (no space) or CNF/J36 Y356 (with space)
-    m = re.search(r"CNF\s*/?\s*J\s*(\d+)\s*Y\s*(\d+)", text)
-    if m:
-        return int(m.group(1)), int(m.group(2))
+    
+    # 首先尝试匹配包含F的格式: CNF/F8J42Y261
+    m_with_f = re.search(r"CNF\s*/?\s*F\s*(\d+)\s*J\s*(\d+)\s*Y\s*(\d+)", text)
+    if m_with_f:
+        f_count = int(m_with_f.group(1))
+        j_count = int(m_with_f.group(2))
+        y_count = int(m_with_f.group(3))
+        return (f_count, j_count, y_count)
+    
+    # 如果没有F，尝试匹配仅J和Y: CNF/J36Y356
+    m_no_f = re.search(r"CNF\s*/?\s*J\s*(\d+)\s*Y\s*(\d+)", text)
+    if m_no_f:
+        j_count = int(m_no_f.group(1))
+        y_count = int(m_no_f.group(2))
+        return (0, j_count, y_count)
+    
     return None
 
 
-def get_sy_compartments() -> Optional[Tuple[int, int]]:
+def get_sy_compartments() -> Optional[Tuple[int, int, int]]:
     """Find the latest SY command matching current flight in DB and parse CNF.
     Looks up the flight in table flight_info, then finds the newest matching
     command in table commands where command_type = 'SY' and is_latest = 1.
+    Returns (f_cnf, j_cnf, y_cnf) or None.
     """
     conn = _get_conn()
     cur = conn.cursor()
@@ -160,8 +191,9 @@ def get_sy_compartments() -> Optional[Tuple[int, int]]:
 def get_home_summary() -> Dict[str, object]:
     """Return a dict with all values needed by the home page expander.
     Keys: flight_number, flight_date, total_accepted, infant_count,
-          accepted_business, accepted_economy, id_j, id_y,
-          noshow_j, noshow_y, inad_total, j_cnf, y_cnf, ratio
+          accepted_first, accepted_business, accepted_economy,
+          id_c, id_y, noshow_f, noshow_c, noshow_y, inad_total,
+          f_cnf, j_cnf, y_cnf, ratio
     """
     # Ensure views exist
     create_or_refresh_views()
@@ -171,19 +203,19 @@ def get_home_summary() -> Dict[str, object]:
     cur.execute("SELECT flight_number, flight_date FROM flight_info LIMIT 1")
     flight_row = cur.fetchone()
     flight_number, flight_date = (flight_row[0], flight_row[1]) if flight_row else ("", "")
-    # Accepted counts
-    cur.execute("SELECT total_accepted, infant_count, accepted_business, accepted_economy FROM vw_home_accepted_counts")
-    a = cur.fetchone() or (0, 0, 0, 0)
-    total_accepted, infant_count, accepted_business, accepted_economy = a
-    # Flags
-    cur.execute("SELECT id_j, id_y, noshow_j, noshow_y, inad_total FROM vw_home_flags")
-    f = cur.fetchone() or (0, 0, 0, 0, 0)
-    id_j, id_y, noshow_j, noshow_y, inad_total = f
+    # Accepted counts - 现在包含三个舱位: F, C, Y
+    cur.execute("SELECT total_accepted, infant_count, accepted_first, accepted_business, accepted_economy FROM vw_home_accepted_counts")
+    a = cur.fetchone() or (0, 0, 0, 0, 0)
+    total_accepted, infant_count, accepted_first, accepted_business, accepted_economy = a
+    # Flags - id_c (C舱ID员工), id_y (Y舱ID员工), noshow_f/c/y (三个舱位的noshow)
+    cur.execute("SELECT id_c, id_y, noshow_f, noshow_c, noshow_y, inad_total FROM vw_home_flags")
+    f = cur.fetchone() or (0, 0, 0, 0, 0, 0)
+    id_c, id_y, noshow_f, noshow_c, noshow_y, inad_total = f
     # Do not close shared connection
-    # CNF from SY
+    # CNF from SY - 返回三个值: F, J, Y
     cnf = get_sy_compartments()
-    j_cnf, y_cnf = (cnf if cnf else (0, 0))
-    compartment_total = (j_cnf or 0) + (y_cnf or 0)
+    f_cnf, j_cnf, y_cnf = (cnf if cnf else (0, 0, 0))
+    compartment_total = (f_cnf or 0) + (j_cnf or 0) + (y_cnf or 0)
     ratio = None
     if compartment_total > 0:
         ratio = round((total_accepted / compartment_total) * 100)
@@ -192,13 +224,16 @@ def get_home_summary() -> Dict[str, object]:
         'flight_date': flight_date,
         'total_accepted': int(total_accepted or 0),
         'infant_count': int(infant_count or 0),
+        'accepted_first': int(accepted_first or 0),
         'accepted_business': int(accepted_business or 0),
         'accepted_economy': int(accepted_economy or 0),
-        'id_j': int(id_j or 0),
+        'id_c': int(id_c or 0),
         'id_y': int(id_y or 0),
-        'noshow_j': int(noshow_j or 0),
+        'noshow_f': int(noshow_f or 0),
+        'noshow_c': int(noshow_c or 0),
         'noshow_y': int(noshow_y or 0),
         'inad_total': int(inad_total or 0),
+        'f_cnf': int(f_cnf or 0),
         'j_cnf': int(j_cnf or 0),
         'y_cnf': int(y_cnf or 0),
         'ratio': ratio,
@@ -206,11 +241,13 @@ def get_home_summary() -> Dict[str, object]:
 
 
 def get_debug_data() -> Dict[str, object]:
-    """Return debug data for manual verification of statistics"""
+    """返回用于手动验证统计数据的调试数据
+    注意：ID员工仅存在于C和Y舱，不存在于F舱
+    """
     conn = _get_conn()
     cur = conn.cursor()
     debug_data = {}
-    # Get total counts by class - using COUNT(DISTINCT) for consistency
+    # 按舱位获取总数 - 使用COUNT(DISTINCT)保持一致性
     cur.execute("""
         SELECT class, COUNT(DISTINCT hbnb_number) as total_count,
                SUM(CASE WHEN boarding_number IS NOT NULL AND boarding_number > 0 THEN 1 ELSE 0 END) as with_bn,
@@ -219,7 +256,7 @@ def get_debug_data() -> Dict[str, object]:
         GROUP BY class
     """)
     debug_data['class_breakdown'] = cur.fetchall()
-    # Get XRES counts - using COUNT(DISTINCT) for consistency
+    # 获取XRES计数
     cur.execute("""
         SELECT class, COUNT(DISTINCT hbnb_number) as xres_count
         FROM hbpr_full_records 
@@ -227,17 +264,18 @@ def get_debug_data() -> Dict[str, object]:
         GROUP BY class
     """)
     debug_data['xres_counts'] = cur.fetchall()
-    # Get ID staff counts (SA, PAD-2, PAD-SA) - deduplicated by hbnb_number
+    # 获取ID员工计数 (SA, PAD-2, PAD-SA) - 仅C和Y舱，不含F舱
     cur.execute("""
         SELECT class, COUNT(DISTINCT hbnb_number) as id_staff_count
         FROM hbpr_full_records 
-        WHERE INSTR(','||IFNULL(properties,'')||',', ',SA') > 0
+        WHERE class IN ('C', 'Y')
+          AND (INSTR(','||IFNULL(properties,'')||',', ',SA') > 0
            OR INSTR(','||IFNULL(properties,'')||',', ',PAD-2') > 0
-           OR INSTR(','||IFNULL(properties,'')||',', ',PAD-SA') > 0
+           OR INSTR(','||IFNULL(properties,'')||',', ',PAD-SA') > 0)
         GROUP BY class
     """)
     debug_data['id_staff_counts'] = cur.fetchall()
-    # Get empty properties counts - using COUNT(DISTINCT) for consistency
+    # 获取空属性计数
     cur.execute("""
         SELECT class, COUNT(DISTINCT hbnb_number) as empty_props_count
         FROM hbpr_full_records 
@@ -245,7 +283,7 @@ def get_debug_data() -> Dict[str, object]:
         GROUP BY class
     """)
     debug_data['empty_properties'] = cur.fetchall()
-    # Get sample records for each category
+    # 获取每个类别的样本记录
     cur.execute("""
         SELECT hbnb_number, class, boarding_number, properties
         FROM hbpr_full_records 
@@ -256,9 +294,10 @@ def get_debug_data() -> Dict[str, object]:
     cur.execute("""
         SELECT hbnb_number, class, boarding_number, properties
         FROM hbpr_full_records 
-        WHERE INSTR(','||IFNULL(properties,'')||',', ',SA') > 0
+        WHERE class IN ('C', 'Y')
+          AND (INSTR(','||IFNULL(properties,'')||',', ',SA') > 0
            OR INSTR(','||IFNULL(properties,'')||',', ',PAD-2') > 0
-           OR INSTR(','||IFNULL(properties,'')||',', ',PAD-SA') > 0
+           OR INSTR(','||IFNULL(properties,'')||',', ',PAD-SA') > 0)
         LIMIT 5
     """)
     debug_data['id_staff_samples'] = cur.fetchall()

@@ -1438,11 +1438,18 @@ class HbprDatabase:
                 infant_count = cursor.fetchone()[0]
             except sqlite3.OperationalError:
                 infant_count = 0
-            # 计算公务舱(含头等舱)与经济舱成人数量
+            # 计算三个舱位的成人数量: F(头等舱), C(公务舱), Y(经济舱)
             cursor.execute(
                 """
                 SELECT COUNT(*) FROM hbpr_full_records
-                WHERE boarding_number IS NOT NULL AND boarding_number > 0 AND class IN ('F','C')
+                WHERE boarding_number IS NOT NULL AND boarding_number > 0 AND class = 'F'
+                """
+            )
+            accepted_first = cursor.fetchone()[0]
+            cursor.execute(
+                """
+                SELECT COUNT(*) FROM hbpr_full_records
+                WHERE boarding_number IS NOT NULL AND boarding_number > 0 AND class = 'C'
                 """
             )
             accepted_business = cursor.fetchone()[0]
@@ -1462,6 +1469,7 @@ class HbprDatabase:
                 'total_bag_pieces': base[5] if base[5] else 0,
                 'total_bag_weight': base[6] if base[6] else 0,
                 'infant_count': infant_count,
+                'accepted_first': accepted_first,
                 'accepted_business': accepted_business,
                 'accepted_economy': accepted_economy
             }

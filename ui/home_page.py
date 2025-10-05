@@ -10,13 +10,88 @@ from ui.components.home_metrics import get_home_summary
 from ui.components.main_stats import get_and_display_main_statistics
 
 
+def build_summary_message(summary):
+    """构建摘要信息，只显示非零的部分
+    
+    Args:
+        summary: 包含统计数据的字典
+    
+    Returns:
+        str: 格式化的摘要信息
+    """
+    lines = []
+    
+    # 标题行 - 始终显示
+    title = f"{summary['flight_number']} / {summary['flight_date']}"
+    lines.append(title)
+    
+    # 总数行 - 始终显示
+    total_line = f"TOTAL {summary['total_accepted']} + {summary['infant_count']} INF"
+    lines.append(total_line)
+    
+    # 舱位分布 - 只显示非零的舱位
+    class_parts = []
+    if summary.get('accepted_first', 0) > 0:
+        class_parts.append(f"F_{summary['accepted_first']}")
+    if summary.get('accepted_business', 0) > 0:
+        class_parts.append(f"J_{summary['accepted_business']}")
+    if summary.get('accepted_economy', 0) > 0:
+        class_parts.append(f"Y_{summary['accepted_economy']}")
+    if class_parts:
+        lines.append(f"ACCEPTED PAX: {" / ".join(class_parts)}")
+    
+    # 比率 - 始终显示
+    ratio_display = f"{summary['ratio']}%" if summary['ratio'] is not None else "N/A"
+    lines.append(f"RATIO: {ratio_display}")
+    
+    # ID员工 - 只显示非零的
+    id_parts = []
+    if summary.get('id_c', 0) > 0:
+        id_parts.append(f"ID_J: {summary['id_c']}")
+    if summary.get('id_y', 0) > 0:
+        id_parts.append(f"ID_Y: {summary['id_y']}")
+    if id_parts:
+        lines.append("  ".join(id_parts))
+    else:
+        lines.append("ID: N/A")
+    
+    # NOSHOW - 只显示非零的
+    noshow_parts = []
+    if summary.get('noshow_f', 0) > 0:
+        noshow_parts.append(f"F_{summary['noshow_f']}")
+    if summary.get('noshow_c', 0) > 0:
+        noshow_parts.append(f"J_{summary['noshow_c']}")
+    if summary.get('noshow_y', 0) > 0:
+        noshow_parts.append(f"Y_{summary['noshow_y']}")
+    if noshow_parts:
+        lines.append(f"NO_SHOW: {' / '.join(noshow_parts)}")
+    else:
+        lines.append("NO_SHOW: N/A")
+    # INAD
+    lines.append(f"INAD: {summary['inad_total']}")
+    
+    return "\n".join(lines)
+
+
 def show_home_page():
     """显示主页"""
     apply_global_settings()
     # Create two columns for layout
     col1, col2 = st.columns([2, 1])
     with col1:
-        st.subheader("📊 Main Statistics")
+        # 标题和刷新按钮在同一行
+        header_col1, header_col2, not_used_col3 = st.columns([5, 2, 1])
+        with header_col1:
+            st.subheader("📊 Main Statistics")
+        with header_col2:
+            if st.button("🔄 Refresh", key="refresh_main_stats", use_container_width=True):
+                # 清除缓存的数据库客户端实例，强制重新加载
+                port = st.session_state.get("db_service_port")
+                if port:
+                    hbpr_client_key = f"hbpr_db_client_{port}"
+                    if hbpr_client_key in st.session_state:
+                        del st.session_state[hbpr_client_key]
+                st.rerun()
         try:
             # 检查数据库状态
             if not is_db_available():
@@ -37,25 +112,10 @@ def show_home_page():
             # Get home summary metrics
             summary = get_home_summary()
             if summary:
-                # 航班摘要信息折叠块
+                # 航班摘要信息折叠块 - 使用新函数构建消息（只显示非零项）
                 title = f"{summary['flight_number']} / {summary['flight_date']}"
                 with st.expander(title, expanded=True):
-                    total_line = f"TOTAL {summary['total_accepted']} + {summary['infant_count']} INF"
-                    j_y_line = f"J_{summary['accepted_business']} / Y_{summary['accepted_economy']}"
-                    ratio_display = f"{summary['ratio']}%" if summary['ratio'] is not None else "N/A"
-                    ratio_line = f"RATIO: {ratio_display}"
-                    id_line = f"ID_J: {summary['id_j']}  ID_Y: {summary['id_y']}"
-                    noshow_line = f"NOSHOW: J_{summary['noshow_j']} / Y_{summary['noshow_y']}"
-                    inad_line = f"INAD: {summary['inad_total']}"
-                    msg = "\n".join([
-                        title,
-                        total_line,
-                        j_y_line,
-                        ratio_line,
-                        id_line,
-                        noshow_line,
-                        inad_line,
-                    ])
+                    msg = build_summary_message(summary)
                     st.code(msg)
             else:
                 st.info("No summary data available.")
