@@ -48,14 +48,14 @@ def show_hbpr_timeline():
 
         if selected_hbnb:
             # Get original and duplicate records
-            original_record = db.get_hbpr_record(selected_hbnb)
+            current_record = db.get_hbpr_record(selected_hbnb)
             duplicate_records = db.get_duplicate_records(selected_hbnb)
 
             st.markdown(f"### 📅 Timeline for HBNB: **{selected_hbnb}**")
 
             # Display original record first
-            with st.expander("Original Record", expanded=True):
-                st.text_area("Content", original_record, height=200, disabled=True, key=f"original_{selected_hbnb}")
+            with st.expander("Current Record", expanded=True):
+                st.text_area("Content", current_record, height=200, disabled=True, key=f"original_{selected_hbnb}")
 
             # Display duplicate records
             for dup in duplicate_records:
