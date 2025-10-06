@@ -20,16 +20,13 @@ def execute_query_to_dataframe(db, query, params=None):
         conn = db.get_connection()
         cursor = conn.cursor()
         cursor.execute(query, params or [])
-
         # Get column names from cursor description
         if cursor.description:
             columns = [desc[0] for desc in cursor.description]
         else:
             columns = []
-
         # Get all rows
         rows = cursor.fetchall()
-
         # Create DataFrame
         if columns and rows:
             return pd.DataFrame(rows, columns=columns)
@@ -37,7 +34,6 @@ def execute_query_to_dataframe(db, query, params=None):
             return pd.DataFrame(columns=columns)
         else:
             return pd.DataFrame()
-
     except Exception as e:
         st.error(f"❌ Error executing query: {str(e)}")
         return pd.DataFrame()
@@ -74,22 +70,17 @@ def should_exclude_property(prop, excluded_props, excluded_patterns):
     """检查属性是否应该被排除"""
     if not prop or prop.strip() == '':
         return True
-    
     prop = prop.strip()
-    
     # 排除单字符属性（舱位等）
     if len(prop) == 1:
         return True
-    
     # 检查是否在排除列表中（包含原始属性和标准化属性）
     if prop in excluded_props:
         return True
-    
     # 检查标准化后的属性是否在排除列表中
     normalized_prop = normalize_property(prop)
     if normalized_prop in excluded_props:
         return True
-    
     # 检查是否匹配排除模式
     for pattern in excluded_patterns:
         if pattern.endswith('*'):
@@ -98,24 +89,20 @@ def should_exclude_property(prop, excluded_props, excluded_patterns):
                 return True
         elif pattern == prop:
             return True
-    
     return False
 
 
 def show_sort_records():
     """显示记录表格"""
     st.subheader("📋 Processed Records")
-    
     if not is_db_available():
         st.warning("⚠️ Please select a database from the sidebar to begin.")
         return
-
     try:
         db = get_hbpr_database_client()
         if not db:
             st.error("❌ Database connection not available.")
             return
-
         # 查询已处理的记录，包括properties、ckin_msg和asvc_msg字段
         df = execute_query_to_dataframe(db, """
             SELECT hbnb_number, boarding_number, name, seat, class, destination,
@@ -127,7 +114,23 @@ def show_sort_records():
         if df.empty:
             st.info("ℹ️ No processed records found.")
             return
+        # 如果乘客姓名以 CHD 结尾，则自动为其添加 CHD 属性 [[memory:7945871]]
+
+
+        def add_chd_property(row):
+            if isinstance(row['name'], str) and row['name'].endswith('CHD'):
+                properties = row['properties']
+                if pd.isna(properties) or properties.strip() == '':
+                    return 'CHD'
+                prop_list = [p.strip() for p in properties.split(',') if p.strip()]
+                if 'CHD' not in prop_list:
+                    prop_list.append('CHD')
+                    return ','.join(prop_list)
+            return row['properties']
+        df['properties'] = df.apply(add_chd_property, axis=1)
         # 提取FF Level（从FF字段中提取最后的字母）
+
+
         def extract_ff_level(ff_value):
             if pd.isna(ff_value) or ff_value == '':
                 return 'N/A'
@@ -140,8 +143,9 @@ def show_sort_records():
         df['ff_level'] = df['ff'].apply(extract_ff_level)
         # 加载过滤配置
         excluded_ckin_types, excluded_properties, excluded_patterns = load_filter_config()
-        
         # 提取CKIN类型（从CKIN_MSG中提取所有CKIN类型）
+
+
         def extract_ckin_type(ckin_msg):
             if pd.isna(ckin_msg) or ckin_msg == '':
                 return []
@@ -152,7 +156,6 @@ def show_sort_records():
                 # 支持两种模式：
                 # 模式1: CKIN ABCD（直接4个字符）
                 # 模式2: CKIN HK1 ABCD（中间有3个字符然后4个字符）
-                
                 # 先尝试模式2: CKIN + 空格 + 3个字符 + 空格 + 4个字符
                 match2 = re.search(r'CKIN\s+[A-Z]{2}[0-9]{1}\s+([A-Z]{4})', ckin_msg_item)
                 if match2:
@@ -161,7 +164,6 @@ def show_sort_records():
                     if ckin_type not in excluded_ckin_types:
                         ckin_types.append(ckin_type)
                     continue
-                
                 # 再尝试模式1: CKIN + 空格 + 4个字符
                 match1 = re.search(r'CKIN\s+([A-Z0-9]{4})(?:[^A-Z0-9]|$)', ckin_msg_item)
                 if match1:
@@ -213,6 +215,8 @@ def show_sort_records():
             filtered_df = filtered_df[filtered_df['ff_level'].isin(filter_ff_level)]
         if filter_ckin_type:
             # 过滤包含选定CKIN类型的记录
+
+
             def has_ckin_type(ckin_types_str, target_ckin_types):
                 if pd.isna(ckin_types_str) or ckin_types_str == '':
                     return False
@@ -223,6 +227,8 @@ def show_sort_records():
             )]
         if filter_properties:
             # 过滤包含选定属性的记录，使用标准化的属性比较
+
+
             def has_property(properties_str, target_properties):
                 if pd.isna(properties_str) or properties_str == '':
                     return False
@@ -263,3 +269,4 @@ def show_sort_records():
         st.info(f"📊 Showing {len(filtered_df)} of {len(df)} records")
     except Exception as e:
         st.error(f"❌ Error loading records: {str(e)}")
+
