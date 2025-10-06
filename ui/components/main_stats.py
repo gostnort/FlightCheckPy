@@ -35,8 +35,9 @@ def display_main_statistics(all_stats, db=None):
         f = accepted_stats.get('accepted_first', 0)
         c = accepted_stats.get('accepted_business', 0)
         y = accepted_stats.get('accepted_economy', 0)
-        value = f"{adult}+{infant}Inf"
-        delta = f"{f}/{c}/{y}"
+        value = f"{adult} + {infant}Inf"
+        # 只显示非零的舱位
+        delta = f"{f}/{c}/{y}" if f > 0 else f"{c}/{y}"
         st.metric("Accepted Passengers", value, delta)
     # Second row: Deleted passenger statistics and Missing BN
     st.subheader("🗑️ Deleted Passengers")

@@ -37,7 +37,6 @@ def create_or_refresh_views() -> None:
     Views:
     - vw_home_accepted_counts: totals for accepted pax (adults), infants, F/C/Y split
     - vw_home_flags: ID staff (SA, PAD-2, PAD-SA) counts by class, NOSHOW by class, INAD total
-    
     数据库有三个主舱位:
     - 'F' = First Class (头等舱) - 最高级，无ID员工
     - 'C' = Business Class (公务舱) - 商务舱，有ID员工
@@ -121,30 +120,24 @@ def create_or_refresh_views() -> None:
 def _parse_cnf_from_text(text: str) -> Optional[Tuple[int, int, int]]:
     """Extract CNF compartment numbers from SY command text.
     Returns a tuple (f, j, y) where f=0 if not present.
-    
     支持的格式:
     - CNF/J36Y356 → (0, 36, 356)
     - CNF/F8J42Y261 → (8, 42, 261)
-    - CNF/ F8 J42 Y261 (带空格)
+    使用单一正则表达式匹配2或3个舱位数字
     """
     if not text:
         return None
-    
-    # 首先尝试匹配包含F的格式: CNF/F8J42Y261
-    m_with_f = re.search(r"CNF\s*/?\s*F\s*(\d+)\s*J\s*(\d+)\s*Y\s*(\d+)", text)
-    if m_with_f:
-        f_count = int(m_with_f.group(1))
-        j_count = int(m_with_f.group(2))
-        y_count = int(m_with_f.group(3))
-        return (f_count, j_count, y_count)
-    
-    # 如果没有F，尝试匹配仅J和Y: CNF/J36Y356
-    m_no_f = re.search(r"CNF\s*/?\s*J\s*(\d+)\s*Y\s*(\d+)", text)
-    if m_no_f:
-        j_count = int(m_no_f.group(1))
-        y_count = int(m_no_f.group(2))
-        return (0, j_count, y_count)
-    
+    # 匹配 CNF/ 后跟 2 或 3 个 字母+数字 组合
+    # 捕获3个数字组，第3个可选
+    match = re.search(r'CNF\s*/?\s*[A-Z]\s*(\d+)\s*[A-Z]\s*(\d+)\s*(?:[A-Z]\s*(\d+))?', text)
+    if match:
+        groups = match.groups()
+        if groups[2] is None:
+            # 只有2个舱位 (J, Y)，F设为0
+            return (0, int(groups[0]), int(groups[1]))
+        else:
+            # 有3个舱位 (F, J, Y)
+            return (int(groups[0]), int(groups[1]), int(groups[2]))
     return None
 
 
