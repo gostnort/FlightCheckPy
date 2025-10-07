@@ -142,9 +142,8 @@ def _parse_cnf_from_text(text: str) -> Optional[Tuple[int, int, int]]:
 
 
 def get_sy_compartments() -> Optional[Tuple[int, int, int]]:
-    """Find the latest SY command matching current flight in DB and parse CNF.
-    Looks up the flight in table flight_info, then finds the newest matching
-    command in table commands where command_type = 'SY' and is_latest = 1.
+    """Find the latest SY command and parse CNF.
+    Both departure and arrival SY have identical compartment configurations.
     Returns (f_cnf, j_cnf, y_cnf) or None.
     """
     conn = _get_conn()
@@ -155,7 +154,7 @@ def get_sy_compartments() -> Optional[Tuple[int, int, int]]:
     if not row:
         return None
     flt_no, flt_date = row[0], row[1]
-    # Try to find an SY command for this flight/date
+    # Get any SY command - both have same compartments
     cur.execute(
         """
         SELECT command_full, content

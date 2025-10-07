@@ -19,12 +19,13 @@ The system validates and parses records, stores them in the database, and provid
 - Intelligent statistics caching with automatic invalidation on updates
 - Accepted passengers tracking with infant count and class split (Business/Economy)
 - Excel Processor: XLS/XLSX import, strict header validation, TKNE ↔ CKIN CCRD mapping, formatted EMD Excel export
-- Command functionality integrated into Process Records page with timeline versioning
+- **Command functionality**: Integrated into Process Records page with timeline versioning and dual SY support (departure and arrival)
 - TKNE-aware calculations and compatibility handling
 - **Data Cleaning & Export Solutions**: Comprehensive data sanitization at input, storage, and export stages to prevent binary/hexadecimal character issues
 - **Deleted Passenger Analytics**: Comprehensive tracking of deleted passengers with XRES property classification and original boarding number extraction
 - **Missing Boarding Number Detection**: Intelligent detection of discontinuous boarding numbers with automatic exclusion of deleted passengers to prevent duplicate reporting
 - **Reusable UI Components**: Modular component architecture for consistent statistics display with separated calculation and presentation logic
+- **Dual SY Command Support**: System handles both departure and arrival SY commands with configurable airport code detection
 
 ## 🏗️ System Architecture
 
@@ -1190,7 +1191,7 @@ def add_is_deleted_field_if_not_exists(self) -> bool:
 
 **Location**: `scripts/command_processor.py`
 
-**Purpose**: Processes airline command texts, maintains a versioned commands timeline, and validates commands against current flight information.
+**Purpose**: Processes airline command texts, maintains a versioned commands timeline, and validates commands against current flight information. Supports dual SY commands (departure and arrival).
 
 #### Methods
 
@@ -1228,8 +1229,9 @@ def validate_command(self, command_info: Dict[str, Any]) -> bool:
     Validate a command for storage.
     
     Behavior:
-        - Non-special commands: Validate flight number/date against database flight info.
-        - AIRC: Validate aircraft registration against the latest SY command in DB.
+        - SY: Always accepted (both departure and arrival). Defines flight info rather than validated against it.
+        - AIRC: Validate aircraft registration against ALL latest SY commands in DB (checks both departure and arrival).
+        - Other commands: Validate flight number/date against database flight info.
     """
 
 def store_commands(self, commands: List[Dict[str, Any]]) -> Dict[str, int]:
@@ -1243,6 +1245,7 @@ def store_commands(self, commands: List[Dict[str, Any]]) -> Dict[str, int]:
         - Creates `commands` table and indexes if not present.
         - Updates latest flag and versions on content change.
         - Skips unmatched commands (e.g., flight mismatch or failed validation).
+        - Supports multiple SY commands (departure and arrival).
     """
 
 def get_all_commands_data(self) -> List[Dict[str, Any]]:
@@ -1260,9 +1263,21 @@ def delete_command(self, command_full: str) -> bool:
 
 #### Integration
 - Command parsing helpers are modularized under `scripts/commands_parsing/`:
-  - `sy.py`: Utilities for parsing SY command content (e.g., aircraft registration extraction).
+  - `sy.py`: Utilities for parsing SY command content and determining flight type (departure/arrival).
+    - `extract_reg_from_sy_content()`: Extract aircraft registration from SY content.
+    - `get_sy_flight_type()`: Determine if SY is departure or arrival based on configurable airport code.
+    - `is_departure_sy()`: Check if SY command is for departure flight.
+    - Configuration loaded from `scripts/database_schema.json` (config.departure_airport_code).
   - `airc.py`: Utilities for parsing AIRC command lines (e.g., aircraft registration extraction).
 - UI `edit_command.py` invokes input cleaning (`clean_text_for_input`) before parsing and uses `validate_command()` for unified validation.
+
+#### Dual SY Support
+- System supports both departure and arrival SY commands simultaneously
+- Departure SY: Contains configured departure airport code (e.g., LAX) in command_full
+- Arrival SY: Contains different destination airport code (e.g., PEK) in command_full
+- Both SY types have identical compartment configurations
+- AIRC validation checks aircraft registration against both SY types
+- Configuration: departure_airport_code in database_schema.json
 
 ### 5. HBPRProcessor Class - Batch Processing
 
@@ -2044,6 +2059,27 @@ Benefits:
 - Single source of truth for all tables and indexes
 - One-click migration from the UI; automatic creation of missing tables/columns
 - Consistent structure across scripts (`hbpr_info_processor.py`, `hbpr_list_processor.py`, `command_processor.py`)
+
+### Schema Configuration
+
+The database schema JSON includes a `config` section for system-wide settings:
+
+```json
+{
+  "version": "1.0",
+  "description": "Centralized database schema configuration for FlightCheckPy",
+  "config": {
+    "departure_airport_code": "LAX"
+  },
+  "tables": { ... }
+}
+```
+
+**Configuration Options**:
+- `departure_airport_code`: Airport code used to distinguish departure vs arrival SY commands
+  - Used by `scripts/commands_parsing/sy.py` for flight type detection
+  - Default: "LAX"
+  - Can be changed to match different operational airports
 
 ## 🗄️ Database Schema
 

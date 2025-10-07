@@ -1,6 +1,9 @@
 {
   "version": "1.0",
   "description": "Centralized database schema configuration for FlightCheckPy",
+  "config": {
+    "departure_airport_code": "LAX"
+  },
   "tables": {
     "flight_info": {
       "columns": [

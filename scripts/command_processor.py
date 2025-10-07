@@ -320,31 +320,36 @@ class CommandProcessor:
 
 
     def _validate_airc_command(self, airc_command: Dict[str, Any]) -> bool:
-        """根据SY命令的飞机注册号验证AIRC命令"""
+        """根据SY命令的飞机注册号验证AIRC命令（支持出发和到达两个SY）"""
         try:
-            cursor = self.conn.execute("SELECT content FROM commands WHERE command_type = 'SY' AND is_latest = TRUE")
-            sy_row = cursor.fetchone()
-            if not sy_row:
-                return False  # SY命令不存在，验证失败
-
-            sy_content = sy_row[0]
+            # 获取所有最新的SY命令（出发和到达）
+            cursor = self.conn.execute(
+                "SELECT content FROM commands WHERE command_type = 'SY' AND is_latest = TRUE"
+            )
+            sy_rows = cursor.fetchall()
             
-            sy_reg = extract_reg_from_sy_content(sy_content)
-            if not sy_reg:
-                return False
-
+            if not sy_rows:
+                return False  # 没有SY命令
+            
             airc_reg = extract_reg_from_airc_command(airc_command['command_full'])
             if not airc_reg:
                 return False
-
-            return sy_reg == airc_reg
+            
+            # 检查AIRC是否匹配任何一个SY
+            for sy_row in sy_rows:
+                sy_content = sy_row[0]
+                sy_reg = extract_reg_from_sy_content(sy_content)
+                if sy_reg and sy_reg == airc_reg:
+                    return True  # 找到匹配
+            
+            return False  # 没有匹配的SY
         except Exception:
             return False
 
 
     def validate_command(self, command_info: Dict[str, Any]) -> bool:
         """
-        Validates a command, handling special cases like AIRC.
+        Validates a command, handling special cases like AIRC and SY.
         Args:
             command_info (Dict[str, Any]): Parsed command information.
         Returns:
@@ -352,11 +357,13 @@ class CommandProcessor:
         """
         if not command_info:
             return False
-        
         command_type = command_info.get('command_type')
-        
         if command_type == 'AIRC':
             return self._validate_airc_command(command_info)
+        elif command_type == 'SY':
+            # SY commands (both departure and arrival) are always accepted
+            # They define flight information rather than being validated against it
+            return True
         else:
             return self.validate_flight_info(
                 command_info.get('flight_number', ''),
