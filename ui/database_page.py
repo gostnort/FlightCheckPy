@@ -15,16 +15,16 @@ from ui.database.sort import show_sort_records
 def show_database_management():
     """Display the database management page"""
     st.markdown("<h3>🗄️ Database Management</h3>", unsafe_allow_html=True)
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📥 HBPR", "📝 Commands", "📤 Export", "🧻 Simple", "📋 Sort", "🗄️ Management"])
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📥 HBPR", "📋 Sort", "📤 Export", "🧻 Simple HBPR","📝 Migrate", "🗄️ Management"])
     with tab1:
         show_hbpr_operations()
     with tab2:
-        show_commands_operations()
+        show_sort_records()
     with tab3:
         show_export_operations()
     with tab4:
         show_simple_records()
     with tab5:
-        show_sort_records()
+        show_commands_operations()
     with tab6:
         show_db_management()

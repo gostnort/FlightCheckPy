@@ -6,7 +6,8 @@ Excel处理页面 - 导入Excel文件并根据TKNE和CKIN CCRD生成输出文件
 import streamlit as st
 import pandas as pd
 import os
-from ui.common import apply_global_settings, get_hbpr_database_client
+from pathlib import Path
+from ui.common import get_hbpr_database_client, is_db_available
 from scripts.excel_processor import (
     process_excel_file as core_process_excel_file,
     generate_output_excel as core_generate_output_excel,
@@ -141,7 +142,7 @@ def show_excel_processor():
                         
                         output_file = get_output_file_path(filename)
                         # 检查文件是否已存在
-                        if not os.path.exists(output_file):
+                        if not Path(output_file).exists():
                             break  # 文件不存在，可以使用这个文件名
                         attempt += 1
                     try:
@@ -171,21 +172,23 @@ def show_excel_processor():
 def get_output_file_path(filename: str) -> str:
     """确定输出文件的保存路径"""
     # 首先尝试用户的Downloads文件夹
-    downloads_path = os.path.expanduser("~\Downloads")
-    if os.path.exists(downloads_path) and os.access(downloads_path, os.W_OK):
-        output_path = os.path.join(downloads_path, filename)
-        return output_path
-    # 如果Downloads不存在或无法访问，尝试创建C:\temp
     try:
-        temp_dir = "C:\\temp"
-        if not os.path.exists(temp_dir):
-            os.makedirs(temp_dir)
-            st.info(f"📁 Created temporary directory: {temp_dir}")
-        output_path = os.path.join(temp_dir, filename)
-        st.info(f"📁 File will be saved to: {temp_dir}\\{filename}")
-        return output_path
+        downloads_path = Path.home() / "Downloads"
+        # 检查目录是否存在且可写
+        if downloads_path.is_dir() and os.access(str(downloads_path), os.W_OK):
+            return str(downloads_path / filename)
+    except Exception:
+        # 在某些环境下 Path.home() 可能会失败
+        pass
+    # 如果Downloads文件夹不可用，则尝试 C:\temp
+    try:
+        temp_dir = Path("C:/temp")
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        output_path = temp_dir / filename
+        st.info(f"📁 文件将保存至: {output_path}")
+        return str(output_path)
     except Exception as e:
         # 最后的备用方案：当前工作目录
-        st.warning(f"⚠️ Unable to access Downloads or create C:\\temp, using current directory: {str(e)}")
+        st.warning(f"⚠️ 无法访问 Downloads 文件夹或创建 C:\\temp，将使用当前目录: {str(e)}")
         return filename
  
