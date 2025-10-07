@@ -21,7 +21,8 @@
     "M1/0",
     "F1/0",
     "API",
-    "AQQ"
+    "AQQ",
+    "ABP"
   ],
   "excluded_property_patterns": [
     "ESTA*",
@@ -30,10 +31,16 @@
     "IFBA*",
     "BAG*",
     "FOID/*",
-    "TMC*"
+    "TMC*",
+    "GOV*"
+  ],
+  "excluded_properties_home_sheet": [
+    "CHD","ET","CIP","IET","SA","PAD"
   ],
   "notes": "可根据需要添加或删除CKIN类型和Properties。修改后需要重新运行程序。",
   "notes_en": "Add or remove CKIN types and Properties as needed. Restart the application after making changes.",
   "property_normalization_notes": "Properties会自动标准化：去除数字和斜杠后缀（如INF1/0变为INF）",
-  "property_normalization_notes_en": "Properties are automatically normalized: remove numeric and slash suffixes (e.g., INF1/0 becomes INF)"
+  "property_normalization_notes_en": "Properties are automatically normalized: remove numeric and slash suffixes (e.g., INF1/0 becomes INF)",
+  "home_sheet_notes": "excluded_properties_home_sheet用于Home页面Flight Sheet组件的属性过滤，这些属性不会显示在特殊乘客统计中",
+  "home_sheet_notes_en": "excluded_properties_home_sheet is used for filtering properties in Home page Flight Sheet component, these properties will not be displayed in special passenger statistics"
 }

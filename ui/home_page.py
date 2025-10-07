@@ -77,7 +77,7 @@ def show_home_page():
     """显示主页"""
     apply_global_settings()
     # Create two columns for layout
-    col1, col2 = st.columns([2, 1])
+    col1, col2 = st.columns(2)
     with col1:
         # 标题和刷新按钮在同一行
         header_col1, header_col2, not_used_col3 = st.columns([5, 2, 1])
@@ -108,19 +108,47 @@ def show_home_page():
             st.error(f"❌ Error loading main statistics: {e}")
     with col2:
         st.subheader("📈 Home Summary")
-        try:
-            # Get home summary metrics
-            summary = get_home_summary()
-            if summary:
-                # 航班摘要信息折叠块 - 使用新函数构建消息（只显示非零项）
-                title = f"{summary['flight_number']} / {summary['flight_date']}"
-                with st.expander(title, expanded=True):
-                    msg = build_summary_message(summary)
-                    st.code(msg)
-            else:
-                st.info("No summary data available.")
-        except Exception as e:
-            st.error(f"❌ Error loading home summary: {e}")
+        
+        # 添加视图模式选择器
+        view_mode = st.selectbox(
+            "View Mode:",
+            options=["Summary", "Flight Sheet"],
+            key="home_view_mode"
+        )
+        
+        if view_mode == "Summary":
+            # 原有的摘要显示
+            try:
+                # Get home summary metrics
+                summary = get_home_summary()
+                if summary:
+                    # 航班摘要信息折叠块 - 使用新函数构建消息（只显示非零项）
+                    title = f"{summary['flight_number']} / {summary['flight_date']}"
+                    with st.expander(title, expanded=True):
+                        msg = build_summary_message(summary)
+                        st.code(msg)
+                else:
+                    st.info("No summary data available.")
+            except Exception as e:
+                st.error(f"❌ Error loading home summary: {e}")
+        else:  # Flight Sheet
+            try:
+                from ui.components.home_flight_sheet import build_flight_sheet_data, render_flight_sheet_table
+                
+                # 检查数据库状态
+                if not is_db_available():
+                    st.warning("⚠️ Please select a database to view flight sheet.")
+                    return
+                
+                db = get_hbpr_database_client()
+                if db:
+                    with st.spinner("Building flight sheet..."):
+                        sheet_data = build_flight_sheet_data(db)
+                        render_flight_sheet_table(sheet_data)
+                else:
+                    st.warning("⚠️ Database not loaded")
+            except Exception as e:
+                st.error(f"❌ Error loading flight sheet: {e}")
 
     # 显示缺失号码表格
     missing_numbers = db.get_all_statistics().get('missing_numbers', []) if db.get_all_statistics() else []
