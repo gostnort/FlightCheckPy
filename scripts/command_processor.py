@@ -8,6 +8,8 @@ import re
 import sqlite3
 from datetime import datetime
 from typing import Dict, List, Optional, Any
+from scripts.commands_parsing.sy import extract_reg_from_sy_content
+from scripts.commands_parsing.airc import extract_reg_from_airc_command
 
 
 class CommandProcessor:
@@ -317,37 +319,6 @@ class CommandProcessor:
         return date_str
 
 
-    def _extract_reg_from_sy_content(self, sy_content: str) -> Optional[str]:
-        """从SY命令内容中提取飞机注册号"""
-        lines = sy_content.split('\n')
-        try:
-            cwt_line_index = -1
-            for i, line in enumerate(lines):
-                if line.strip().startswith('CWT'):
-                    cwt_line_index = i
-                    break
-            
-            if cwt_line_index != -1 and cwt_line_index + 1 < len(lines):
-                target_line = lines[cwt_line_index + 1].strip()
-                if not target_line:
-                    return None
-                first_section = target_line.split()[0]
-                parts = first_section.split('/')
-                if len(parts) >= 3:
-                    return parts[2]
-        except (IndexError, ValueError):
-            return None
-        return None
-
-    def _extract_reg_from_airc_command(self, airc_command_full: str) -> Optional[str]:
-        """从AIRC命令中提取飞机注册号"""
-        try:
-            part_after_colon = airc_command_full.split(':', 1)[1]
-            reg = part_after_colon.split('/', 1)[1]
-            return reg.strip()
-        except IndexError:
-            return None
-
     def _validate_airc_command(self, airc_command: Dict[str, Any]) -> bool:
         """根据SY命令的飞机注册号验证AIRC命令"""
         try:
@@ -358,11 +329,11 @@ class CommandProcessor:
 
             sy_content = sy_row[0]
             
-            sy_reg = self._extract_reg_from_sy_content(sy_content)
+            sy_reg = extract_reg_from_sy_content(sy_content)
             if not sy_reg:
                 return False
 
-            airc_reg = self._extract_reg_from_airc_command(airc_command['command_full'])
+            airc_reg = extract_reg_from_airc_command(airc_command['command_full'])
             if not airc_reg:
                 return False
 

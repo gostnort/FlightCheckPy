@@ -42,7 +42,11 @@ FlightCheckPy/
 │   ├── excel_processor.py      # Excel-to-EMD processing via TKNE/CKIN CCRD mapping
 │   ├── command_processor.py    # Airline command processing and timeline management
 │   ├── general_func.py         # Utility functions and configuration
-│   └── data_cleaner.py        # Data cleaning and sanitization utilities
+│   ├── data_cleaner.py        # Data cleaning and sanitization utilities
+│   └── commands_parsing/      # Command parsing package (modular per-command)
+│       ├── __init__.py
+│       ├── sy.py              # SY command parsing utilities
+│       └── airc.py            # AIRC command parsing utilities
 ├── ui/                         # Web UI components
 │   ├── main.py                 # Main UI coordinator with Windows integration
 │   ├── common.py               # Common utilities and DB client management
@@ -64,21 +68,13 @@ FlightCheckPy/
 │   │   └── sort.py            # Record sorting and filtering
 │   └── process_records/        # Record processing sub-modules
 │       ├── __init__.py
-│       ├── info.py            # Processing information display
-│       ├── add_hbprs.py       # HBPR file upload with duplicate handling
+│       ├── info.py            # Processing information and error display
+│       ├── add_hbprs.py       # Update existing DB from HBPR list with intelligent duplicate handling
 │       ├── edit_hbpr.py       # Single HBPR record editing
 │       ├── add_commands.py    # Command file import
 │       ├── edit_command.py    # Single command editing
-│       ├── timeline.py        # HBPR/Commands timeline with radio switcher
-│       ├── process_all.py     # Batch processing functionality
-│       ├── add_edit_record.py # Add or edit a record
-│       ├── add_hbprs.py       # Add multiple HBPR records
-│       ├── edit_command.py    # Edit a single command
-│       ├── edit_hbpr.py       # Edit a single HBPR record
-│       ├── export_data.py     # Export data to various formats
-│       ├── info.py            # Display processing information and errors
-│       ├── timeline.py        # Timeline visualization of record processing
-│   ├── README.md              # UI documentation
+│       ├── timeline.py        # HBPR/Commands timeline with version history
+│       └── add_edit_record.py # Record add/edit with validation
 ├── start_ui.bat             # Batch script to start the UI
 ├── start_ui.py              # Main Streamlit application runner
 ├── remote_db/                  # In-memory database server and client components
@@ -246,13 +242,17 @@ def validate_and_clean_file_content(file_path: str, encoding: str = 'utf-8') -> 
 ```python
 def export_as_origin_txt(conn: sqlite3.Connection) -> str:
     """
-    Export raw text format, converting literal '\\n' to newlines
-    
+    Export raw text format from both commands and HBPR records tables, converting literal '\\n' to newlines
+
+    Exports data in the following order:
+    1. Content from commands table where is_latest = 1 (latest command versions)
+    2. Record content from hbpr_full_records table
+
     Args:
         conn (sqlite3.Connection): The database connection object
-        
+
     Returns:
-        str: Formatted raw text content
+        str: Formatted raw text content containing both command content and HBPR records
     """
 
 def show_export_data() -> None:
@@ -419,7 +419,7 @@ The system implements a modular component architecture with separated calculatio
 
 **Location**: `ui/components/`
 
-**Purpose**: Provides reusable, maintainable UI components with clear separation of concerns - calculation functions separated from display logic for better maintainability and testability.
+**Purpose**: Provides reusable, maintainable UI components with a clear separation of concerns - calculation functions separated from display logic for better maintainability and testability.
 
 #### Component Structure
 
@@ -758,7 +758,7 @@ ui/
 ├── process_records_page.py   # Orchestrator
 └── process_records/          # Sub-modules
     ├── info.py               # Info tab
-    ├── add_hbprs.py          # Add HBPRs tab
+    ├── add_hbprs.py          # Update existing DB from HBPR list with intelligent duplicate handling
     ├── edit_hbpr.py          # Edit HBPR tab
     ├── add_commands.py       # Add Commands tab
     ├── edit_command.py       # Edit Command tab
@@ -1186,7 +1186,85 @@ def add_is_deleted_field_if_not_exists(self) -> bool:
     """
 ```
 
-### 4. HBPRProcessor Class - Batch Processing
+### 4. CommandProcessor Class - Airline Commands
+
+**Location**: `scripts/command_processor.py`
+
+**Purpose**: Processes airline command texts, maintains a versioned commands timeline, and validates commands against current flight information.
+
+#### Methods
+
+```python
+def __init__(self, conn: sqlite3.Connection) -> None:
+    """
+    Initialize with a database connection.
+    
+    Args:
+        conn (sqlite3.Connection): An active sqlite3 connection object.
+        
+    Raises:
+        ValueError: If the connection object is not provided.
+    """
+
+def parse_commands_from_text(self, text_content: str) -> List[Dict[str, Any]]:
+    """
+    Parse command text and return a list of command dictionaries (merged by command line).
+    
+    Notes:
+        - Supports multi-line content until the next command marker.
+        - Preserves original formatting in `content`.
+    """
+
+def parse_single_command(self, raw_input: str) -> Optional[Dict[str, Any]]:
+    """
+    Parse a single command from raw input.
+    
+    Returns:
+        Optional[Dict[str, Any]]: Parsed command information or None.
+    """
+
+def validate_command(self, command_info: Dict[str, Any]) -> bool:
+    """
+    Validate a command for storage.
+    
+    Behavior:
+        - Non-special commands: Validate flight number/date against database flight info.
+        - AIRC: Validate aircraft registration against the latest SY command in DB.
+    """
+
+def store_commands(self, commands: List[Dict[str, Any]]) -> Dict[str, int]:
+    """
+    Store commands with timeline/versioning in a single transaction.
+    
+    Returns:
+        Dict[str, int]: Statistics including new, updated, skipped, errors.
+    
+    Features:
+        - Creates `commands` table and indexes if not present.
+        - Updates latest flag and versions on content change.
+        - Skips unmatched commands (e.g., flight mismatch or failed validation).
+    """
+
+def get_all_commands_data(self) -> List[Dict[str, Any]]:
+    """Get latest versions of all commands."""
+
+def get_command_timeline(self, command_full: str) -> List[Dict[str, Any]]:
+    """Get all versions (timeline) for a given command."""
+
+def delete_latest_version(self, command_full: str) -> bool:
+    """Delete only the latest version; promote previous as latest if exists."""
+
+def delete_command(self, command_full: str) -> bool:
+    """Delete a command and all its versions."""
+```
+
+#### Integration
+- Command parsing helpers are modularized under `scripts/commands_parsing/`:
+  - `sy.py`: Utilities for parsing SY command content (e.g., aircraft registration extraction).
+  - `airc.py`: Utilities for parsing AIRC command lines (e.g., aircraft registration extraction).
+- UI `edit_command.py` invokes input cleaning (`clean_text_for_input`) before parsing and uses `validate_command()` for unified validation.
+
+### 5. HBPRProcessor Class - Batch Processing
 
 **Location**: `scripts/hbpr_list_processor.py`
 
@@ -1279,7 +1357,7 @@ def _parse_simple_record(self, line: str) -> Optional[int]:
     """Parse simple HBPR record to extract HBNB number"""
 ```
 
-### 5. DataCleaner Class - Data Sanitization
+### 6. DataCleaner Class - Data Sanitization
 
 **Location**: `scripts/data_cleaner.py`
 
@@ -1373,7 +1451,7 @@ def clean_database_connection(conn: sqlite3.Connection) -> bool:
     """
 ```
 
-### 6. CArgs Class - Configuration
+### 7. CArgs Class - Configuration
 
 **Location**: `scripts/general_func.py`
 
@@ -1684,7 +1762,7 @@ def show_info_tab() -> None:
     """Display error summary and messages without processing buttons"""
 
 def show_add_hbprs_tab() -> None:
-    """Handle HBPR file upload with smart duplicate detection"""
+    """Update existing DB from HBPR list with intelligent duplicate handling and content comparison"""
 
 def show_edit_hbpr_tab() -> None:
     """Single HBPR record editing interface"""
@@ -1704,24 +1782,85 @@ def show_timeline_tab() -> None:
 **Location**: `ui/process_records/`
 
 ```
-├── info.py            # Error display only (no buttons)
-├── add_hbprs.py       # HBPR file upload with duplicate handling
+├── info.py            # Error display and processing information
+├── add_hbprs.py       # Update existing DB from HBPR list with intelligent duplicate handling
 ├── edit_hbpr.py       # Single HBPR record editing
 ├── add_commands.py    # Command file import
 ├── edit_command.py    # Single command editing
-├── timeline.py        # HBPR/Commands timeline with radio switcher
-├── process_all.py     # Batch processing and error functions
-├── add_edit_record.py # Add or edit a record
-├── add_hbprs.py       # Add multiple HBPR records
-├── edit_command.py    # Edit a single command
-├── edit_hbpr.py       # Edit a single HBPR record
-├── export_data.py     # Export data to various formats
-├── info.py            # Display processing information and errors
-├── simple_record.py   # Simple record management
-├── sort_records.py    # Record sorting functionality
-├── timeline.py        # Timeline visualization of record processing
-└── export_data.py     # Data export functionality
+├── timeline.py        # HBPR/Commands timeline with version history
+└── add_edit_record.py # Record add/edit with validation
 ```
+
+##### Add HBPRs Module Details
+
+**Location**: `ui/process_records/add_hbprs.py`
+
+**Purpose**: Updates existing database with new HBPR records from uploaded HBPR list file, with intelligent duplicate handling and content comparison.
+
+**Distinction from hbpr.py**:
+- **`ui/database/hbpr.py`**: Creates NEW databases from HBPR list files
+- **`ui/process_records/add_hbprs.py`**: Updates EXISTING databases with new/changed records
+  - Requires flight info validation (must match current database)
+  - Handles duplicate records with timeline support
+  - Compares content to skip unchanged records
+  - Only processes new/updated records
+
+**Key Features**:
+- **Flight Information Validation**: Verifies uploaded file's flight info matches current database
+- **Content Comparison**: Compares existing record content with new content to skip unchanged records
+- **Smart Duplicate Handling**: Creates duplicate records for timeline when content changes
+- **Selective Processing**: Only processes new or updated records with CHbpr, skipping unchanged ones
+- **Comprehensive Statistics**: Displays metrics for new, updated, skipped, and duplicate records
+
+**Workflow**:
+```python
+def process_and_add_hbprs(uploaded_file):
+    """
+    Process HBPR file and update database
+    
+    Steps:
+    1. Parse flight information from uploaded file
+    2. Validate flight info matches current database
+    3. Use HBPRProcessor to parse all records (full and simple)
+    4. For each full record:
+       - Check if HBNB exists in database
+       - Compare content (strip whitespace for comparison)
+       - If unchanged: skip and count as 'skipped_unchanged'
+       - If changed: create duplicate record (for timeline), update content, mark for processing
+       - If new: create record, mark for processing
+    5. Process simple records (only if no full record exists)
+    6. Use CHbpr to process only new/updated records (not skipped ones)
+    7. Display statistics and auto-save
+    
+    Statistics:
+    - new_records: Newly created records
+    - updated_records: Records with content changes
+    - duplicates_created: Timeline duplicate records created
+    - skipped_unchanged: Records with identical content (not processed)
+    - errors: Failed record operations
+    """
+
+def process_updated_records(db, hbnb_list):
+    """
+    Process only new/updated records with CHbpr
+    
+    Features:
+    - Progress bar with status updates
+    - Individual record error handling
+    - Statistics for valid/error records (only those with BN > 0)
+    - Sets db_has_unsaved_changes flag for UI refresh
+    """
+```
+
+**Integration with Timeline**:
+- Uses `db.create_duplicate_record_with_time()` to preserve original record with timestamp
+- Enables version history viewing in timeline tab
+- Only creates duplicates when content actually changes
+
+**Performance Optimization**:
+- Content comparison prevents unnecessary processing
+- Skipped records not added to CHbpr processing queue
+- Batch processing with progress tracking
 
 ### 6. Common Utilities
 
@@ -1830,7 +1969,7 @@ main()
 │   │   └── show_sort_records() (record sorting and filtering)
 │   ├── show_process_records_page()
 │   │   ├── show_info_tab() (error display only)
-│   │   ├── show_add_hbprs_tab() (HBPR file upload with duplicate handling)
+│   │   ├── show_add_hbprs_tab() (update existing DB from HBPR list with intelligent duplicate handling and content comparison)
 │   │   ├── show_edit_hbpr_tab() (single HBPR record editing)
 │   │   ├── show_add_commands_tab() (command file import)
 │   │   ├── show_edit_command_tab() (single command editing)
@@ -1887,7 +2026,7 @@ In-Memory DB Query → Data Extraction → Data Cleaning/Formatting → File Gen
 ```
 
 **Data Cleaning Integration**:
-- **Export Preparation**: `export_as_origin_txt` now handles raw export correctly.
+- **Export Preparation**: `export_as_origin_txt` now exports data from both commands and hbpr_full_records tables, with commands content appearing first.
 - **Format Safety**: Ensures compatibility with spreadsheet applications
 - **Data Integrity**: Preserves essential information while removing problematic characters
 
@@ -1898,7 +2037,7 @@ The database schema is now centralized in a single JSON configuration and applie
 - JSON schema: `scripts/database_schema.json`
 - SQL generation utilities: `scripts/schema_utils.py`
 - Unified migrator: `scripts/database_migration.py`
-- UI integration: Database Management → “迁移数据库” button in `ui/database/management.py`
+- UI integration: Database Management → "迁移数据库" button in `ui/database/management.py`
 - Deprecated: `scripts/commands_migration.py` (functionality merged into the unified migrator)
 
 Benefits:

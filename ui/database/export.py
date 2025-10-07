@@ -48,6 +48,23 @@ def execute_query_to_dataframe(db, query, params=None):
 def export_as_origin_txt(conn) -> str:
     """导出为原始txt格式"""
     try:
+        all_content = []
+        # First, get commands data where is_latest = 1
+        if hasattr(conn, 'cursor') and hasattr(conn.cursor(), 'execute'):
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT content
+                FROM commands
+                WHERE is_latest = 1
+                ORDER BY id
+            """)
+            columns = [desc[0] for desc in cursor.description] if cursor.description else ['content']
+            rows = cursor.fetchall()
+            df_commands = pd.DataFrame(rows, columns=columns) if rows else pd.DataFrame(columns=columns)
+        if not df_commands.empty:
+            processed_commands = df_commands['content'].astype(str).apply(lambda x: x.replace('\\n', '\n'))
+            all_content.extend(processed_commands.tolist())
+        # Then, get hbpr_full_records data
         if hasattr(conn, 'cursor') and hasattr(conn.cursor(), 'execute'):
             cursor = conn.cursor()
             cursor.execute("""
@@ -57,21 +74,14 @@ def export_as_origin_txt(conn) -> str:
             """)
             columns = [desc[0] for desc in cursor.description] if cursor.description else ['record_content']
             rows = cursor.fetchall()
-            df = pd.DataFrame(rows, columns=columns) if rows else pd.DataFrame(columns=columns)
-        else:
-            df = pd.read_sql_query("""
-                SELECT record_content
-                FROM hbpr_full_records
-                ORDER BY hbnb_number
-            """, conn)
-        
-        if df.empty:
+            df_records = pd.DataFrame(rows, columns=columns) if rows else pd.DataFrame(columns=columns)
+        if not df_records.empty:
+            processed_records = df_records['record_content'].astype(str).apply(lambda x: x.replace('\\n', '\n'))
+            all_content.extend(processed_records.tolist())
+        if not all_content:
             return "No records to export."
-        
-        processed_records = df['record_content'].astype(str).apply(lambda x: x.replace('\\n', '\n'))
-        full_text = "\n\n".join(processed_records)
+        full_text = "\n\n".join(all_content)
         return full_text
-        
     except Exception as e:
         return f"Error exporting data: {str(e)}"
 
