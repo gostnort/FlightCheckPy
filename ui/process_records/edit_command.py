@@ -12,6 +12,7 @@ from ui.common import (
     trigger_auto_save
 )
 from scripts.command_processor import CommandProcessor
+from scripts.data_cleaner import clean_text_for_input
 
 
 def show_edit_command_tab():
@@ -106,7 +107,8 @@ def show_manual_command_input(processor: CommandProcessor, create_table_if_neede
 def save_manual_command(processor: CommandProcessor, raw_input: str, create_table_if_needed: bool = False):
     """保存手动输入的命令支持版本控制"""
     try:
-        command_info = processor.parse_single_command(raw_input)
+        cleaned_input = clean_text_for_input(raw_input)
+        command_info = processor.parse_single_command(cleaned_input)
         if not command_info:
             st.error("❌ Could not parse a valid command from the input.")
             return
@@ -118,8 +120,10 @@ def save_manual_command(processor: CommandProcessor, raw_input: str, create_tabl
             st.success(f"✅ Command '{command_info['command_full']}' saved successfully.")
             trigger_auto_save()
             st.rerun()
+        elif stats.get('skipped', 0) > 0:
+            st.warning(f"⚠️ Command '{command_info.get('command_full', 'Unknown')}' was not saved. The command is invalid or does not match database information.")
         else:
-            st.error("❌ Failed to save command.")
+            st.error("❌ Failed to save command. The content may be identical to an existing command or another issue occurred.")
     except Exception as e:
         st.error(f"❌ Error saving command: {e}")
 
@@ -127,10 +131,16 @@ def save_manual_command(processor: CommandProcessor, raw_input: str, create_tabl
 def save_edited_data(processor: CommandProcessor, original_command_full: str, edited_raw_input: str):
     """保存编辑的命令数据，支持版本控制"""
     try:
+        cleaned_input = clean_text_for_input(edited_raw_input)
         # 解析编辑后的命令
-        new_command_info = processor.parse_single_command(edited_raw_input)
+        new_command_info = processor.parse_single_command(cleaned_input)
         if not new_command_info:
             st.error("❌ Could not parse a valid command from the edited input.")
+            return
+        
+        # 在尝试保存之前检查航班信息有效性
+        if not processor.validate_command(new_command_info):
+            st.warning("⚠️ Changes not saved. The command is invalid or its flight/aircraft information does not match the database.")
             return
         
         new_command_full = new_command_info['command_full']

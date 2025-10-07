@@ -317,6 +317,82 @@ class CommandProcessor:
         return date_str
 
 
+    def _extract_reg_from_sy_content(self, sy_content: str) -> Optional[str]:
+        """从SY命令内容中提取飞机注册号"""
+        lines = sy_content.split('\n')
+        try:
+            cwt_line_index = -1
+            for i, line in enumerate(lines):
+                if line.strip().startswith('CWT'):
+                    cwt_line_index = i
+                    break
+            
+            if cwt_line_index != -1 and cwt_line_index + 1 < len(lines):
+                target_line = lines[cwt_line_index + 1].strip()
+                if not target_line:
+                    return None
+                first_section = target_line.split()[0]
+                parts = first_section.split('/')
+                if len(parts) >= 3:
+                    return parts[2]
+        except (IndexError, ValueError):
+            return None
+        return None
+
+    def _extract_reg_from_airc_command(self, airc_command_full: str) -> Optional[str]:
+        """从AIRC命令中提取飞机注册号"""
+        try:
+            part_after_colon = airc_command_full.split(':', 1)[1]
+            reg = part_after_colon.split('/', 1)[1]
+            return reg.strip()
+        except IndexError:
+            return None
+
+    def _validate_airc_command(self, airc_command: Dict[str, Any]) -> bool:
+        """根据SY命令的飞机注册号验证AIRC命令"""
+        try:
+            cursor = self.conn.execute("SELECT content FROM commands WHERE command_type = 'SY' AND is_latest = TRUE")
+            sy_row = cursor.fetchone()
+            if not sy_row:
+                return False  # SY命令不存在，验证失败
+
+            sy_content = sy_row[0]
+            
+            sy_reg = self._extract_reg_from_sy_content(sy_content)
+            if not sy_reg:
+                return False
+
+            airc_reg = self._extract_reg_from_airc_command(airc_command['command_full'])
+            if not airc_reg:
+                return False
+
+            return sy_reg == airc_reg
+        except Exception:
+            return False
+
+
+    def validate_command(self, command_info: Dict[str, Any]) -> bool:
+        """
+        Validates a command, handling special cases like AIRC.
+        Args:
+            command_info (Dict[str, Any]): Parsed command information.
+        Returns:
+            bool: True if the command is valid, False otherwise.
+        """
+        if not command_info:
+            return False
+        
+        command_type = command_info.get('command_type')
+        
+        if command_type == 'AIRC':
+            return self._validate_airc_command(command_info)
+        else:
+            return self.validate_flight_info(
+                command_info.get('flight_number', ''),
+                command_info.get('flight_date', '')
+            )
+
+
     def store_commands(self, commands: List[Dict[str, Any]]) -> Dict[str, int]:
         """
         Store commands in database with atomic transaction
@@ -363,10 +439,11 @@ class CommandProcessor:
             matching_commands = []
             mismatched_commands = []
             for cmd in commands:
-                if self.validate_flight_info(cmd['flight_number'], cmd['flight_date']):
+                if self.validate_command(cmd):
                     matching_commands.append(cmd)
                 else:
                     mismatched_commands.append(cmd)
+            
             # 只存储匹配的命令（支持版本控制）
             for cmd in matching_commands:
                 try:
@@ -428,7 +505,7 @@ class CommandProcessor:
             # 关键：只有在所有命令都成功存储后才提交事务
             conn.commit()
             # 将跳过计数设置为不匹配命令的数量以供参考
-            stats['skipped'] = len(mismatched_commands)
+            stats['skipped'] += len(mismatched_commands)
         except Exception as e:
             # 关键：任何错误时回滚事务
             try:
