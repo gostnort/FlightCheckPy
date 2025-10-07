@@ -53,7 +53,6 @@ def export_as_origin_txt(conn) -> str:
             cursor.execute("""
                 SELECT record_content
                 FROM hbpr_full_records
-                WHERE is_validated = 1
                 ORDER BY hbnb_number
             """)
             columns = [desc[0] for desc in cursor.description] if cursor.description else ['record_content']
@@ -63,7 +62,6 @@ def export_as_origin_txt(conn) -> str:
             df = pd.read_sql_query("""
                 SELECT record_content
                 FROM hbpr_full_records
-                WHERE is_validated = 1
                 ORDER BY hbnb_number
             """, conn)
         
@@ -93,14 +91,7 @@ def show_export_operations():
             return
             
         df = execute_query_to_dataframe(db, """
-            SELECT hbnb_number, created_at, is_validated, is_valid, boarding_number,
-                   pnr, name, seat, class, destination, bag_piece, bag_weight,
-                   bag_allowance, ff, pspt_name, pspt_exp_date, ckin_msg, asvc_msg,
-                   expc_piece, expc_weight, asvc_piece, fba_piece, ifba_piece,
-                   has_infant, flyer_benefit, is_ca_flyer, inbound_flight,
-                   outbound_flight, properties, tkne, error_count, error_baggage,
-                   error_passport, error_name, error_visa, error_other, validated_at,
-                   bol_duplicate
+            SELECT *
             FROM hbpr_full_records
             WHERE is_validated = 1
             ORDER BY hbnb_number
@@ -109,15 +100,17 @@ def show_export_operations():
         if df.empty:
             st.info("ℹ️ No processed records to export.")
             return
+
+        # 为Excel导出准备包含所有列的数据
+        excel_export_df = df.fillna('')
         
-        # 数据已在输入时通过 clean_hbpr_record_content() 清理，无需再次清理
-        # 填充空值即可
-        export_df = df.fillna('')
-        
+        # 为CSV导出准备数据，移除'record_content'列
+        csv_export_df = excel_export_df.drop(columns=['record_content'], errors='ignore')
+
         col1, col2, col3 = st.columns(3)
         with col1:
             # 导出CSV，使用UTF-8编码
-            csv_data = export_df.to_csv(index=False, encoding='utf-8-sig')
+            csv_data = csv_export_df.to_csv(index=False, encoding='utf-8-sig')
             st.download_button(
                 label="📥 Download as CSV (UTF-8)",
                 data=csv_data.encode('utf-8-sig'),
@@ -129,7 +122,7 @@ def show_export_operations():
         with col2:
             # 导出Excel，默认使用UTF-8
             excel_buffer = BytesIO()
-            export_df.to_excel(excel_buffer, index=False, engine='openpyxl')
+            excel_export_df.to_excel(excel_buffer, index=False, engine='openpyxl')
             excel_data = excel_buffer.getvalue()
             st.download_button(
                 label="📊 Download as Excel",
@@ -153,10 +146,10 @@ def show_export_operations():
             )
         
         st.subheader("👀 Export Preview")
-        st.dataframe(export_df, 
+        st.dataframe(csv_export_df, 
                      use_container_width=True,
                      hide_index=True)
-        st.info(f"📊 Total records ready for export: {len(export_df)}")
+        st.info(f"📊 Total records ready for export: {len(excel_export_df)}")
         
         st.info("💡 **Note**: All exports use UTF-8 encoding. Data was cleaned during database creation.")
         

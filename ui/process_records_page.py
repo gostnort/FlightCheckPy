@@ -22,7 +22,7 @@ def show_process_records():
 
     try:
         # 定义标签页选项
-        tab_options = ["ℹ️ Info", "➕ Add HBPRs", "✏️ Edit a HBPR", "📝 Add Commands", "📋 Edit a Command", "📅 Timeline"]
+        tab_options = ["ℹ️ Info", "➕ Add HBPRs", "✏️ Edit a HBPR", "📥 Add Commands", "📋 Edit a Command", "📅 Timeline"]
 
         # 处理程序化标签页切换
         if hasattr(st.session_state, 'process_records_tab'):
