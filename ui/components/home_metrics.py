@@ -392,3 +392,57 @@ def get_debug_summary() -> str:
     except Exception as e:
         return f"Error getting debug data: {str(e)}"
 
+
+def build_summary_message():
+    """构建摘要信息，只显示非零的部分
+    Args:
+        summary: 包含统计数据的字典
+    Returns:
+        str: 格式化的摘要信息
+    """
+    summary = get_home_summary()
+    lines = []
+    # 标题行 - 始终显示
+    title = f"{summary['flight_number']} / {summary['flight_date']}"
+    lines.append(title)
+    # 总数行 - 始终显示
+    total_line = f"TOTAL {summary['total_accepted']} + {summary['infant_count']} INF"
+    lines.append(total_line)
+    # 舱位分布 - 只显示非零的舱位
+    class_parts = []
+    if summary.get('accepted_first', 0) > 0:
+        class_parts.append(f"F_{summary['accepted_first']}")
+    if summary.get('accepted_business', 0) > 0:
+        class_parts.append(f"J_{summary['accepted_business']}")
+    if summary.get('accepted_economy', 0) > 0:
+        class_parts.append(f"Y_{summary['accepted_economy']}")
+    if class_parts:
+        lines.append(f"ACCEPTED PAX: {" / ".join(class_parts)}")
+    # 比率 - 始终显示
+    ratio_display = f"{summary['ratio']}%" if summary['ratio'] is not None else "N/A"
+    lines.append(f"RATIO: {ratio_display}")
+    # ID员工 - 只显示非零的
+    id_parts = []
+    if summary.get('id_c', 0) > 0:
+        id_parts.append(f"ID_J: {summary['id_c']}")
+    if summary.get('id_y', 0) > 0:
+        id_parts.append(f"ID_Y: {summary['id_y']}")
+    if id_parts:
+        lines.append("  ".join(id_parts))
+    else:
+        lines.append("ID: N/A")
+    # NOSHOW - 只显示非零的
+    noshow_parts = []
+    if summary.get('noshow_f', 0) > 0:
+        noshow_parts.append(f"F_{summary['noshow_f']}")
+    if summary.get('noshow_c', 0) > 0:
+        noshow_parts.append(f"J_{summary['noshow_c']}")
+    if summary.get('noshow_y', 0) > 0:
+        noshow_parts.append(f"Y_{summary['noshow_y']}")
+    if noshow_parts:
+        lines.append(f"NO_SHOW: {' / '.join(noshow_parts)}")
+    else:
+        lines.append("NO_SHOW: N/A")
+    # INAD
+    lines.append(f"INAD: {summary['inad_total']}")
+    return "\n".join(lines)

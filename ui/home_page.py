@@ -6,71 +6,9 @@ Home page for HBPR UI - System overview and quick actions
 import streamlit as st
 import pandas as pd
 from ui.common import apply_global_settings, get_hbpr_database_client, is_db_available
-from ui.components.home_metrics import get_home_summary
+from ui.components.home_metrics import build_summary_message
 from ui.components.main_stats import get_and_display_main_statistics
-
-
-def build_summary_message(summary):
-    """构建摘要信息，只显示非零的部分
-    
-    Args:
-        summary: 包含统计数据的字典
-    
-    Returns:
-        str: 格式化的摘要信息
-    """
-    lines = []
-    
-    # 标题行 - 始终显示
-    title = f"{summary['flight_number']} / {summary['flight_date']}"
-    lines.append(title)
-    
-    # 总数行 - 始终显示
-    total_line = f"TOTAL {summary['total_accepted']} + {summary['infant_count']} INF"
-    lines.append(total_line)
-    
-    # 舱位分布 - 只显示非零的舱位
-    class_parts = []
-    if summary.get('accepted_first', 0) > 0:
-        class_parts.append(f"F_{summary['accepted_first']}")
-    if summary.get('accepted_business', 0) > 0:
-        class_parts.append(f"J_{summary['accepted_business']}")
-    if summary.get('accepted_economy', 0) > 0:
-        class_parts.append(f"Y_{summary['accepted_economy']}")
-    if class_parts:
-        lines.append(f"ACCEPTED PAX: {" / ".join(class_parts)}")
-    
-    # 比率 - 始终显示
-    ratio_display = f"{summary['ratio']}%" if summary['ratio'] is not None else "N/A"
-    lines.append(f"RATIO: {ratio_display}")
-    
-    # ID员工 - 只显示非零的
-    id_parts = []
-    if summary.get('id_c', 0) > 0:
-        id_parts.append(f"ID_J: {summary['id_c']}")
-    if summary.get('id_y', 0) > 0:
-        id_parts.append(f"ID_Y: {summary['id_y']}")
-    if id_parts:
-        lines.append("  ".join(id_parts))
-    else:
-        lines.append("ID: N/A")
-    
-    # NOSHOW - 只显示非零的
-    noshow_parts = []
-    if summary.get('noshow_f', 0) > 0:
-        noshow_parts.append(f"F_{summary['noshow_f']}")
-    if summary.get('noshow_c', 0) > 0:
-        noshow_parts.append(f"J_{summary['noshow_c']}")
-    if summary.get('noshow_y', 0) > 0:
-        noshow_parts.append(f"Y_{summary['noshow_y']}")
-    if noshow_parts:
-        lines.append(f"NO_SHOW: {' / '.join(noshow_parts)}")
-    else:
-        lines.append("NO_SHOW: N/A")
-    # INAD
-    lines.append(f"INAD: {summary['inad_total']}")
-    
-    return "\n".join(lines)
+from ui.components.home_flight_sheet import build_flight_sheet_data, render_flight_sheet_table
 
 
 def show_home_page():
@@ -107,49 +45,16 @@ def show_home_page():
         except Exception as e:
             st.error(f"❌ Error loading main statistics: {e}")
     with col2:
-        st.subheader("📈 Home Summary")
-        
-        # 添加视图模式选择器
-        view_mode = st.selectbox(
-            "View Mode:",
-            options=["Summary", "Flight Sheet"],
-            key="home_view_mode"
-        )
-        
-        if view_mode == "Summary":
-            # 原有的摘要显示
-            try:
-                # Get home summary metrics
-                summary = get_home_summary()
-                if summary:
-                    # 航班摘要信息折叠块 - 使用新函数构建消息（只显示非零项）
-                    title = f"{summary['flight_number']} / {summary['flight_date']}"
-                    with st.expander(title, expanded=True):
-                        msg = build_summary_message(summary)
-                        st.code(msg)
-                else:
-                    st.info("No summary data available.")
-            except Exception as e:
-                st.error(f"❌ Error loading home summary: {e}")
-        else:  # Flight Sheet
-            try:
-                from ui.components.home_flight_sheet import build_flight_sheet_data, render_flight_sheet_table
-                
-                # 检查数据库状态
-                if not is_db_available():
-                    st.warning("⚠️ Please select a database to view flight sheet.")
-                    return
-                
-                db = get_hbpr_database_client()
-                if db:
-                    with st.spinner("Building flight sheet..."):
-                        sheet_data = build_flight_sheet_data(db)
-                        render_flight_sheet_table(sheet_data)
-                else:
-                    st.warning("⚠️ Database not loaded")
-            except Exception as e:
-                st.error(f"❌ Error loading flight sheet: {e}")
-
+        # 航班摘要信息折叠块 - 使用新函数构建消息（只显示非零项）
+        try:
+            msg = build_summary_message()
+            if msg:
+                with st.expander('📈 Home Summary', expanded=True):
+                    st.code(msg)
+            else:
+                st.info("No summary data available.")
+        except Exception as e:
+            st.error(f"❌ Error loading home summary: {e}")
     # 显示缺失号码表格
     missing_numbers = db.get_all_statistics().get('missing_numbers', []) if db.get_all_statistics() else []
     if missing_numbers:
@@ -171,6 +76,14 @@ def show_home_page():
         st.dataframe(missing_df, use_container_width=True)
         if total_pages > 1:
             st.info(f"Showing page {page} of {total_pages} ({len(page_missing)} of {len(missing_numbers)} missing numbers)")
+    # 创建航班表格
+    db = get_hbpr_database_client()
+    if db:
+        with st.spinner("Building flight sheet..."):
+            sheet_data = build_flight_sheet_data(db)
+            render_flight_sheet_table(sheet_data)
+    else:
+        st.warning("⚠️ Database not loaded")
     st.markdown("---")
     # 最近活动
     st.subheader("📝 导航指南")
