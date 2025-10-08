@@ -168,6 +168,48 @@ def get_special_passenger_counts(db) -> Dict[str, int]:
     return property_counts
 
 
+def has_required_sy_commands(db) -> bool:
+    """检查数据库是否同时包含到达和出发SY命令
+    
+    Args:
+        db: 数据库客户端实例
+        
+    Returns:
+        True表示同时存在到达和出发SY命令
+    """
+    try:
+        conn = db.get_connection()
+        cursor = conn.cursor()
+        
+        # 查询所有最新的SY命令
+        cursor.execute("""
+            SELECT command_full
+            FROM commands
+            WHERE command_type = 'SY' AND is_latest = 1
+        """)
+        
+        sy_commands = cursor.fetchall()
+        
+        has_arrival = False
+        has_departure = False
+        
+        # 检查是否同时存在到达和出发SY
+        for (command_full,) in sy_commands:
+            if is_departure_sy(command_full):
+                has_departure = True
+            else:
+                has_arrival = True
+            
+            # 如果两者都找到了，可以提前返回
+            if has_arrival and has_departure:
+                return True
+        
+        return False
+        
+    except Exception:
+        return False
+
+
 def get_sy_commands(db) -> tuple:
     """获取最新的到达和出发SY命令
     
@@ -421,23 +463,35 @@ def build_flight_sheet_data(db) -> List[List[str]]:
     return sheet_data
 
 
-def convert_to_tsv(data: List[List[str]]) -> str:
-    """将表格数据转换为制表符分隔的文本（TSV格式）
-    
-    空单元格保持为空（空字符串），不会覆盖目标单元格的原有内容
+def convert_to_html_table(data: List[List[str]]) -> str:
+    """将表格数据转换为HTML格式，用于Excel剪贴板
     
     Args:
         data: 8列x13行的二维列表
         
     Returns:
-        UTF-8编码的制表符分隔文本
+        HTML格式的表格字符串（Excel兼容）
     """
-    lines = []
+    # 构建HTML表格，使用Excel兼容的格式
+    html_parts = ['<table xmlns:x="urn:schemas-microsoft-com:office:excel">']
+    
     for row in data:
-        # 使用制表符连接单元格，空单元格保持为空字符串
-        line = '\t'.join(str(cell) for cell in row)
-        lines.append(line)
-    return '\n'.join(lines)
+        html_parts.append('<tr>')
+        for cell in row:
+            cell_str = str(cell)
+            # 转义HTML特殊字符
+            cell_content = cell_str.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+            
+            # 检查是否是Excel公式
+            if cell_str.startswith('='):
+                # 保留公式
+                html_parts.append(f'<td x:fmla="{cell_content}">{cell_content}</td>')
+            else:
+                html_parts.append(f'<td>{cell_content}</td>')
+        html_parts.append('</tr>')
+    
+    html_parts.append('</table>')
+    return ''.join(html_parts)
 
 
 def render_flight_sheet_table(data: List[List[str]]) -> None:
@@ -446,58 +500,50 @@ def render_flight_sheet_table(data: List[List[str]]) -> None:
     Args:
         data: 8列x13行的二维列表
     """
-    # 生成TSV格式的文本用于复制
-    tsv_text = convert_to_tsv(data)
+    # 生成HTML格式的表格用于复制
+    html_table_full = convert_to_html_table(data)
     
-    # 使用JSON编码来安全地传递文本到JavaScript
-    tsv_text_json = json.dumps(tsv_text)
+    # 使用JSON编码来安全地传递HTML到JavaScript
+    html_full_json = json.dumps(html_table_full)
     
-    # 创建复制到剪贴板的HTML和JavaScript（最小边距）
-    copy_button_html = f"""
-    <div style="margin: 0; padding: 0;">
-        <button onclick="copyToClipboard()" style="
-            background-color: #FF4B4B;
-            color: white;
-            border: none;
-            padding: 6px 12px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 13px;
-            margin: 0 0 5px 0;
-        ">📋 Copy All</button>
-        <div id="copyStatus" style="color: green; font-size: 11px; margin: 2px 0 0 0; padding: 0;"></div>
-    </div>
-    
-    <script>
-    function copyToClipboard() {{
-        const text = {tsv_text_json};
-        navigator.clipboard.writeText(text).then(function() {{
-            document.getElementById('copyStatus').innerText = '✓ 已复制到剪贴板';
-            setTimeout(function() {{
-                document.getElementById('copyStatus').innerText = '';
-            }}, 2000);
-        }}, function(err) {{
-            document.getElementById('copyStatus').innerText = '✗ 复制失败';
-        }});
-    }}
-    </script>
-    """
-    
-    # 显示复制按钮（减小高度）
-    st.components.v1.html(copy_button_html, height=50)
-    
-    # 构建HTML表格
+    # 构建显示用的HTML表格
     table_rows = []
-    for row in data:
-        cells = []
-        for cell in row:
-            # 转义HTML特殊字符
-            cell_content = str(cell).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-            # 空单元格使用&nbsp;
+    for row_idx, row in enumerate(data):
+        # 行8-11（索引7-10）：INOP座位、重复座位、溢出属性等，需要跨列显示
+        if row_idx in [7, 8, 9, 10]:
+            # 获取第一列的内容（完整字符串）
+            cell_content = str(row[0]).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
             if not cell_content.strip():
                 cell_content = "&nbsp;"
-            cells.append(f"<td>{cell_content}</td>")
-        table_rows.append("<tr>" + "".join(cells) + "</tr>")
+            # 创建跨8列的单元格
+            table_rows.append(f"<tr><td colspan='8'>{cell_content}</td></tr>")
+        else:
+            # 普通行，逐列显示
+            cells = []
+            for cell in row:
+                cell_str = str(cell)
+                # 对于Excel公式，在显示时只显示提示文本，不显示完整公式
+                if cell_str.startswith('='):
+                    # 提取公式中的关键信息进行简化显示
+                    if 'STD' in cell_str:
+                        display_content = 'STD'
+                    elif 'ETD' in cell_str:
+                        display_content = 'ETD'
+                    elif 'ETA' in cell_str:
+                        display_content = 'ETA'
+                    elif 'VLOOKUP' in cell_str:
+                        display_content = '(lookup)'
+                    else:
+                        display_content = '(formula)'
+                else:
+                    # 转义HTML特殊字符
+                    display_content = cell_str.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                
+                # 空单元格使用&nbsp;
+                if not display_content.strip():
+                    display_content = "&nbsp;"
+                cells.append(f"<td>{display_content}</td>")
+            table_rows.append("<tr>" + "".join(cells) + "</tr>")
     
     # HTML样式和表格
     html_table = f"""
@@ -511,14 +557,23 @@ def render_flight_sheet_table(data: List[List[str]]) -> None:
         }}
         .flight-sheet-table td {{
             border: 1px solid #ddd;
-            padding: 6px;
+            padding: 8px 6px;
             text-align: left;
-            vertical-align: top;
+            vertical-align: middle;
             white-space: pre-wrap;
             word-wrap: break-word;
+            line-height: 1.2;
+            max-height: 40px;
+            overflow: hidden;
+        }}
+        .flight-sheet-table tr {{
+            line-height: 1.2;
         }}
         .flight-sheet-table tr:nth-child(even) {{
             background-color: #f9f9f9;
+        }}
+        .flight-sheet-table td[colspan] {{
+            font-weight: normal;
         }}
     </style>
     <table class="flight-sheet-table">{"".join(table_rows)}</table>
@@ -527,6 +582,53 @@ def render_flight_sheet_table(data: List[List[str]]) -> None:
     # 渲染HTML表格
     st.markdown(html_table, unsafe_allow_html=True)
     
+    # 创建复制到剪贴板的HTML和JavaScript（放在表格底部）
+    copy_button_html = f"""
+    <div style="margin: 10px 0 0 0; padding: 0;">
+        <button onclick="copyToClipboard()" style="
+            background-color: #FF4B4B;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+        ">📋 Copy to Clipboard</button>
+        
+        <div id="copyStatus" style="color: green; font-size: 11px; margin: 5px 0 0 0; padding: 0;"></div>
+    </div>
+    
+    <script>
+    function copyToClipboard() {{
+        const htmlContent = {html_full_json};
+        
+        // 创建HTML Blob用于剪贴板
+        const htmlBlob = new Blob([htmlContent], {{ type: 'text/html' }});
+        const textBlob = new Blob([htmlContent], {{ type: 'text/plain' }});
+        
+        const clipboardItem = new ClipboardItem({{
+            'text/html': htmlBlob,
+            'text/plain': textBlob
+        }});
+        
+        navigator.clipboard.write([clipboardItem]).then(function() {{
+            document.getElementById('copyStatus').innerText = '✓ 已复制到剪贴板（可直接粘贴到Excel）';
+            document.getElementById('copyStatus').style.color = 'green';
+            setTimeout(function() {{
+                document.getElementById('copyStatus').innerText = '';
+            }}, 3000);
+        }}, function(err) {{
+            console.error('复制失败:', err);
+            document.getElementById('copyStatus').innerText = '✗ 复制失败: ' + err.message;
+            document.getElementById('copyStatus').style.color = 'red';
+        }});
+    }}
+    </script>
+    """
+    
+    # 显示复制按钮（放在底部）
+    st.components.v1.html(copy_button_html, height=70)
+    
     # 添加说明
-    st.caption("💡 点击 'Copy All' 复制完整数据到剪贴板（UTF-8编码），可直接粘贴到Excel或Google Sheets")
+    st.caption("💡 点击按钮复制完整表格到剪贴板（可直接粘贴到Excel）")
 

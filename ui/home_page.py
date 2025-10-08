@@ -8,7 +8,7 @@ import pandas as pd
 from ui.common import apply_global_settings, get_hbpr_database_client, is_db_available
 from ui.components.home_metrics import build_summary_message
 from ui.components.main_stats import get_and_display_main_statistics
-from ui.components.home_flight_sheet import build_flight_sheet_data, render_flight_sheet_table
+from ui.components.home_flight_sheet import build_flight_sheet_data, render_flight_sheet_table, has_required_sy_commands
 
 
 def show_home_page():
@@ -76,12 +76,14 @@ def show_home_page():
         st.dataframe(missing_df, use_container_width=True)
         if total_pages > 1:
             st.info(f"Showing page {page} of {total_pages} ({len(page_missing)} of {len(missing_numbers)} missing numbers)")
-    # 创建航班表格
+    # 创建航班表格 - 仅在同时存在到达和出发SY命令时显示
     db = get_hbpr_database_client()
     if db:
-        with st.spinner("Building flight sheet..."):
-            sheet_data = build_flight_sheet_data(db)
-            render_flight_sheet_table(sheet_data)
+        if has_required_sy_commands(db):
+            with st.spinner("Building flight sheet..."):
+                sheet_data = build_flight_sheet_data(db)
+                render_flight_sheet_table(sheet_data)
+        # 如果没有必要的SY命令，不显示任何内容（静默跳过）
     else:
         st.warning("⚠️ Database not loaded")
     st.markdown("---")
