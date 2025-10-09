@@ -218,15 +218,12 @@ def extract_aircraft_type_from_sy_content(sy_content: str) -> Optional[str]:
 
 def extract_passenger_counts_from_sy_content(sy_content: str) -> Optional[str]:
     """从'*'开头的行提取乘客数量统计（仅C段）
-    
     例如: 
     - '*LAXPEK R030/325 C002/030/265' -> '2 / 30 / 265 = 297'
     - '*LAXPEK R035/326 C30/265' -> '30 / 265 = 295'
     仅提取C段的数字（忽略R段），支持2个或3个数字的格式
-    
     Args:
-        sy_content: SY命令内容
-        
+        sy_content: SY命令内容 
     Returns:
         格式化的乘客统计字符串，如果解析失败返回None
     """

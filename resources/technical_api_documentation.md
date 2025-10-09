@@ -18,6 +18,7 @@ The system validates and parses records, stores them in the database, and provid
 - Real-time database switching without application restart
 - Intelligent statistics caching with automatic invalidation on updates
 - Accepted passengers tracking with infant count and class split (Business/Economy)
+- **Hot Database Reload**: Real-time database updates when source files are manually modified
 - Excel Processor: XLS/XLSX import, strict header validation, TKNE ↔ CKIN CCRD mapping, formatted EMD Excel export
 - **Command functionality**: Integrated into Process Records page with timeline versioning and dual SY support (departure and arrival)
 - TKNE-aware calculations and compatibility handling
@@ -103,6 +104,7 @@ class Handler(BaseHTTPRequestHandler):
         # /database/load - Load SQLite file into memory
         # /database/backup - Create timestamped backup
         # /database/save - Persist memory DB to source file
+        # /database/reload - Reload current database from disk
         # /query - Execute SELECT queries
         # /exec - Execute DDL/DML operations
 ```
@@ -115,6 +117,7 @@ class DbPortClient:
     def load_database(self, path: str):  # POST /database/load
     def backup(self):                     # POST /database/backup
     def save(self):                       # POST /database/save
+    def reload_database(self):            # POST /database/reload
     def query(self, sql, params):         # POST /query
     def exec(self, sql, params):          # POST /exec
 ```
@@ -167,6 +170,9 @@ def load_database(file_path: str) -> bool:
 
 def trigger_auto_save() -> bool:
     """Persist the in-memory database back to its source file and clear unsaved flag."""
+
+def reload_database_from_disk() -> bool:
+    """Reload the current database from disk to reflect external manual changes."""
 ```
 
 ### Environment Configuration
@@ -413,6 +419,120 @@ def get_missing_boarding_numbers(db) -> List[int]:
 - **Cache Invalidation**: Statistics cache cleared on database modifications
 - **Debug Information**: Complete boarding number lists included in debug output (home_metrics.py)
 - **Unified Display**: Deleted passengers and missing boarding numbers shown together in two-column layout
+
+### Hot Database Reload System
+
+The system provides real-time database updates when database files are manually modified externally, ensuring the UI always reflects the latest data without requiring application restart.
+
+**Problem Solved**: When database files are modified by external tools or scripts, the in-memory database copy doesn't automatically reflect changes, causing data staleness in the UI.
+
+**Solution**: A comprehensive reload system that synchronizes in-memory data with disk changes on-demand.
+
+#### Implementation Architecture
+
+```python
+# Client-side reload request
+def reload_database_from_disk():
+    """Reloads the current database from disk to reflect manual changes."""
+    client.reload_database()  # HTTP POST /database/reload
+
+# Server-side reload handler
+def do_POST(self):
+    if path == "/database/reload":
+        # Reload current database from source file
+        _load_db_into_memory(_src_file_path)
+```
+
+#### Key Components
+
+**HTTP Client** (`remote_db/db_port_client.py`):
+```python
+class DbPortClient:
+    def reload_database(self):
+        """Requests the server to reload the current database from disk."""
+        return self._post("/database/reload", {})
+```
+
+**HTTP Server** (`remote_db/memdb_port_server.py`):
+```python
+def do_POST(self):
+    if path == "/database/reload":
+        # Validates source file exists and reloads into memory
+        if not _src_file_path:
+            return self._send(400, {"error": "no_database_loaded"})
+        if not os.path.exists(_src_file_path):
+            return self._send(400, {"error": "source_file_not_found"})
+        _load_db_into_memory(_src_file_path)
+        return self._send(200, {"ok": True, "db_name": os.path.basename(_src_file_path)})
+```
+
+**UI Integration** (`ui/common.py`, `ui/home_page.py`):
+```python
+def reload_database_from_disk():
+    """UI wrapper for database reload with error handling and UI feedback."""
+    # Clear cached client, reload database, show success/error messages
+
+# Home page integration
+if st.button("📥 Reload DB", key="reload_database"):
+    reload_database_from_disk()
+    st.rerun()
+```
+
+#### Reload Workflow
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant UI as Home Page
+    participant Client as DbPortClient
+    participant Server as MemDbPortServer
+    participant Disk as Database File
+
+    User->>UI: Click "📥 Reload DB"
+    UI->>Client: reload_database()
+    Client->>Server: POST /database/reload
+    Server->>Disk: Read current database file
+    Disk-->>Server: Return file contents
+    Server->>Server: Load into memory (replace existing)
+    Server-->>Client: Success response
+    Client-->>UI: Success message
+    UI->>UI: Clear component caches
+    UI->>UI: st.rerun() - refresh all components
+```
+
+#### Integration Points
+
+- **Home Page**: "📥 Reload DB" button alongside existing "🔄 Refresh" button
+- **Cache Management**: Automatically clears all component caches when reload succeeds
+- **Error Handling**: Comprehensive error messages for missing files, server errors, etc.
+- **Session State**: Preserves existing session state while refreshing data
+- **Component Refresh**: All UI components (statistics, flight sheets, etc.) automatically reflect new data
+
+#### Usage Scenarios
+
+1. **External Database Modification**:
+   - Database file edited by external tools/scripts
+   - Click "📥 Reload DB" to see changes immediately
+   - No application restart required
+
+2. **Collaborative Workflows**:
+   - Multiple users working on same database
+   - Reload to synchronize with latest changes
+   - Avoids data conflicts and staleness
+
+3. **Automated Processing Results**:
+   - External scripts process and update database
+   - Reload to view processing results in UI
+   - Seamless integration with automated workflows
+
+#### Benefits
+
+- ✅ **Real-time Updates**: Immediate reflection of external database changes
+- ✅ **No Application Restart**: Hot reload without interrupting user workflow
+- ✅ **Cache Invalidation**: All UI components automatically refresh with new data
+- ✅ **Error Resilience**: Comprehensive error handling for edge cases
+- ✅ **User-Friendly**: Clear success/error messages and intuitive button placement
+- ✅ **Performance**: Efficient reload without full application restart
 
 ### Reusable UI Components
 
@@ -2394,6 +2514,31 @@ else:
 db_manager.trigger_auto_save()
 ```
 
+### Hot Database Reload Usage
+```python
+# In Streamlit UI components - Database reload functionality
+from ui.common import reload_database_from_disk
+
+# Add reload button to UI
+col1, col2, col3 = st.columns(3)
+with col2:
+    if st.button("🔄 Refresh", use_container_width=True):
+        # Clear caches and rerun
+        st.rerun()
+with col3:
+    if st.button("📥 Reload DB", use_container_width=True):
+        # Reload database from disk to reflect external changes
+        reload_database_from_disk()
+        st.rerun()
+
+# Manual reload in code
+from ui.common import reload_database_from_disk
+success = reload_database_from_disk()
+if success:
+    st.success("Database reloaded successfully!")
+    # All statistics and components will automatically refresh
+```
+
 ### UI Statistics Display (Remote HTTP)
 ```python
 # In Streamlit UI components - Remote HTTP
@@ -2521,5 +2666,6 @@ Both architectures provide identical APIs, allowing seamless switching between l
 - **UI Components**: Reusable, modular interface components
 - **Error Handling**: Robust exception management across all layers
 - **Cross-Platform**: Windows-native folder picker and path handling
+- **Hot Database Reload**: Real-time database synchronization when files are manually modified
 
 The system is designed for flexibility, allowing deployment in both traditional single-user environments and modern distributed, multi-user architectures with a clean, maintainable codebase structure.

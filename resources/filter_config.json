@@ -12,8 +12,6 @@
   "excluded_properties": [
     "ADV",
     "IDOCS",
-    "PEK",
-    "LAX",
     "ASR",
     "RES", 
     "OSR",
@@ -32,10 +30,11 @@
     "BAG*",
     "FOID/*",
     "TMC*",
-    "GOV*"
+    "GOV*",
+    "FQTU*"
   ],
   "excluded_properties_home_sheet": [
-    "CHD","ET","CIP","IET","SA","PAD"
+    "CHD","ET","CIP","IET","SA","PAD","ID","AQQ"
   ],
   "notes": "可根据需要添加或删除CKIN类型和Properties。修改后需要重新运行程序。",
   "notes_en": "Add or remove CKIN types and Properties as needed. Restart the application after making changes.",

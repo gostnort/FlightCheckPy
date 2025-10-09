@@ -164,6 +164,35 @@ def trigger_auto_save():
     return False
 
 
+def reload_database_from_disk():
+    """
+    Reloads the current database from disk to reflect manual changes.
+    This is useful when the database file has been modified externally.
+    """
+    client = get_db_port_client()
+    port = st.session_state.get("db_service_port")
+    if client and port:
+        try:
+            # First, reload the database from disk on the server
+            result = client.reload_database()
+            if result.get("ok"):
+                # Only after successful reload, clear the cached database client
+                # (since the data has changed and we need fresh queries)
+                hbpr_client_key = f"hbpr_db_client_{port}"
+                if hbpr_client_key in st.session_state:
+                    del st.session_state[hbpr_client_key]
+
+                st.success(f"✅ Database reloaded from disk: {result.get('db_name', 'Unknown')}")
+                return True
+            else:
+                st.error(f"❌ Failed to reload database: {result.get('error', 'Unknown error')}")
+                return False
+        except Exception as e:
+            st.error(f"❌ Error reloading database: {e}")
+            return False
+    return False
+
+
 def shutdown_db_server():
     """关闭当前用户的数据库服务器"""
     client = get_db_port_client()

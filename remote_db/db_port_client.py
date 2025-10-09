@@ -57,6 +57,10 @@ class DbPortClient:
         """Requests the server to save the in-memory database to its source file."""
         return self._post("/database/save", {})
 
+    def reload_database(self):
+        """Requests the server to reload the current database from disk."""
+        return self._post("/database/reload", {})
+
     def query(self, sql: str, params=None):
         """
         Sends a read-only SQL query to the server.

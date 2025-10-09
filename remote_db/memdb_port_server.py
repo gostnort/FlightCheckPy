@@ -216,6 +216,15 @@ class Handler(BaseHTTPRequestHandler):
                 _save_to_source()
                 return self._send(200, {"ok": True})
 
+            if path == "/database/reload":
+                # Reloads the current database from disk.
+                if not _src_file_path:
+                    return self._send(400, {"error": "no_database_loaded"})
+                if not os.path.exists(_src_file_path):
+                    return self._send(400, {"error": "source_file_not_found"})
+                _load_db_into_memory(_src_file_path)
+                return self._send(200, {"ok": True, "db_name": os.path.basename(_src_file_path)})
+
             if path == "/query":
                 # Executes a read-only SQL query.
                 sql = body.get("sql") or ""

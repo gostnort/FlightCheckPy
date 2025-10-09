@@ -5,7 +5,7 @@ Home page for HBPR UI - System overview and quick actions
 
 import streamlit as st
 import pandas as pd
-from ui.common import apply_global_settings, get_hbpr_database_client, is_db_available
+from ui.common import apply_global_settings, get_hbpr_database_client, is_db_available, reload_database_from_disk
 from ui.components.home_metrics import build_summary_message
 from ui.components.main_stats import get_and_display_main_statistics
 from ui.components.home_flight_sheet import build_flight_sheet_data, render_flight_sheet_table, has_required_sy_commands
@@ -17,19 +17,7 @@ def show_home_page():
     # Create two columns for layout
     col1, col2 = st.columns(2)
     with col1:
-        # 标题和刷新按钮在同一行
-        header_col1, header_col2, not_used_col3 = st.columns([5, 2, 1])
-        with header_col1:
-            st.subheader("📊 Main Statistics")
-        with header_col2:
-            if st.button("🔄 Refresh", key="refresh_main_stats", use_container_width=True):
-                # 清除缓存的数据库客户端实例，强制重新加载
-                port = st.session_state.get("db_service_port")
-                if port:
-                    hbpr_client_key = f"hbpr_db_client_{port}"
-                    if hbpr_client_key in st.session_state:
-                        del st.session_state[hbpr_client_key]
-                st.rerun()
+        st.subheader("📊 Main Statistics")
         try:
             # 检查数据库状态
             if not is_db_available():
@@ -55,6 +43,35 @@ def show_home_page():
                 st.info("No summary data available.")
         except Exception as e:
             st.error(f"❌ Error loading home summary: {e}")
+        button_col1, button_col2 = st.columns(2)
+        with button_col1:
+            if st.button("🔄 Refresh", key="refresh_main_stats", use_container_width=True):
+                # 清除所有组件相关的缓存数据，强制重新加载
+                port = st.session_state.get("db_service_port")
+                if port:
+                    # 清除数据库客户端缓存
+                    hbpr_client_key = f"hbpr_db_client_{port}"
+                    if hbpr_client_key in st.session_state:
+                        del st.session_state[hbpr_client_key]
+                    # 清除其他可能的组件缓存
+                    db_port_client_key = f"db_port_client_{port}"
+                    if db_port_client_key in st.session_state:
+                        del st.session_state[db_port_client_key]
+                # 清除组件相关的缓存状态
+                cache_keys_to_clear = [
+                    'home_metrics_cache',
+                    'main_stats_cache',
+                    'flight_sheet_cache'
+                ]
+                for key in cache_keys_to_clear:
+                    if key in st.session_state:
+                        del st.session_state[key]
+                st.rerun()
+        with button_col2:
+            if st.button("📥 Reload DB", key="reload_database", use_container_width=True):
+                # 从磁盘重新加载数据库以反映手动更改
+                reload_database_from_disk()
+                st.rerun()
     # 显示缺失号码表格
     missing_numbers = db.get_all_statistics().get('missing_numbers', []) if db.get_all_statistics() else []
     if missing_numbers:
