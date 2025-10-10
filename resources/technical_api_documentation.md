@@ -467,16 +467,20 @@ def do_POST(self):
 ```
 
 **UI Integration** (`ui/common.py`, `ui/home_page.py`):
-```python
-def reload_database_from_disk():
-    """UI wrapper for database reload with error handling and UI feedback."""
-    # Clear cached client, reload database, show success/error messages
 
-# Home page integration
-if st.button("📥 Reload DB", key="reload_database"):
-    reload_database_from_disk()
-    st.rerun()
-```
+#### UI Refresh and Reload Functions
+
+The system provides two distinct refresh mechanisms:
+
+**🔄 Refresh Button**: Clears UI component caches and refreshes the page display
+- **Purpose**: Refresh UI components without reloading database from disk
+- **Function**: Clears cached statistics and component data, then reruns the Streamlit page
+- **Use Case**: Update UI after data changes within the same session
+
+**📥 Reload DB Button**: Reloads database from disk to reflect external changes
+- **Purpose**: Synchronize in-memory database with external file modifications
+- **Function**: Triggers full database reload from source file
+- **Use Case**: Reflect manual database file edits by external tools
 
 #### Reload Workflow
 
@@ -500,27 +504,45 @@ sequenceDiagram
     UI->>UI: st.rerun() - refresh all components
 ```
 
+#### Refresh Workflow
+```mermaid
+sequenceDiagram
+    participant User
+    participant UI as Home Page
+    participant Cache as Session State
+
+    User->>UI: Click "🔄 Refresh"
+    UI->>Cache: Clear component caches (home_metrics_cache, main_stats_cache, flight_sheet_cache)
+    UI->>Cache: Clear database client caches
+    UI->>UI: st.rerun() - refresh page
+```
+
 #### Integration Points
 
-- **Home Page**: "📥 Reload DB" button alongside existing "🔄 Refresh" button
-- **Cache Management**: Automatically clears all component caches when reload succeeds
+- **Home Page**: Both "🔄 Refresh" and "📥 Reload DB" buttons in two-column layout
+- **Cache Management**: Refresh clears component caches; Reload clears all caches after database reload
 - **Error Handling**: Comprehensive error messages for missing files, server errors, etc.
 - **Session State**: Preserves existing session state while refreshing data
 - **Component Refresh**: All UI components (statistics, flight sheets, etc.) automatically reflect new data
 
 #### Usage Scenarios
 
-1. **External Database Modification**:
+1. **UI Refresh After Data Changes**:
+   - Data modified within the application session
+   - Click "🔄 Refresh" to update UI components
+   - Fast refresh without database reload
+
+2. **External Database Modification**:
    - Database file edited by external tools/scripts
    - Click "📥 Reload DB" to see changes immediately
    - No application restart required
 
-2. **Collaborative Workflows**:
+3. **Collaborative Workflows**:
    - Multiple users working on same database
    - Reload to synchronize with latest changes
    - Avoids data conflicts and staleness
 
-3. **Automated Processing Results**:
+4. **Automated Processing Results**:
    - External scripts process and update database
    - Reload to view processing results in UI
    - Seamless integration with automated workflows
@@ -2071,7 +2093,7 @@ CHbpr.run()
 
 ### Database Operations Chain
 ```
-db_manager.get_database()
+get_hbpr_database_client()
 ├── HbprDatabase instance
 │   ├── get_hbpr_record()
 │   └── update_with_chbpr_results()
@@ -2087,8 +2109,7 @@ main()
 ├── authenticate_user()
 ├── apply_global_settings()
 ├── Database discovery and selection (loads to memory)
-│   ├── get_sorted_database_files() (with custom_folder support)
-│   ├── create_database_selectbox() (triggers in-memory load)
+│   ├── create_database_selectbox() (discovers and validates databases)
 │   └── Session state database storage
 ├── Native Windows folder picker
 │   ├── tk.Tk() initialization
@@ -2317,10 +2338,10 @@ CREATE INDEX idx_commands_latest ON commands(command_full, is_latest);
 ### Local SQLite Database Usage
 ```python
 # Local SQLite database management
-from ui.components.database_manager import db_manager, create_database_selectbox
+from ui.common import load_database, create_database_selectbox, get_hbpr_database_client
 
 # Load a database
-success = db_manager.load_database("path/to/database.db")
+success = load_database("path/to/database.db")
 
 # Create database selector widget
 selected_file, available_files = create_database_selectbox(
@@ -2329,7 +2350,7 @@ selected_file, available_files = create_database_selectbox(
 )
 
 # Get database instance for operations
-db = db_manager.get_database()
+db = get_hbpr_database_client()
 
 # Get all statistics efficiently
 all_stats = db.get_all_statistics()
@@ -2380,16 +2401,16 @@ if chbpr.is_valid():
     structured_data = chbpr.get_structured_data()
     
 # Update database (triggers auto-save)
-db = db_manager.get_database()
+db = get_hbpr_database_client()
 db.update_with_chbpr_results(chbpr)
 ```
 
 ### Database Operations
 ```python
-from ui.components.database_manager import db_manager
+from ui.common import get_hbpr_database_client
 
 # Get the database instance
-db = db_manager.get_database()
+db = get_hbpr_database_client()
 
 # Get statistics
 stats = db.get_validation_stats()
@@ -2403,7 +2424,7 @@ tkne_count = db.get_tkne_count()
 ### Accepted Passengers Operations
 ```python
 # Get accepted passengers with filtering
-db = db_manager.get_database()
+db = get_hbpr_database_client()
 accepted_data = db.get_accepted_passengers(
     page=1,
     page_size=50,
@@ -2445,19 +2466,14 @@ if needs_cleaning:
 
 ### Enhanced Database Discovery
 ```python
-# Get databases from multiple sources
-# Note: get_sorted_database_files is now part of the database manager
+# Get databases from multiple sources via database selectbox
+# Database discovery is handled internally by create_database_selectbox()
 
 # Include custom folder in search
 custom_folder = "C:/MyDatabases"
-db_files = get_sorted_database_files(
-    sort_by='creation_time', 
-    reverse=True, 
-    custom_folder=custom_folder
-)
 
 # Create database selectbox with custom folder support
-# This is handled within ui/main.py
+# This handles database discovery, validation, and selection
 selected_db, all_dbs = create_database_selectbox(
     label="Select Database:",
     custom_folder=custom_folder
@@ -2492,9 +2508,9 @@ if folder_path:
 ### UI Statistics Display (Local SQLite)
 ```python
 # In Streamlit UI components - Local SQLite
-from ui.components.database_manager import db_manager
+from ui.common import get_hbpr_database_client
 
-db = db_manager.get_database()
+db = get_hbpr_database_client()
 all_stats = db.get_all_statistics()
 record_summary = all_stats['record_summary']
 accepted_stats = all_stats['accepted_stats']
@@ -2511,7 +2527,7 @@ else:
     st.metric("Acceptance Rate", "0.0%")
 
 # Auto-save on changes
-db_manager.trigger_auto_save()
+trigger_auto_save()
 ```
 
 ### Hot Database Reload Usage

@@ -13,9 +13,6 @@ sys.path.insert(0, str(project_root))
 # Project-specific imports (after path setup)
 from ui.common import get_icon_base64, apply_global_settings, shutdown_db_server
 from ui.login_page import show_login_page
-from ui.home_page import show_home_page
-from ui.database_page import show_database_management
-from ui.settings_page import show_settings
 
 
 def setup_navigation_highlighting():
@@ -105,6 +102,16 @@ def main():
     if not st.session_state.authenticated:
         show_login_page()
         return
+    # =============================================================================
+    #           LAZY LOADING: Import pages only after authentication
+    # =============================================================================
+    from ui.home_page import show_home_page
+    from ui.database_page import show_database_management
+    from ui.settings_page import show_settings
+    from ui.process_records_page import show_process_records
+    from ui.excel_processor_page import show_excel_processor
+    from ui.components.database_selector import render_sidebar_database_selector
+
     # Apply global settings
     apply_global_settings()
     # Add CSS for navigation highlighting
@@ -114,8 +121,6 @@ def main():
     
     # 使用简化的数据库选择器
     with st.sidebar:
-        from ui.components.database_selector import render_sidebar_database_selector
-        
         # 渲染数据库选择器
         render_sidebar_database_selector()
         
@@ -174,13 +179,13 @@ def main():
     elif current_page == "🗄️ Database":
         show_database_management()
     elif current_page == "🔍 Process Records":
-        from ui.process_records_page import show_process_records
         show_process_records()
     elif current_page == "📊 Excel Processor":
-        from ui.excel_processor_page import show_excel_processor
         show_excel_processor()
     elif current_page == "⚙️ Settings":
         show_settings()
+
+
 if __name__ == "__main__":
     main()
 
