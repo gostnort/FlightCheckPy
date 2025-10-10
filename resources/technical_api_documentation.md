@@ -93,12 +93,13 @@ FlightCheckPy/
 The client-server architecture consists of several key components that work together:
 
 **Database Server** (`remote_db/memdb_port_server.py`):
-A standard Python `http.server` that loads a SQLite database into memory.
+A standard Python `http.server` that loads a SQLite database into memory with IP-based session management.
 ```python
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         # /health - Server health check
         # /databases/list - List available databases
+        # /session/active_ips - Get list of currently active IPs
 
     def do_POST(self):
         # /database/load - Load SQLite file into memory
@@ -107,7 +108,17 @@ class Handler(BaseHTTPRequestHandler):
         # /database/reload - Reload current database from disk
         # /query - Execute SELECT queries
         # /exec - Execute DDL/DML operations
+        # /session/register - Register IP login with timestamp
+        # /session/check - Check if IP has valid session
+        # /session/logout - Remove IP from active sessions
 ```
+
+**Session Management**:
+- 存储活跃IP及其最后访问时间戳 `{ip: last_access_timestamp}`
+- 会话超时: 60秒（自动登录窗口期）
+- 支持本地连接(127.0.0.1)和LAN连接(如192.168.x.x)
+- 自动清理过期会话
+- 每个用户服务器同时只允许一个IP登录
 
 **HTTP Client** (`remote_db/db_port_client.py`):
 A minimal client for sending requests to the database server's endpoints.
@@ -120,6 +131,10 @@ class DbPortClient:
     def reload_database(self):            # POST /database/reload
     def query(self, sql, params):         # POST /query
     def exec(self, sql, params):          # POST /exec
+    def register_session(self, ip: str):  # POST /session/register
+    def check_session(self, ip: str):     # POST /session/check
+    def logout_session(self, ip: str):    # POST /session/logout
+    def get_active_ips(self):             # GET /session/active_ips
 ```
 
 **SQLite Adapter** (`remote_db/remote_sqlite_adapter.py`):
@@ -156,7 +171,29 @@ A set of functions that manage the lifecycle of the database client within the S
 def ensure_memdb_server(username: str) -> Tuple[bool, int, str]:
     """
     Start per-user memdb_port_server if not running.
-    Returns (started_now, port, message). If already running, returns (False, port, "User already logged in on this host").
+    Returns (ok, port, message). 
+    - Checks session and registers IP
+    - Supports session restoration for returning users (60s window)
+    - Blocks if another IP is currently logged in
+    """
+
+def get_client_ip() -> str:
+    """
+    获取客户端IP地址
+    支持本地连接(127.0.0.1)和LAN连接(如192.168.x.x)
+    使用st.context.headers获取请求头信息
+    """
+
+def logout_current_ip() -> Tuple[bool, str]:
+    """
+    登出当前IP的session，不关闭服务器
+    返回: (success: bool, message: str)
+    """
+
+def get_active_session_count() -> int:
+    """
+    获取当前活跃的session数量
+    返回: int (活跃session数，失败返回-1)
     """
 
 def get_db_port_client() -> Optional[DbPortClient]:
@@ -173,7 +210,56 @@ def trigger_auto_save() -> bool:
 
 def reload_database_from_disk() -> bool:
     """Reload the current database from disk to reflect external manual changes."""
+
+def shutdown_db_server() -> bool:
+    """关闭当前用户的数据库服务器（仅在无活跃session时调用）"""
 ```
+
+### IP-Based Session Management
+
+**Purpose**: Enables proper logout without shutting down the server, auto-login for returning users, and eliminates the need for process cleanup scripts.
+
+**Features**:
+- **One IP per User**: Only one IP can be logged in per user server at a time
+- **Session Timeout**: 60-second auto-login window for returning users
+- **LAN Support**: Works with both localhost (127.0.0.1) and LAN connections (e.g., 192.168.x.x)
+- **Clean Logout**: Users can logout their IP without affecting server availability
+- **Auto Cleanup**: Expired sessions are automatically removed
+
+**Workflow**:
+```
+Login → Register IP with timestamp → Use system
+Close Browser → Session preserved for 60s
+Reopen within 60s → Auto-login (no credentials needed)
+After 60s → Session expires, normal login required
+
+Logout → Remove IP from active sessions → Server continues running
+```
+
+**Session Management**:
+```python
+# Server tracks active sessions
+_active_sessions = {
+    "192.168.1.100": 1728524800.123,  # IP: last_access_timestamp
+    "127.0.0.1": 1728524810.456
+}
+
+# Automatic cleanup of sessions older than 60 seconds
+SESSION_TIMEOUT = 60
+
+# Session operations
+- register_session(ip) - Register/update IP login timestamp
+- check_session(ip) - Check if IP has valid session (< 60s old)
+- logout_session(ip) - Remove IP from active sessions
+- get_active_ips() - Get list of currently active IPs
+```
+
+**Benefits**:
+- ✅ No more "already logged in" errors when reopening browser
+- ✅ No need to manually kill server processes
+- ✅ Cleaner logout without affecting server availability
+- ✅ Better user experience with auto-login
+- ✅ Simplified deployment (no process cleanup scripts needed)
 
 ### Environment Configuration
 
@@ -1808,7 +1894,15 @@ st.session_state.view_results_tab     # Current tab in view results page
 
 ```python
 def show_login_page() -> None:
-    """Display the login page"""
+    """
+    Display the login page with auto-login support
+    
+    Features:
+    - Auto-login check for returning users (60s session window)
+    - IP-based session validation
+    - Clear Session button for logout
+    - Session restoration message display
+    """
 
 def authenticate_user(username: str) -> bool:
     """
@@ -1819,6 +1913,19 @@ def authenticate_user(username: str) -> bool:
         
     Returns:
         bool: True if authentication successful
+    """
+
+def _check_auto_login() -> Tuple[bool, Optional[str], Optional[int]]:
+    """
+    检查当前IP是否有有效session，如果有则自动登录
+    
+    Returns:
+        Tuple[bool, Optional[str], Optional[int]]: (should_auto_login, username, port)
+        
+    Features:
+    - Checks all user ports for active IP sessions
+    - Returns username and port if valid session found
+    - Enables seamless browser reopen experience
     """
 ```
 

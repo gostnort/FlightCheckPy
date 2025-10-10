@@ -85,25 +85,13 @@ echo [WARNING] LAN access enabled - ensure your network is secure!
 echo [INFO] Press Ctrl+C in this window to stop the server
 echo.
 
-:: Create a cleanup script
-echo @echo off > cleanup_servers.bat
-echo taskkill /F /FI "WINDOWTITLE eq memdb_port_server.py*" /T >> cleanup_servers.bat
-echo taskkill /F /FI "WINDOWTITLE eq streamlit*" /T >> cleanup_servers.bat
-echo taskkill /F /FI "IMAGENAME eq python.exe" /FI "WINDOWTITLE eq memdb_port_server.py*" >> cleanup_servers.bat
-echo taskkill /F /FI "IMAGENAME eq python.exe" /FI "WINDOWTITLE eq streamlit*" >> cleanup_servers.bat
-
-:: Register cleanup on exit
-start /B cleanup_servers.bat
-
 :: Start Streamlit with LAN access enabled (run from project root)
 set PYTHONPATH=%CD%
 streamlit run ui/main.py --server.address 0.0.0.0 --server.port 8501 --browser.serverAddress localhost --server.headless false
 
 echo.
 echo [INFO] HBPR UI has been stopped.
-echo [INFO] Cleaning up servers...
-call cleanup_servers.bat
-del cleanup_servers.bat
+echo [INFO] Database servers are managed by IP sessions and will remain active
 echo [INFO] Deactivating virtual environment...
 deactivate
 pause

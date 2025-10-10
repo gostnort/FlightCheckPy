@@ -90,4 +90,35 @@ class DbPortClient:
             # Server might close connection before responding, which is expected
             return {"ok": True}
 
+    def register_session(self, ip: str):
+        """
+        注册IP登录session
+        :param ip: 客户端IP地址
+        :return: 服务器响应字典
+        """
+        return self._post("/session/register", {"ip": ip})
+
+    def check_session(self, ip: str):
+        """
+        检查IP是否有有效session
+        :param ip: 客户端IP地址
+        :return: 包含has_session布尔值的字典
+        """
+        return self._post("/session/check", {"ip": ip})
+
+    def logout_session(self, ip: str):
+        """
+        登出指定IP的session
+        :param ip: 客户端IP地址
+        :return: 包含ok布尔值的字典
+        """
+        return self._post("/session/logout", {"ip": ip})
+
+    def get_active_ips(self):
+        """
+        获取当前活跃的IP列表
+        :return: 包含active_ips列表的字典
+        """
+        return self._get("/session/active_ips")
+
 

@@ -11,6 +11,7 @@ import json
 import os
 import sqlite3
 import threading
+import time
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, unquote
@@ -21,6 +22,12 @@ from urllib.parse import urlparse, unquote
 _conn = None
 _src_file_path = None
 _lock = threading.Lock()
+
+# Session management: 存储 {ip: last_access_timestamp}
+_active_sessions = {}
+_session_lock = threading.Lock()
+# Session超时时间（秒）：60秒内自动登录
+SESSION_TIMEOUT = 60
 
 
 def _ensure_pragmas(conn: sqlite3.Connection) -> None:
@@ -130,6 +137,45 @@ def _list_db_files(directory: str = None) -> list:
     return sorted(files, key=lambda p: os.path.getctime(p), reverse=True)
 
 
+def _cleanup_expired_sessions() -> None:
+    """清理过期的session（超过SESSION_TIMEOUT秒未活动）"""
+    current_time = time.time()
+    with _session_lock:
+        expired_ips = [ip for ip, last_access in _active_sessions.items() 
+                       if current_time - last_access > SESSION_TIMEOUT]
+        for ip in expired_ips:
+            del _active_sessions[ip]
+
+
+def _register_session(ip: str) -> None:
+    """注册或更新IP的session时间戳"""
+    with _session_lock:
+        _active_sessions[ip] = time.time()
+
+
+def _check_session(ip: str) -> bool:
+    """检查IP是否有有效的session"""
+    _cleanup_expired_sessions()
+    with _session_lock:
+        return ip in _active_sessions
+
+
+def _logout_session(ip: str) -> bool:
+    """登出指定IP的session"""
+    with _session_lock:
+        if ip in _active_sessions:
+            del _active_sessions[ip]
+            return True
+        return False
+
+
+def _get_active_ips() -> list:
+    """获取当前活跃的IP列表"""
+    _cleanup_expired_sessions()
+    with _session_lock:
+        return list(_active_sessions.keys())
+
+
 class Handler(BaseHTTPRequestHandler):
     """
     The request handler for the HTTP server.
@@ -163,6 +209,9 @@ class Handler(BaseHTTPRequestHandler):
             if directory:
                 directory = unquote(directory)
             return self._send(200, {"files": _list_db_files(directory)})
+        if path == "/session/active_ips":
+            # 获取当前活跃的IP列表
+            return self._send(200, {"active_ips": _get_active_ips()})
         if path == "/shutdown":
             # Shutdown endpoint: saves database and stops the server.
             try:
@@ -187,6 +236,30 @@ class Handler(BaseHTTPRequestHandler):
             body = {}
 
         try:
+            if path == "/session/register":
+                # 注册IP的session
+                ip = body.get("ip")
+                if not ip:
+                    return self._send(400, {"error": "missing_ip"})
+                _register_session(ip)
+                return self._send(200, {"ok": True, "ip": ip})
+            
+            if path == "/session/check":
+                # 检查IP是否有有效session
+                ip = body.get("ip")
+                if not ip:
+                    return self._send(400, {"error": "missing_ip"})
+                has_session = _check_session(ip)
+                return self._send(200, {"has_session": has_session, "ip": ip})
+            
+            if path == "/session/logout":
+                # 登出IP的session
+                ip = body.get("ip")
+                if not ip:
+                    return self._send(400, {"error": "missing_ip"})
+                success = _logout_session(ip)
+                return self._send(200, {"ok": success, "ip": ip})
+            
             if path == "/database/validate":
                 # Validates that a database file has the expected schema.
                 file_path = body.get("path")

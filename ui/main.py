@@ -11,7 +11,7 @@ from pathlib import Path
 project_root = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(project_root))
 # Project-specific imports (after path setup)
-from ui.common import get_icon_base64, apply_global_settings, shutdown_db_server
+from ui.common import get_icon_base64, apply_global_settings, shutdown_db_server, logout_current_ip, get_active_session_count
 from ui.login_page import show_login_page
 
 
@@ -134,16 +134,28 @@ def main():
     # Settings page
     st.sidebar.markdown("---")
     create_navigation_button("⚙️ Settings", st.session_state.current_page, "⚙️ Settings")
-    # Logout button
-    if st.sidebar.button("🚪 Logout", use_container_width=True, type="secondary"):
+    # Logout button - 检查活跃session数量来决定按钮文本
+    active_count = get_active_session_count()
+    logout_text = "🚪 Logout (IP Session)"
+    
+    if st.sidebar.button(logout_text, use_container_width=True, type="secondary"):
         # Clean up any uploaded files before logout
         if st.session_state.uploaded_file_path and os.path.exists(st.session_state.uploaded_file_path):
             try:
                 os.remove(st.session_state.uploaded_file_path)
             except Exception:
                 pass
-        # Shutdown the database server for this user
-        shutdown_db_server()
+        
+        # 首先尝试登出当前IP
+        success, message = logout_current_ip()
+        
+        # 检查是否还有其他活跃IP
+        remaining_count = get_active_session_count()
+        
+        # 如果没有其他活跃IP，可以安全地关闭服务器
+        if remaining_count == 0:
+            shutdown_db_server()
+        
         # Clear session state
         st.session_state.authenticated = False
         st.session_state.username = None
