@@ -30,9 +30,67 @@ The system validates and parses records, stores them in the database, and provid
 
 ## 🏗️ System Architecture
 
-The application is architected around a local client-server model. The Streamlit UI, on startup, launches a dedicated Python-based HTTP server (`remote_db/memdb_port_server.py`) on a user-specific port. This server loads a SQLite database file into memory and exposes endpoints for all database operations (querying, execution, saving, etc.).
+The application follows a **three-layer architecture** with clear separation of concerns:
 
-All core logic in `scripts/` and UI components in `ui/` interact with the database exclusively through a client layer defined in `ui/common.py` and `remote_db/`. This client layer translates function calls into HTTP requests to the local server, effectively decoupling the application logic from direct database file access.
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         UI Layer (ui/)                           │
+│  Streamlit-based web interface for user interactions            │
+│  • Orchestration, navigation, session management                │
+│  • Components, pages, forms, and visualizations                 │
+└────────────────────┬────────────────────────────────────────────┘
+                     │ Calls business logic functions
+                     ↓
+┌─────────────────────────────────────────────────────────────────┐
+│                   Scripts Layer (scripts/)                       │
+│  Business logic and data processing                              │
+│  • HBPR record validation and parsing (CHbpr, HbprDatabase)    │
+│  • Batch processing (HBPRProcessor)                             │
+│  • Command processing (CommandProcessor)                         │
+│  • Data cleaning and utilities                                   │
+└────────────────────┬────────────────────────────────────────────┘
+                     │ Uses database client interface
+                     ↓
+┌─────────────────────────────────────────────────────────────────┐
+│              Remote_db Layer (remote_db/)                        │
+│  Database abstraction and HTTP server/client                     │
+│  • Per-user in-memory database server (HTTP)                    │
+│  • Client libraries (DbPortClient, HbprDatabaseClient)         │
+│  • SQLite connection adapters (RemoteSqliteConnection)          │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Architecture Principles
+
+1. **Separation of Concerns**: Each layer has a distinct responsibility
+2. **Dependency Direction**: UI → Scripts → Remote_db (never backwards)
+3. **Interface Abstraction**: Scripts layer never directly accesses files; always through remote_db client
+4. **Stateless Business Logic**: Scripts layer focuses on pure data processing
+5. **Session Management**: UI layer manages user sessions and application state
+
+### Layer Responsibilities
+
+#### Layer 1: Remote_db (Database Layer)
+**Purpose**: Provides database abstraction via HTTP server/client architecture
+- **Server**: `memdb_port_server.py` - HTTP server managing in-memory SQLite database
+- **Client**: `db_port_client.py` - HTTP client for database operations
+- **Adapter**: `remote_sqlite_adapter.py` - SQLite connection compatibility layer
+- **High-level Client**: `hbpr_database_client.py` - Application-facing database API
+
+#### Layer 2: Scripts (Business Logic Layer)
+**Purpose**: Implements core business logic and data processing
+- **Record Processing**: CHbpr class for individual HBPR validation
+- **Database Operations**: HbprDatabase class for all database CRUD operations
+- **Batch Processing**: HBPRProcessor for file parsing and bulk operations
+- **Command Processing**: CommandProcessor for airline command management
+- **Utilities**: Data cleaning, configuration, and helper functions
+
+#### Layer 3: UI (Presentation Layer)
+**Purpose**: User interface and application orchestration
+- **Coordinator**: `main.py` - Application entry point and navigation
+- **Pages**: Individual feature pages (home, database, process_records, etc.)
+- **Components**: Reusable UI widgets (stats, metrics, selectors)
+- **Connection Management**: `common.py` - Database client lifecycle and session state
 
 ### Core Components
 
@@ -88,129 +146,1340 @@ FlightCheckPy/
 └── resources/                  # Documentation and resources
 ```
 
-### Server and Client Components
+### Component Details by Layer
 
-The client-server architecture consists of several key components that work together:
+---
 
-**Database Server** (`remote_db/memdb_port_server.py`):
-A standard Python `http.server` that loads a SQLite database into memory with simple username-based authentication.
+## 📦 Layer 1: Remote_db (Database Layer)
+
+The database layer provides HTTP-based database abstraction, enabling per-user in-memory database management.
+
+### 1.1 Database Server (`remote_db/memdb_port_server.py`)
+
+**Purpose**: Per-user HTTP server managing in-memory SQLite database
+
+**Key Features**:
+- 每用户独立端口（51201, 51202, 51203）
+- 内存数据库实例管理
+- 简化的用户名登录（无IP绑定、无超时）
+- 自动持久化支持
+
+**HTTP Endpoints**:
 ```python
 class Handler(BaseHTTPRequestHandler):
+    # GET endpoints
     def do_GET(self):
-        # /health - Server health check
-        # /databases/list - List available databases
-        # /auth/status - Get current authentication status
+        # /health - 服务器健康检查
+        # /databases/list - 列出可用数据库文件
+        # /auth/status - 获取当前认证状态
 
+    # POST endpoints
     def do_POST(self):
-        # /database/load - Load SQLite file into memory
-        # /database/backup - Create timestamped backup
-        # /database/save - Persist memory DB to source file
-        # /database/reload - Reload current database from disk
-        # /query - Execute SELECT queries
-        # /exec - Execute DDL/DML operations
-        # /auth/login - Simple username login (idempotent)
-        # /auth/logout - Clear current user login
+        # /database/load - 加载SQLite文件到内存
+        # /database/backup - 创建时间戳备份
+        # /database/save - 持久化内存数据库到源文件
+        # /database/reload - 从磁盘重新加载当前数据库
+        # /query - 执行SELECT查询
+        # /exec - 执行DDL/DML操作
+        # /auth/login - 简单用户名登录（幂等）
+        # /auth/logout - 清除当前用户登录
 ```
 
-**Authentication System**:
-- 简化的用户名登录（无需IP绑定、无超时机制）
-- 支持本地连接(127.0.0.1)和LAN连接（如192.168.x.x）
-- 幂等的登录操作，可重复调用
-- 数据库端点对所有LAN/localhost开放，无需额外验证
-- 服务器控制：UI提供启动、重启、关闭功能
+**Global State**:
+```python
+_conn = None                # 内存数据库连接
+_src_file_path = None       # 源文件路径
+_lock = threading.Lock()    # 线程安全锁
+_current_username = None    # 当前登录用户名
+_login_time = 0.0           # 登录时间戳
+```
 
-**HTTP Client** (`remote_db/db_port_client.py`):
-A minimal client for sending requests to the database server's endpoints.
+### 1.2 HTTP Client (`remote_db/db_port_client.py`)
+
+**Purpose**: Low-level HTTP client for database server communication
+
+**Class Interface**:
 ```python
 class DbPortClient:
     """Minimal HTTP client for the per-port in-memory DB server."""
+    def __init__(self, host: str, port: int):
+        """Initialize client with server host and port."""
+    
+    # Database Operations
     def load_database(self, path: str):     # POST /database/load
     def backup(self):                       # POST /database/backup
     def save(self):                         # POST /database/save
     def reload_database(self):              # POST /database/reload
+    
+    # Query Operations
     def query(self, sql, params):           # POST /query
     def exec(self, sql, params):            # POST /exec
+    
+    # Authentication Operations
     def login_username(self, username: str): # POST /auth/login
     def logout_username(self):              # POST /auth/logout
     def auth_status(self):                  # GET /auth/status
+    
+    # Server Management
+    def shutdown(self):                     # GET /shutdown
 ```
 
-**SQLite Adapter** (`remote_db/remote_sqlite_adapter.py`):
-A crucial compatibility layer that mimics the standard `sqlite3.Connection` and `sqlite3.Cursor` API, but routes all calls through the `DbPortClient` to the HTTP server. This allows existing code that expects a standard `sqlite3` connection object to work seamlessly with the new architecture.
+### 1.3 SQLite Adapter (`remote_db/remote_sqlite_adapter.py`)
+
+**Purpose**: Compatibility layer mimicking sqlite3.Connection API
+
+**Why Needed**: Allows Scripts layer (HbprDatabase, HBPRProcessor) to use standard sqlite3 API while communicating with HTTP server
+
+**Class Interfaces**:
 ```python
 class RemoteSqliteConnection:
     """Minimal connection adapter that proxies SQLite calls to HTTP server."""
+    def __init__(self, client: DbPortClient):
+        """Initialize with DbPortClient instance."""
+    
     def cursor(self) -> RemoteCursor:
-    def execute(self, sql, params):
-    def commit(self):  # No-op for compatibility
-    def close(self):   # No-op for compatibility
+        """Return cursor object for query execution."""
+    
+    def execute(self, sql, params=None):
+        """Execute SQL directly on connection."""
+    
+    def commit(self):
+        """No-op for compatibility (auto-commit mode)."""
+    
+    def close(self):
+        """No-op for compatibility (server manages lifecycle)."""
 
 class RemoteCursor:
     """DB-API–like cursor that proxies to HTTP server."""
-    def execute(self, sql, params):
+    def execute(self, sql, params=None):
+        """Execute SQL query via HTTP client."""
+    
     def fetchall(self):
+        """Fetch all results from last query."""
+    
+    def fetchone(self):
+        """Fetch one result from last query."""
 ```
 
-**High-Level API Client** (`remote_db/hbpr_database_client.py`):
-A client that mirrors the API of the original `HbprDatabase` class, providing a convenient, high-level interface for application code to use. It uses the `RemoteSqliteConnection` internally.
+### 1.4 High-Level Database Client (`remote_db/hbpr_database_client.py`)
+
+**Purpose**: Application-facing database API wrapping low-level client
+
+**Class Interface**:
 ```python
 class HbprDatabaseClient:
     """Thin client mirroring scripts.hbpr_info_processor.HbprDatabase API."""
-    def get_connection(self):  # Returns RemoteSqliteConnection
-    def query_one(self, sql, params):  # Convenience method
-    def query_all(self, sql, params):  # Convenience method
-    def exec(self, sql, params):       # Convenience method
+    def __init__(self, client: DbPortClient):
+        """Initialize with DbPortClient instance."""
+    
+    def get_connection(self) -> RemoteSqliteConnection:
+        """Get connection object for Scripts layer usage."""
+    
+    # Convenience query methods
+    def query_one(self, sql, params=None):
+        """Execute query and return single result."""
+    
+    def query_all(self, sql, params=None):
+        """Execute query and return all results."""
+    
+    def exec(self, sql, params=None):
+        """Execute non-query SQL statement."""
 ```
 
-**UI Connection Management** (`ui/common.py`):
-A set of functions that manage the lifecycle of the database client within the Streamlit UI, storing client instances in the session state to be shared across pages.
+---
+
+## 🔧 Layer 2: Scripts (Business Logic Layer)
+
+The business logic layer implements all core data processing and validation logic.
+
+### 2.1 CHbpr Class - HBPR Record Processing
+
+**Location**: `scripts/hbpr_info_processor.py`
+
+**Purpose**: Processes and validates individual HBPR passenger records, extracting structured data and performing comprehensive validation.
+
+**Design Principle**: Pure business logic class; requires no database connection for validation.
+
+#### Public Attributes
+- `error_msg: Dict[str, List[str]]` - Error messages categorized by type
+- `BoardingNumber: int` - Extracted boarding number
+- `HbnbNumber: int` - HBNB record number
+- `debug_msg: List[str]` - Debug messages for processing
+- `PNR: str` - Passenger Name Record
+- `NAME: str` - Passenger name
+- `SEAT: str` - Seat assignment
+- `CLASS: str` - Travel class (F/C/Y)
+- `DESTINATION: str` - Flight destination
+- `BAG_PIECE: int` - Number of baggage pieces
+- `BAG_WEIGHT: int` - Total baggage weight
+- `BAG_ALLOWANCE: int` - Baggage allowance
+- `FF: str` - Frequent flyer information
+- `PSPT_NAME: str` - Passport name
+- `PSPT_EXP_DATE: str` - Passport expiration date
+- `CKIN_MSG: List[str]` - Check-in messages
+- `ASVC_MSG: List[str]` - Additional service messages
+- `EXPC_PIECE: int` - Excess baggage pieces
+- `EXPC_WEIGHT: int` - Excess baggage weight
+- `ASVC_PIECE: int` - Additional service pieces
+- `FBA_PIECE: int` - Free baggage allowance pieces
+- `IFBA_PIECE: int` - Infant free baggage allowance pieces
+- `FLYER_BENEFIT: int` - Frequent flyer benefits
+- `INBOUND_FLIGHT: str` - Inbound flight information
+- `OUTBOUND_FLIGHT: str` - Outbound flight information
+- `PROPERTIES: List[str]` - Additional properties
+- `IS_CA_FLYER: bool` - Is CA frequent flyer
+- `TKNE: str` - TKNE field value
+
+#### Public Methods
+
 ```python
-# Key functions in ui/common.py
+def __init__(self) -> None:
+    """Initialize CHbpr instance with default values"""
+
+def run(self, HbprContent: str) -> None:
+    """
+    Main processing method for HBPR records
+    
+    Args:
+        HbprContent (str): Raw HBPR record content
+        
+    Raises:
+        Exception: If fatal error occurs during processing
+    """
+
+def is_valid(self) -> bool:
+    """
+    Check if the processed record is valid
+    
+    Returns:
+        bool: True if no errors found, False otherwise
+    """
+
+def get_structured_data(self) -> Dict[str, Any]:
+    """
+    Get all extracted structured data as dictionary
+    
+    Returns:
+        Dict[str, Any]: Complete structured data from HBPR record
+    """
+```
+
+#### Private Methods
+- `__GetHbnbNumber(self) -> bool` - Extract HBNB number from record
+- `__GetPassengerInfo(self) -> bool` - Extract passenger name, boarding number, seat, class, destination
+- `__ExtractStructuredData(self) -> None` - Extract all structured data fields including TKNE
+- `__MatchingBag(self) -> None` - Validate baggage allowance and weight
+- `__GetPassportExp(self) -> None` - Check passport expiration date
+- `__NameMatch(self) -> None` - Validate passenger name consistency
+- `__GetVisaInfo(self) -> None` - Extract visa information
+- `__GetProperties(self) -> None` - Extract additional properties
+- `__GetConnectingFlights(self) -> None` - Extract connecting flight information
+
+### 2.2 HbprDatabase Class - Database Management
+
+**Location**: `scripts/hbpr_info_processor.py`
+
+**Purpose**: Manages all database operations for HBPR records including creation, querying, and maintenance. Operates on a provided database connection.
+
+**Design Principle**: Accepts `sqlite3.Connection` (or RemoteSqliteConnection), making it agnostic to connection type.
+
+#### Attributes
+- `conn: sqlite3.Connection` - The active database connection
+
+#### Constructor
+
+```python
+def __init__(self, conn: sqlite3.Connection) -> None:
+    """
+    Initialize with a database connection.
+    
+    Args:
+        conn (sqlite3.Connection): An active sqlite3 connection object.
+        
+    Raises:
+        ValueError: If the connection object is not provided.
+    """
+```
+
+#### Record Retrieval Methods
+
+```python
+def get_hbpr_record(self, hbnb_number: int) -> str:
+    """
+    Get HBPR record content by HBNB number
+    
+    Args:
+        hbnb_number (int): HBNB number to retrieve
+        
+    Returns:
+        str: Raw HBPR record content
+        
+    Raises:
+        ValueError: If HBNB number not found
+        Exception: If database error occurs
+    """
+```
+
+#### Record Update Methods
+
+```python
+def update_with_chbpr_results(self, chbpr_instance: CHbpr) -> bool:
+    """
+    Update database with CHbpr validation results
+    
+    Args:
+        chbpr_instance (CHbpr): Processed CHbpr instance
+        
+    Returns:
+        bool: True if update successful
+        
+    Raises:
+        ValueError: If HBNB number not found in database
+        Exception: If database error occurs
+    """
+```
+
+#### Statistics Methods
+
+```python
+def get_validation_stats(self) -> Dict[str, int]:
+    """
+    Get validation statistics
+    
+    Returns:
+        Dict[str, int]: Statistics including total_records, validated_records, 
+                       valid_records, invalid_records
+    """
+
+def get_missing_hbnb_numbers(self) -> List[int]:
+    """
+    Get list of missing HBNB numbers
+    
+    Returns:
+        List[int]: Sorted list of missing HBNB numbers
+    """
+
+def get_hbnb_range_info(self) -> Dict[str, int]:
+    """
+    Get HBNB number range information
+    
+    Returns:
+        Dict[str, int]: Range info including min, max, total_expected, total_found
+    """
+
+def get_record_summary(self) -> Dict[str, int]:
+    """
+    Get comprehensive record summary including TKNE count
+    
+    Returns:
+        Dict[str, int]: Summary including full_records, simple_records, 
+                       validated_records, accepted_pax, tkne_count, total_records
+    """
+
+def get_accepted_passengers_stats(self) -> Dict[str, Any]:
+    """
+    Get accepted passengers statistics
+    
+    Returns:
+        Dict[str, Any]: Statistics including total_accepted, min_boarding, 
+                       max_boarding, avg_bag_piece, avg_bag_weight, total_bag_weight
+    """
+
+def get_deleted_passengers_stats(self) -> Dict[str, Any]:
+    """
+    Get comprehensive deleted passenger statistics
+    
+    Returns:
+        Dict[str, Any]: Statistics including:
+            - total_deleted: Total number of deleted passengers
+            - deleted_with_xres: Count of deleted passengers with XRES property
+            - deleted_without_xres: Count of deleted passengers without XRES property
+            - xres_boarding_numbers: List of original boarding numbers for XRES deleted passengers
+            - original_boarding_numbers: List of original boarding numbers for non-XRES deleted passengers
+    """
+
+def get_all_statistics(self) -> Dict[str, Any]:
+    """
+    Get all statistics efficiently
+    
+    Returns:
+        Dict[str, Any]: Complete statistics including hbnb_range_info, 
+                       missing_numbers, accepted_stats, record_summary, deleted_passengers_stats
+    """
+```
+
+#### Record Management Methods
+
+```python
+def check_hbnb_exists(self, hbnb_number: int) -> Dict[str, bool]:
+    """
+    Check if HBNB number exists in database
+    
+    Args:
+        hbnb_number (int): HBNB number to check
+        
+    Returns:
+        Dict[str, bool]: Status including exists, full_record, simple_record
+    """
+
+def create_simple_record(self, hbnb_number: int, record_line: str) -> bool:
+    """
+    Create simple HBPR record
+    
+    Args:
+        hbnb_number (int): HBNB number
+        record_line (str): Simple record content (automatically cleaned)
+        
+    Returns:
+        bool: True if creation successful
+        
+    Features:
+    - Automatic cleaning of record_line using cleanHbprRecordContent()
+    - Prevention of problematic characters in database storage
+    """
+
+def create_full_record(self, hbnb_number: int, record_content: str, 
+                      flight_info_match: bool = True) -> bool:
+    """
+    Create full HBPR record
+    
+    Args:
+        hbnb_number (int): HBNB number
+        record_content (str): Full HBPR record content (automatically cleaned)
+        flight_info_match (bool): Whether to validate flight info
+        
+    Returns:
+        bool: True if creation successful
+        
+    Features:
+    - Automatic cleaning of record_content using cleanHbprRecordContent()
+    - Prevention of problematic characters in database storage
+    """
+
+def delete_simple_record(self, hbnb_number: int) -> bool:
+    """
+    Delete simple HBPR record
+    
+    Args:
+        hbnb_number (int): HBNB number to delete
+        
+    Returns:
+        bool: True if deletion successful
+    """
+
+def update_missing_numbers_table(self) -> bool:
+    """
+    Recalculate and update missing numbers table
+    
+    Returns:
+        bool: True if update successful
+    """
+```
+
+#### Accepted Passengers Methods
+
+```python
+def get_accepted_passengers(self, page: int = 1, page_size: int = 50, 
+                          sort_by: str = 'boarding_number', 
+                          sort_order: str = 'asc',
+                          search_term: str = None,
+                          class_filter: List[str] = None,
+                          ff_level_filter: List[str] = None,
+                          ckin_type_filter: List[str] = None,
+                          properties_filter: List[str] = None) -> Dict[str, Any]:
+    """
+    Get accepted passengers with pagination and filtering
+    
+    Args:
+        page (int): Page number (1-based)
+        page_size (int): Number of records per page
+        sort_by (str): Sort field ('boarding_number', 'name', 'class', etc.)
+        sort_order (str): Sort order ('asc' or 'desc')
+        search_term (str): Search term for name or PNR
+        class_filter (List[str]): Filter by travel class
+        ff_level_filter (List[str]): Filter by frequent flyer level
+        ckin_type_filter (List[str]): Filter by check-in type
+        properties_filter (List[str]): Filter by properties
+        
+    Returns:
+        Dict[str, Any]: Paginated results with metadata
+    """
+
+def get_accepted_passengers_count(self) -> int:
+    """
+    Get total count of accepted passengers
+    
+    Returns:
+        int: Total count of accepted passengers
+    """
+```
+
+#### Flight Information Methods
+
+```python
+def get_flight_info(self) -> Optional[Dict[str, str]]:
+    """
+    Get flight information from database
+    
+    Returns:
+        Optional[Dict[str, str]]: Flight info including flight_id, flight_number, flight_date
+    """
+
+def validate_flight_info_match(self, record_content: str) -> bool:
+    """
+    Validate if record flight info matches database
+    
+    Args:
+        record_content (str): HBPR record content to validate
+        
+    Returns:
+        bool: True if flight info matches
+    """
+```
+
+#### Schema Migration Methods
+
+```python
+def add_is_deleted_field_if_not_exists(self) -> bool:
+    """
+    Add is_deleted field to database schema if not exists and populate with original boarding numbers
+    
+    Returns:
+        bool: True if operation successful
+        
+    Features:
+        - Automatic database schema migration
+        - Parsing of DEL command lines for boarding number extraction using regex pattern \\n\\s+DEL\\s+.*?/BN(\\d+)\\s
+        - Handles existing databases without field
+        - Automatic detection and processing of deleted records
+        - Reprocessing protection for databases after rebuilds
+    """
+
+def get_tkne_count(self) -> int:
+    """
+    Get count of records with TKNE data
+    
+    Returns:
+        int: Count of records with non-null and non-empty TKNE values
+        
+    Note:
+        Returns 0 if TKNE column doesn't exist in database
+    """
+```
+
+### 2.3 HBPRProcessor Class - Batch Processing
+
+**Location**: `scripts/hbpr_list_processor.py`
+
+**Purpose**: Processes HBPR list files, extracts records, and populates a database via a connection, with integrated data cleaning.
+
+**Design Principle**: Accepts `sqlite3.Connection`, making it database-agnostic.
+
+#### Constructor
+
+```python
+def __init__(self, conn: sqlite3.Connection) -> None:
+    """
+    Initialize HBPR processor
+    
+    Args:
+        conn (sqlite3.Connection): An active database connection object.
+    """
+```
+
+#### Public Methods
+
+```python
+def process(self, file_content: str) -> None:
+    """Process file content and populate the database."""
+
+def parse_file_content(self, file_content: str) -> None:
+    """
+    Parse HBPR text file content and extract all records by flight
+    
+    Features:
+    - Integrated data cleaning
+    - Safe handling of problematic characters
+    """
+
+def parse_full_record(self, lines: List[str], start_index: int) -> Tuple[Optional[int], str, int]:
+    """
+    Parse complete HBPR record and extract flight info and HBNB number
+    
+    Args:
+        lines (List[str]): Input HBPR text file lines
+        start_index (int): Starting line index for parsing
+        
+    Returns:
+        Tuple[Optional[int], str, int]: HBNB number, cleaned record content, end index
+        
+    Features:
+    - Automatic cleaning of record_content using cleanHbprRecordContent()
+    - Safe handling of binary/hexadecimal characters
+    """
+
+def find_missing_numbers(self, flight_id: str) -> List[int]:
+    """
+    Find missing HBNB numbers for specified flight
+    
+    Args:
+        flight_id (str): Flight identifier
+        
+    Returns:
+        List[int]: Sorted list of missing HBNB numbers
+    """
+
+def create_tables_if_not_exist(self) -> None:
+    """Create the necessary SQLite tables if they do not exist."""
+
+def store_records(self, flight_id: str) -> None:
+    """
+    Store records in database with data cleaning
+    
+    Args:
+        flight_id (str): Flight identifier
+        
+    Features:
+    - Automatic cleaning of full_records and simple_records before storage
+    - Prevention of problematic characters in database
+    """
+
+def generate_report(self) -> str:
+    """
+    Generate processing report
+    
+    Returns:
+        str: Formatted processing report
+    """
+```
+
+#### Private Methods
+
+```python
+def _assign_simple_records(self) -> None:
+    """Assign simple records to appropriate flights"""
+
+def _parse_flight_info(self, flight_info: str) -> str:
+    """Parse flight information and generate flight ID"""
+
+def _parse_simple_record(self, line: str) -> Optional[int]:
+    """Parse simple HBPR record to extract HBNB number"""
+```
+
+### 2.4 CommandProcessor Class - Airline Commands
+
+**Location**: `scripts/command_processor.py`
+
+**Purpose**: Processes airline command texts, maintains a versioned commands timeline, and validates commands against current flight information. Supports dual SY commands (departure and arrival).
+
+**Design Principle**: Accepts `sqlite3.Connection`, making it database-agnostic.
+
+#### Constructor
+
+```python
+def __init__(self, conn: sqlite3.Connection) -> None:
+    """
+    Initialize with a database connection.
+    
+    Args:
+        conn (sqlite3.Connection): An active sqlite3 connection object.
+        
+    Raises:
+        ValueError: If the connection object is not provided.
+    """
+```
+
+#### Command Parsing Methods
+
+```python
+def parse_commands_from_text(self, text_content: str) -> List[Dict[str, Any]]:
+    """
+    Parse command text and return a list of command dictionaries (merged by command line).
+    
+    Notes:
+        - Supports multi-line content until the next command marker.
+        - Preserves original formatting in `content`.
+    """
+
+def parse_single_command(self, raw_input: str) -> Optional[Dict[str, Any]]:
+    """
+    Parse a single command from raw input.
+    
+    Returns:
+        Optional[Dict[str, Any]]: Parsed command information or None.
+    """
+```
+
+#### Command Validation Methods
+
+```python
+def validate_command(self, command_info: Dict[str, Any]) -> bool:
+    """
+    Validate a command for storage.
+    
+    Behavior:
+        - SY: Always accepted (both departure and arrival). Defines flight info rather than validated against it.
+        - AIRC: Validate aircraft registration against ALL latest SY commands in DB (checks both departure and arrival).
+        - Other commands: Validate flight number/date against database flight info.
+    """
+```
+
+#### Command Storage Methods
+
+```python
+def store_commands(self, commands: List[Dict[str, Any]]) -> Dict[str, int]:
+    """
+    Store commands with timeline/versioning in a single transaction.
+    
+    Returns:
+        Dict[str, int]: Statistics including new, updated, skipped, errors.
+    
+    Features:
+        - Creates `commands` table and indexes if not present.
+        - Updates latest flag and versions on content change.
+        - Skips unmatched commands (e.g., flight mismatch or failed validation).
+        - Supports multiple SY commands (departure and arrival).
+    """
+```
+
+#### Command Retrieval Methods
+
+```python
+def get_all_commands_data(self) -> List[Dict[str, Any]]:
+    """Get latest versions of all commands."""
+
+def get_command_timeline(self, command_full: str) -> List[Dict[str, Any]]:
+    """Get all versions (timeline) for a given command."""
+```
+
+#### Command Deletion Methods
+
+```python
+def delete_latest_version(self, command_full: str) -> bool:
+    """Delete only the latest version; promote previous as latest if exists."""
+
+def delete_command(self, command_full: str) -> bool:
+    """Delete a command and all its versions."""
+```
+
+#### Integration
+- Command parsing helpers are modularized under `scripts/commands_parsing/`:
+  - `sy.py`: Utilities for parsing SY command content and determining flight type (departure/arrival)
+  - `airc.py`: Utilities for parsing AIRC command lines (e.g., aircraft registration extraction)
+
+### 2.5 DataCleaner Utility Functions
+
+**Location**: `scripts/data_cleaner.py`
+
+**Purpose**: Provides comprehensive data cleaning and sanitization utilities to prevent problematic characters from entering the system and ensure safe data export.
+
+**Design Principle**: Pure utility functions; no dependencies on database or UI layers.
+
+#### Text Cleaning Functions
+
+```python
+def clean_text_for_input(text: str, aggressive: bool = False) -> str:
+    """
+    Clean text for input operations, removing control characters and problematic symbols
+    
+    Args:
+        text (str): Input text to clean
+        aggressive (bool): Whether to use aggressive cleaning (removes extended Unicode)
+        
+    Returns:
+        str: Cleaned text safe for processing
+        
+    Features:
+    - Removes ASCII control characters (0-31, 127)
+    - Configurable Unicode handling
+    - Normalizes whitespace and empty lines
+    """
+
+def clean_hbpr_record_content(text: str) -> str:
+    """
+    Clean HBPR record content specifically for database storage
+    
+    Args:
+        text (str): HBPR record content to clean
+        
+    Returns:
+        str: Cleaned HBPR content safe for database storage
+        
+    Features:
+    - Optimized for HBPR record format
+    - Preserves essential formatting
+    - Removes binary/hexadecimal artifacts
+    """
+
+def clean_text_for_database(text: str) -> str:
+    """
+    Clean text for database storage, removing control characters
+    
+    Args:
+        text (str): Text to clean for database
+        
+    Returns:
+        str: Text safe for database storage
+        
+    Features:
+    - Database-specific cleaning rules
+    - Preserves SQL-safe characters
+    - Normalizes text formatting
+    """
+```
+
+#### File Processing Functions
+
+```python
+def validate_and_clean_file_content(file_path: str, encoding: str = 'utf-8') -> Tuple[List[str], bool]:
+    """
+    Read and clean file content, detecting if cleaning was needed
+    
+    Args:
+        file_path (str): Path to file to read and clean
+        encoding (str): File encoding to use
+        
+    Returns:
+        Tuple[List[str], bool]: Cleaned lines and whether cleaning was needed
+        
+    Features:
+    - Automatic file reading with encoding handling
+    - Line-by-line cleaning
+    - Cleaning detection for user awareness
+    - Safe fallback for encoding errors
+    """
+```
+
+#### Database Cleaning Functions
+
+```python
+def clean_database_connection(conn: sqlite3.Connection) -> bool:
+    """
+    Clean all records in specified database via a connection
+    
+    Args:
+        conn (sqlite3.Connection): Connection to the database to clean
+        
+    Returns:
+        bool: True if the operation was successful
+        
+    Features:
+    - Batch cleaning of existing database records
+    - Progress tracking and reporting
+    - Safe database operations
+    - Transaction-based updates
+    """
+```
+
+### 2.6 CArgs Class - Configuration
+
+**Location**: `scripts/general_func.py`
+
+**Purpose**: Provides system configuration and utility functions for flight operations.
+
+**Design Principle**: Pure utility class; stateless configuration helper.
+
+#### Methods
+
+```python
+def SubCls2MainCls(self, Subclass: str) -> str:
+    """
+    Convert sub-class to main class
+    
+    Args:
+        Subclass (str): Sub-class code (F, A, O, J, C, D, R, Z, I)
+        
+    Returns:
+        str: Main class code (F, C, Y)
+    """
+
+def ClassBagWeight(self, MainCls: str) -> int:
+    """
+    Get baggage weight limit by main class
+    
+    Args:
+        MainCls (str): Main class code (F, C, Y)
+        
+    Returns:
+        int: Baggage weight limit in kg
+    """
+
+def InfBagWeight(self) -> int:
+    """
+    Get infant baggage weight allowance
+    
+    Returns:
+        int: Infant baggage weight (23 kg)
+    """
+
+def ForeignGoldFlyerBagWeight(self) -> int:
+    """
+    Get foreign gold frequent flyer baggage weight
+    
+    Returns:
+        int: Foreign gold flyer baggage weight (23 kg)
+    """
+```
+
+---
+
+## 🖥️ Layer 3: UI (Presentation Layer)
+
+The UI layer manages user interactions, session state, and orchestrates calls to the business logic layer.
+
+### 3.1 Connection Management Functions (`ui/common.py`)
+
+**Purpose**: Bridge between UI and Remote_db layer; manages database client lifecycle and session state.
+
+**Design Principle**: Central point for all database access; UI pages never directly import from remote_db or create connections.
+
+#### Server Lifecycle Management
+
+```python
 def ensure_memdb_server(username: str) -> Tuple[bool, int, str]:
     """
     确保指定用户的内存数据库HTTP服务器正在运行
     简化版：不再检查IP，只做用户名登录
-    Returns (ok, port, message).
-    - 如果服务器已运行 → 直接调用登录接口
-    - 否则启动服务器并等待健康检查通过，然后登录
+    
+    Args:
+        username (str): Username for authentication
+        
+    Returns:
+        Tuple[bool, int, str]: (ok, port, message)
+            - ok: True if server started/running successfully
+            - port: Server port number (51201-51203)
+            - message: Success message or error description
+            
+    Behavior:
+        - If server already running → 直接调用登录接口
+        - Otherwise → 启动服务器并等待健康检查通过，然后登录
     """
 
 def logout_current_user() -> Tuple[bool, str]:
     """
     登出当前用户（简化版，不再涉及IP）
-    返回: (success: bool, message: str)
+    
+    Returns:
+        Tuple[bool, str]: (success, message)
+            - success: True if logout successful
+            - message: Result message
     """
 
 def restart_db_server(username: str) -> Tuple[bool, int, str]:
     """
     重启数据库服务器
-    Returns: (ok: bool, port: int, message: str)
+    
+    Args:
+        username (str): Username for re-authentication
+        
+    Returns:
+        Tuple[bool, int, str]: (ok, port, message)
+    """
+
+def shutdown_db_server() -> bool:
+    """
+    关闭当前用户的数据库服务器
+    
+    Returns:
+        bool: True if shutdown successful
     """
 
 def get_server_status(port: int) -> Dict:
     """
     获取服务器状态信息
-    Returns: dict with keys: running (bool), auth_status (dict or None)
+    
+    Args:
+        port (int): Server port number
+        
+    Returns:
+        Dict: Status information with keys:
+            - running (bool): Whether server is running
+            - auth_status (dict or None): Current authentication status
+    """
+```
+
+#### Client Access Functions
+
+```python
+def get_db_port_client() -> Optional[DbPortClient]:
+    """
+    Get/create the low-level DbPortClient (Layer 1 access)
+    
+    Returns:
+        Optional[DbPortClient]: Client instance bound to 127.0.0.1 and session port,
+                               or None if no server running
+                               
+    Notes:
+        - Stored in st.session_state.db_port_client
+        - Reused across pages in same session
     """
 
-def get_db_port_client() -> Optional[DbPortClient]:
-    """Get/create the low-level DbPortClient bound to 127.0.0.1 and session port."""
-
 def get_hbpr_database_client() -> Optional[HbprDatabase]:
-    """Get/create the HbprDatabase instance backed by RemoteSqliteConnection."""
+    """
+    Get/create HbprDatabase instance (Layer 2 access via Layer 1 connection)
+    
+    Returns:
+        Optional[HbprDatabase]: Database instance backed by RemoteSqliteConnection,
+                               or None if no connection available
+                               
+    Notes:
+        - Creates RemoteSqliteConnection internally
+        - Primary interface for UI pages to access business logic
+        - Stored in st.session_state for reuse
+    """
+```
 
+#### Database Operations
+
+```python
 def load_database(file_path: str) -> bool:
-    """Instruct the server to load a database file into memory (resets caches)."""
+    """
+    Instruct server to load database file into memory
+    
+    Args:
+        file_path (str): Absolute path to SQLite database file
+        
+    Returns:
+        bool: True if database loaded successfully
+        
+    Side Effects:
+        - Clears all statistics caches
+        - Resets session state
+        - Updates current_db_name in session state
+    """
 
 def trigger_auto_save() -> bool:
-    """Persist the in-memory database back to its source file and clear unsaved flag."""
+    """
+    Persist in-memory database to source file
+    
+    Returns:
+        bool: True if save successful
+        
+    Notes:
+        - Automatically called after database modifications
+        - Clears unsaved changes flag
+    """
 
 def reload_database_from_disk() -> bool:
-    """Reload the current database from disk to reflect external manual changes."""
-
-def shutdown_db_server() -> bool:
-    """关闭当前用户的数据库服务器"""
+    """
+    Reload database from disk to reflect external changes (hot reload)
+    
+    Returns:
+        bool: True if reload successful
+        
+    Side Effects:
+        - Clears all caches
+        - Refreshes all UI components
+        - Maintains session state (username, port, etc.)
+    """
 ```
+
+#### Utility Functions
+
+```python
+def get_icon_base64(path: str) -> str:
+    """
+    Convert icon file to base64 encoding
+    
+    Args:
+        path (str): Path to icon file
+        
+    Returns:
+        str: Base64 encoded icon data for HTML/CSS embedding
+    """
+
+def apply_global_settings() -> None:
+    """
+    Apply global settings from session state
+    
+    Side Effects:
+        - Sets Streamlit page config
+        - Applies custom CSS
+        - Initializes session state defaults
+    """
+
+def parse_hbnb_input(input_text: str) -> List[int]:
+    """
+    Parse HBNB input supporting single numbers, ranges, and comma-separated lists
+    
+    Args:
+        input_text (str): Input text to parse (e.g., "1,5,10-15,20")
+        
+    Returns:
+        List[int]: List of parsed HBNB numbers
+        
+    Examples:
+        "1,2,3" → [1, 2, 3]
+        "1-5" → [1, 2, 3, 4, 5]
+        "1,5-7,10" → [1, 5, 6, 7, 10]
+    """
+
+def authenticate_user(username: str) -> bool:
+    """
+    Authenticate user using SHA256 hashed username
+    
+    Args:
+        username (str): Username to authenticate
+        
+    Returns:
+        bool: True if authentication successful
+        
+    Notes:
+        - Uses SHA256 hash comparison
+        - Stored hashes in code (3 valid users)
+    """
+```
+
+### 3.2 Main UI Coordinator (`ui/main.py`)
+
+**Purpose**: Application entry point, navigation, and orchestration
+
+#### Main Function
+
+```python
+def main() -> None:
+    """
+    Main UI function - Application entry point
+    
+    Features:
+        - Session state initialization
+        - User authentication management
+        - Centralized database selection with location indicators
+        - Native Windows folder picker for custom database directories
+        - Sidebar navigation with page routing
+        - File cleanup on logout and page navigation
+        - Visual database location indicators (📁 Custom, 🏠 Default, 📄 Root)
+        
+    Session State Variables:
+        - current_page: Currently active page
+        - authenticated: Authentication status
+        - username: Current username
+        - db_service_port: Database server port
+        - current_memory_db: Identifier for in-memory database
+        - current_db_name: Filename of loaded database
+        - custom_db_folder: Custom database folder path
+    """
+```
+
+### 3.3 Login Page (`ui/login_page.py`)
+
+**Purpose**: User authentication and server control interface
+
+#### Main Function
+
+```python
+def show_login_page() -> None:
+    """
+    Display login page with simplified authentication and server control
+    
+    Features:
+        - Fast auto-login check (only checks last used port)
+        - Username-based authentication (no IP tracking)
+        - Logout button for current user
+        - Server control buttons (Start, Restart, Shutdown)
+        - Real-time server status display
+    """
+```
+
+#### Helper Functions
+
+```python
+def _check_auto_login() -> Tuple[bool, Optional[str], Optional[int]]:
+    """
+    快速自动登录检查 - 只检查上次使用的端口
+    
+    Returns:
+        Tuple[bool, Optional[str], Optional[int]]: (should_auto_login, username, port)
+        
+    Features:
+        - Only checks last used port (from session state)
+        - Calls /auth/status endpoint once
+        - Much faster than previous multi-port scan
+        - No IP validation needed
+    """
+
+def _port_for_username(username: str) -> int:
+    """
+    Get port number for given username
+    
+    Args:
+        username (str): Username (or hash)
+        
+    Returns:
+        int: Port number (51201, 51202, or 51203)
+    """
+```
+
+### 3.4 Home Page (`ui/home_page.py`)
+
+**Purpose**: System overview with statistics and quick actions
+
+```python
+def show_home_page() -> None:
+    """
+    Display system overview and quick actions
+    
+    Features:
+        - Database connection status
+        - HBNB range information
+        - Record counts (total, full, simple, validated)
+        - Main statistics display (Max HBNB, Missing Count, Accepted Passengers)
+        - Deleted passengers and missing boarding numbers
+        - Flight information sheet
+        - Refresh and Reload DB buttons
+        - Quick action navigation buttons
+    """
+```
+
+### 3.5 UI Components (`ui/components/`)
+
+#### Main Statistics Component (`ui/components/main_stats.py`)
+
+```python
+def display_main_statistics(all_stats: Dict[str, Any], db: HbprDatabase = None) -> None:
+    """
+    Display main HBPR statistics in reusable format
+    
+    Args:
+        all_stats: Complete statistics dictionary
+        db: Database instance for missing boarding number calculation (optional)
+        
+    Features:
+        - Max HBNB, Missing Count, Accepted Passengers metrics
+        - Unified deleted passenger and missing boarding number display
+        - Two-column layout for compact presentation
+        - Intelligent display logic (info message when no data)
+    """
+
+def get_and_display_main_statistics(db: HbprDatabase) -> Dict[str, Any]:
+    """
+    Get all statistics from database and display them with missing boarding numbers
+    
+    Args:
+        db: HbprDatabase instance
+        
+    Returns:
+        Dict[str, Any]: Complete statistics for additional processing
+        
+    Features:
+        - Single function call for complete statistics display
+        - Integrated missing boarding number calculation
+        - Automatic caching through database layer
+    """
+
+def get_missing_boarding_numbers(db: HbprDatabase) -> List[int]:
+    """
+    Calculate truly missing boarding numbers excluding deleted passengers (pure calculation)
+    
+    Args:
+        db: HbprDatabase instance
+        
+    Returns:
+        List[int]: Truly missing boarding numbers (not including deleted passengers)
+        
+    Features:
+        - Detects discontinuous boarding number sequences
+        - Excludes deleted passenger boarding numbers
+        - Pure calculation function with no UI dependencies
+    """
+
+def display_missing_boarding_numbers(missing_numbers: List[int]) -> None:
+    """
+    Display missing boarding number statistics (pure display function)
+    
+    Args:
+        missing_numbers: List of missing boarding numbers
+        
+    Features:
+        - Intelligent truncation for large lists (40 numbers max)
+        - Separated from calculation logic for modularity
+    """
+```
+
+#### Home Metrics Component (`ui/components/home_metrics.py`)
+
+```python
+def create_or_refresh_views() -> None:
+    """
+    Create views used by home page (idempotent)
+    
+    Views:
+        - vw_home_accepted_counts: Totals for accepted pax, infants, J/Y split
+        - vw_home_flags: ID staff and NOSHOW counts by class, INAD total
+        
+    Features:
+        - Deduplication using COUNT(DISTINCT hbnb_number)
+        - ID staff identification for SA, PAD-2, PAD-SA
+        - NOSHOW calculation excluding XRES and ID staff
+    """
+
+def get_sy_compartments() -> Optional[Tuple[int, int]]:
+    """
+    Find latest SY command matching current flight and parse CNF
+    
+    Returns:
+        Optional[Tuple[int, int]]: (j_compartment, y_compartment) if found
+        
+    Features:
+        - Looks up flight in flight_info table
+        - Finds newest matching SY command (is_latest = 1)
+        - Parses CNF/JxYy patterns
+    """
+
+def get_home_summary() -> Dict[str, Any]:
+    """
+    Get flight summary data for home page display
+    
+    Returns:
+        Dict[str, Any]: Complete flight summary including:
+            - flight_number, flight_date: Flight identification
+            - total_accepted, infant_count: Passenger totals
+            - accepted_business, accepted_economy: Class breakdown
+            - id_j, id_y: ID staff counts by class
+            - noshow_j, noshow_y: No-show counts by class
+            - inad_total: INAD passenger count
+            - j_cnf, y_cnf: Compartment configuration
+            - ratio: Load factor percentage
+    """
+
+def get_debug_summary() -> str:
+    """
+    Get formatted debug summary string with complete boarding number information
+    
+    Returns:
+        str: Formatted debug information including:
+            - Complete deleted passenger boarding number lists
+            - Complete missing boarding number lists
+            - Class breakdown with statistics
+            - Sample records for verification
+            
+    Features:
+        - Complete boarding number lists (no truncation in debug mode)
+        - Comprehensive statistics breakdown
+        - Exception handling with error reporting
+    """
+```
+
+### 3.6 Page-Specific Modules
+
+The following modules are organized under their respective page directories:
+
+#### Database Page Modules (`ui/database/`)
+- `hbpr.py` - HBPR operations (Create, Process, Erase, Save)
+- `commands.py` - Commands operations (Migrate, Clear)
+- `export.py` - Export operations (CSV, TXT)
+- `simple.py` - Simple records management
+- `sort.py` - Record sorting and filtering
+
+#### Process Records Modules (`ui/process_records/`)
+- `info.py` - Processing information and error display
+- `add_hbprs.py` - Update existing DB from HBPR list
+- `edit_hbpr.py` - Single HBPR record editing
+- `add_commands.py` - Command file import
+- `edit_command.py` - Single command editing
+- `timeline.py` - HBPR/Commands timeline with version history
+
+**Note**: Each module follows the same pattern of exposing `show_*` functions that are called by the page orchestrators.
 
 ### Simplified Username-Only Authentication
 
@@ -969,516 +2238,49 @@ ui/
 - `glob` - File pattern matching
 - `time` - Cache timing management
 
-## 📋 Class Specifications
+---
 
-### 1. UI Database Connection Management Functions
+## 🔗 Function Dependencies and Call Hierarchy
 
-**Location**: `ui/common.py`
-
-**Purpose**: Manages the lifecycle of the database client within the Streamlit UI, storing client instances in the session state to be shared across pages.
-
-#### Key Functions
-
-```python
-def ensure_memdb_server(username: str) -> bool:
-    """
-    Starts the memdb_port_server.py process for the user session.
-    Assigns a unique port based on the username to allow for multiple local users.
-    """
-
-def get_db_port_client() -> Optional[DbPortClient]:
-    """
-    Gets or creates the low-level DbPortClient for the current session.
-    This client is responsible for direct HTTP communication with the server.
-    """
-
-def get_hbpr_database_client() -> Optional[HbprDatabaseClient]:
-    """
-    Gets or creates the high-level HbprDatabaseClient for the current session.
-    This is the primary client used by the application logic.
-    """
-
-def load_database(file_path: str) -> bool:
-    """
-    Instructs the server, via the DbPortClient, to load a database file into memory.
-    """
-
-def trigger_auto_save():
-    """
-    Instructs the server to save the current in-memory database back to its source file.
-    """
+### Statistics Management Chain
+```
+HbprDatabase Statistics Integration
+├── get_all_statistics() → Orchestrate all stats
+├── get_record_summary() → Record summary
+├── get_accepted_passengers_stats() → Accepted pax stats
+├── get_hbnb_range_info() → Range info
+├── get_missing_hbnb_numbers() → Missing numbers
+└── Automatic data refresh on DB change
 ```
 
-### 2. CHbpr Class - HBPR Record Processing
-
-**Location**: `scripts/hbpr_info_processor.py`
-
-**Purpose**: Processes and validates individual HBPR passenger records, extracting structured data and performing comprehensive validation.
-
-#### Public Attributes
-- `error_msg: Dict[str, List[str]]` - Error messages categorized by type
-- `BoardingNumber: int` - Extracted boarding number
-- `HbnbNumber: int` - HBNB record number
-- `debug_msg: List[str]` - Debug messages for processing
-- `PNR: str` - Passenger Name Record
-- `NAME: str` - Passenger name
-- `SEAT: str` - Seat assignment
-- `CLASS: str` - Travel class (F/C/Y)
-- `DESTINATION: str` - Flight destination
-- `BAG_PIECE: int` - Number of baggage pieces
-- `BAG_WEIGHT: int` - Total baggage weight
-- `BAG_ALLOWANCE: int` - Baggage allowance
-- `FF: str` - Frequent flyer information
-- `PSPT_NAME: str` - Passport name
-- `PSPT_EXP_DATE: str` - Passport expiration date
-- `CKIN_MSG: List[str]` - Check-in messages
-- `ASVC_MSG: List[str]` - Additional service messages
-- `EXPC_PIECE: int` - Excess baggage pieces
-- `EXPC_WEIGHT: int` - Excess baggage weight
-- `ASVC_PIECE: int` - Additional service pieces
-- `FBA_PIECE: int` - Free baggage allowance pieces
-- `IFBA_PIECE: int` - Infant free baggage allowance pieces
-- `FLYER_BENEFIT: int` - Frequent flyer benefits
-- `INBOUND_FLIGHT: str` - Inbound flight information
-- `OUTBOUND_FLIGHT: str` - Outbound flight information
-- `PROPERTIES: List[str]` - Additional properties
-- `IS_CA_FLYER: bool` - Is CA frequent flyer
-- `TKNE: str` - TKNE field value
-
-#### Methods
-
-```python
-def __init__(self) -> None:
-    """Initialize CHbpr instance with default values"""
-
-def run(self, HbprContent: str) -> None:
-    """
-    Main processing method for HBPR records
-    
-    Args:
-        HbprContent (str): Raw HBPR record content
-        
-    Raises:
-        Exception: If fatal error occurs during processing
-    """
-
-def is_valid(self) -> bool:
-    """
-    Check if the processed record is valid
-    
-    Returns:
-        bool: True if no errors found, False otherwise
-    """
-
-def get_structured_data(self) -> Dict[str, Any]:
-    """
-    Get all extracted structured data as dictionary
-    
-    Returns:
-        Dict[str, Any]: Complete structured data from HBPR record
-    """
+### CHbpr Processing Chain
+```
+CHbpr.run()
+├── __GetHbnbNumber()
+├── __GetPassengerInfo()
+└── __ExtractStructuredData()
+    ├── __PsptName()
+    ├── __RegularBags()
+    ├── __GetChkBag()
+    ├── __FlyerBenifit()
+    ├── __CaptureCkin()
+    └── TKNE extraction
 ```
 
-#### Private Methods
-
-```python
-def __GetHbnbNumber(self) -> bool:
-    """Extract HBNB number from record"""
-
-def __GetPassengerInfo(self) -> bool:
-    """Extract passenger name, boarding number, seat, class, destination"""
-
-def __ExtractStructuredData(self) -> None:
-    """Extract all structured data fields including TKNE"""
-
-def __MatchingBag(self) -> None:
-    """Validate baggage allowance and weight"""
-
-def __GetPassportExp(self) -> None:
-    """Check passport expiration date"""
-
-def __NameMatch(self) -> None:
-    """Validate passenger name consistency"""
-
-def __GetVisaInfo(self) -> None:
-    """Extract visa information"""
-
-def __GetProperties(self) -> None:
-    """Extract additional properties"""
-
-def __GetConnectingFlights(self) -> None:
-    """Extract connecting flight information"""
+### Database Operations Chain
+```
+get_hbpr_database_client()
+├── HbprDatabase instance
+│   ├── get_hbpr_record()
+│   └── update_with_chbpr_results()
+└── HBPRProcessor.process()
+    ├── parse_file_content()
+    └── store_records()
 ```
 
-### 3. HbprDatabase Class - Database Management
-
-**Location**: `scripts/hbpr_info_processor.py`
-
-**Purpose**: Manages all database operations for HBPR records including creation, querying, and maintenance. Operates on a provided database connection.
-
-#### Attributes
-- `conn: sqlite3.Connection` - The active database connection.
-
-#### Methods
-
-```python
-def __init__(self, conn: sqlite3.Connection) -> None:
-    """
-    Initialize with a database connection.
-    
-    Args:
-        conn (sqlite3.Connection): An active sqlite3 connection object.
-        
-    Raises:
-        ValueError: If the connection object is not provided.
-    """
-
-def get_hbpr_record(self, hbnb_number: int) -> str:
-    """
-    Get HBPR record content by HBNB number
-    
-    Args:
-        hbnb_number (int): HBNB number to retrieve
-        
-    Returns:
-        str: Raw HBPR record content
-        
-    Raises:
-        ValueError: If HBNB number not found
-        Exception: If database error occurs
-    """
-
-def update_with_chbpr_results(self, chbpr_instance: CHbpr) -> bool:
-    """
-    Update database with CHbpr validation results
-    
-    Args:
-        chbpr_instance (CHbpr): Processed CHbpr instance
-        
-    Returns:
-        bool: True if update successful
-        
-    Raises:
-        ValueError: If HBNB number not found in database
-        Exception: If database error occurs
-    """
-
-def get_validation_stats(self) -> Dict[str, int]:
-    """
-    Get validation statistics
-    
-    Returns:
-        Dict[str, int]: Statistics including total_records, validated_records, 
-                       valid_records, invalid_records
-    """
-
-def get_missing_hbnb_numbers(self) -> List[int]:
-    """
-    Get list of missing HBNB numbers
-    
-    Returns:
-        List[int]: Sorted list of missing HBNB numbers
-    """
-
-def get_hbnb_range_info(self) -> Dict[str, int]:
-    """
-    Get HBNB number range information
-    
-    Returns:
-        Dict[str, int]: Range info including min, max, total_expected, total_found
-    """
-
-def check_hbnb_exists(self, hbnb_number: int) -> Dict[str, bool]:
-    """
-    Check if HBNB number exists in database
-    
-    Args:
-        hbnb_number (int): HBNB number to check
-        
-    Returns:
-        Dict[str, bool]: Status including exists, full_record, simple_record
-    """
-
-def create_simple_record(self, hbnb_number: int, record_line: str) -> bool:
-    """
-    Create simple HBPR record
-    
-    Args:
-        hbnb_number (int): HBNB number
-        record_line (str): Simple record content (automatically cleaned)
-        
-    Returns:
-        bool: True if creation successful
-        
-    Features:
-    - Automatic cleaning of record_line using cleanHbprRecordContent()
-    - Prevention of problematic characters in database storage
-    """
-
-def create_full_record(self, hbnb_number: int, record_content: str, 
-                      flight_info_match: bool = True) -> bool:
-    """
-    Create full HBPR record
-    
-    Args:
-        hbnb_number (int): HBNB number
-        record_content (str): Full HBPR record content (automatically cleaned)
-        flight_info_match (bool): Whether to validate flight info
-        
-    Returns:
-        bool: True if creation successful
-        
-    Features:
-    - Automatic cleaning of record_content using cleanHbprRecordContent()
-    - Prevention of problematic characters in database storage
-    """
-
-def delete_simple_record(self, hbnb_number: int) -> bool:
-    """
-    Delete simple HBPR record
-    
-    Args:
-        hbnb_number (int): HBNB number to delete
-        
-    Returns:
-        bool: True if deletion successful
-    """
-
-def update_missing_numbers_table(self) -> bool:
-    """
-    Recalculate and update missing numbers table
-    
-    Returns:
-        bool: True if update successful
-    """
-
-def get_flight_info(self) -> Optional[Dict[str, str]]:
-    """
-    Get flight information from database
-    
-    Returns:
-        Optional[Dict[str, str]]: Flight info including flight_id, flight_number, flight_date
-    """
-
-def validate_flight_info_match(self, record_content: str) -> bool:
-    """
-    Validate if record flight info matches database
-    
-    Args:
-        record_content (str): HBPR record content to validate
-        
-    Returns:
-        bool: True if flight info matches
-    """
-
-def get_record_summary(self) -> Dict[str, int]:
-    """
-    Get comprehensive record summary including TKNE count
-    
-    Returns:
-        Dict[str, int]: Summary including full_records, simple_records, 
-                       validated_records, accepted_pax, tkne_count, total_records
-    """
-
-def get_accepted_passengers(self, page: int = 1, page_size: int = 50, 
-                          sort_by: str = 'boarding_number', 
-                          sort_order: str = 'asc',
-                          search_term: str = None,
-                          class_filter: List[str] = None,
-                          ff_level_filter: List[str] = None,
-                          ckin_type_filter: List[str] = None,
-                          properties_filter: List[str] = None) -> Dict[str, Any]:
-    """
-    Get accepted passengers with pagination and filtering
-    
-    Args:
-        page (int): Page number (1-based)
-        page_size (int): Number of records per page
-        sort_by (str): Sort field ('boarding_number', 'name', 'class', etc.)
-        sort_order (str): Sort order ('asc' or 'desc')
-        search_term (str): Search term for name or PNR
-        class_filter (List[str]): Filter by travel class
-        ff_level_filter (List[str]): Filter by frequent flyer level
-        ckin_type_filter (List[str]): Filter by check-in type
-        properties_filter (List[str]): Filter by properties
-        
-    Returns:
-        Dict[str, Any]: Paginated results with metadata
-    """
-
-def get_accepted_passengers_count(self) -> int:
-    """
-    Get total count of accepted passengers
-    
-    Returns:
-        int: Total count of accepted passengers
-    """
-
-def get_accepted_passengers_stats(self) -> Dict[str, Any]:
-    """
-    Get accepted passengers statistics
-    
-    Returns:
-        Dict[str, Any]: Statistics including total_accepted, min_boarding, 
-                       max_boarding, avg_bag_piece, avg_bag_weight, total_bag_weight
-    """
-
-def get_tkne_count(self) -> int:
-    """
-    Get count of records with TKNE data
-    
-    Returns:
-        int: Count of records with non-null and non-empty TKNE values
-        
-    Note:
-        Returns 0 if TKNE column doesn't exist in database
-    """
-
-def get_all_statistics(self) -> Dict[str, Any]:
-    """
-    Get all statistics efficiently
-    
-    Returns:
-        Dict[str, Any]: Complete statistics including hbnb_range_info, 
-                       missing_numbers, accepted_stats, record_summary, deleted_passengers_stats
-    """
-
-def get_deleted_passengers_stats(self) -> Dict[str, Any]:
-    """
-    Get comprehensive deleted passenger statistics
-    
-    Returns:
-        Dict[str, Any]: Statistics including:
-            - total_deleted: Total number of deleted passengers
-            - deleted_with_xres: Count of deleted passengers with XRES property
-            - deleted_without_xres: Count of deleted passengers without XRES property
-            - xres_boarding_numbers: List of original boarding numbers for XRES deleted passengers
-            - original_boarding_numbers: List of original boarding numbers for non-XRES deleted passengers
-    """
-
-def add_is_deleted_field_if_not_exists(self) -> bool:
-    """
-    Add is_deleted field to database schema if not exists and populate with original boarding numbers
-    
-    Returns:
-        bool: True if operation successful
-        
-    Features:
-        - Automatic database schema migration
-        - Parsing of DEL command lines for boarding number extraction using regex pattern \\n\\s+DEL\\s+.*?/BN(\\d+)\\s
-        - Handles existing databases without field
-        - Automatic detection and processing of deleted records
-        - Reprocessing protection for databases after rebuilds
-    """
+### UI Processing Chain
 ```
-
-### 4. CommandProcessor Class - Airline Commands
-
-**Location**: `scripts/command_processor.py`
-
-**Purpose**: Processes airline command texts, maintains a versioned commands timeline, and validates commands against current flight information. Supports dual SY commands (departure and arrival).
-
-#### Methods
-
-```python
-def __init__(self, conn: sqlite3.Connection) -> None:
-    """
-    Initialize with a database connection.
-    
-    Args:
-        conn (sqlite3.Connection): An active sqlite3 connection object.
-        
-    Raises:
-        ValueError: If the connection object is not provided.
-    """
-
-def parse_commands_from_text(self, text_content: str) -> List[Dict[str, Any]]:
-    """
-    Parse command text and return a list of command dictionaries (merged by command line).
-    
-    Notes:
-        - Supports multi-line content until the next command marker.
-        - Preserves original formatting in `content`.
-    """
-
-def parse_single_command(self, raw_input: str) -> Optional[Dict[str, Any]]:
-    """
-    Parse a single command from raw input.
-    
-    Returns:
-        Optional[Dict[str, Any]]: Parsed command information or None.
-    """
-
-def validate_command(self, command_info: Dict[str, Any]) -> bool:
-    """
-    Validate a command for storage.
-    
-    Behavior:
-        - SY: Always accepted (both departure and arrival). Defines flight info rather than validated against it.
-        - AIRC: Validate aircraft registration against ALL latest SY commands in DB (checks both departure and arrival).
-        - Other commands: Validate flight number/date against database flight info.
-    """
-
-def store_commands(self, commands: List[Dict[str, Any]]) -> Dict[str, int]:
-    """
-    Store commands with timeline/versioning in a single transaction.
-    
-    Returns:
-        Dict[str, int]: Statistics including new, updated, skipped, errors.
-    
-    Features:
-        - Creates `commands` table and indexes if not present.
-        - Updates latest flag and versions on content change.
-        - Skips unmatched commands (e.g., flight mismatch or failed validation).
-        - Supports multiple SY commands (departure and arrival).
-    """
-
-def get_all_commands_data(self) -> List[Dict[str, Any]]:
-    """Get latest versions of all commands."""
-
-def get_command_timeline(self, command_full: str) -> List[Dict[str, Any]]:
-    """Get all versions (timeline) for a given command."""
-
-def delete_latest_version(self, command_full: str) -> bool:
-    """Delete only the latest version; promote previous as latest if exists."""
-
-def delete_command(self, command_full: str) -> bool:
-    """Delete a command and all its versions."""
-```
-
-#### Integration
-- Command parsing helpers are modularized under `scripts/commands_parsing/`:
-  - `sy.py`: Utilities for parsing SY command content and determining flight type (departure/arrival).
-    - `extract_reg_from_sy_content()`: Extract aircraft registration from SY content.
-    - `get_sy_flight_type()`: Determine if SY is departure or arrival based on configurable airport code.
-    - `is_departure_sy()`: Check if SY command is for departure flight.
-    - Configuration loaded from `scripts/database_schema.json` (config.departure_airport_code).
-  - `airc.py`: Utilities for parsing AIRC command lines (e.g., aircraft registration extraction).
-- UI `edit_command.py` invokes input cleaning (`clean_text_for_input`) before parsing and uses `validate_command()` for unified validation.
-
-#### Dual SY Support
-- System supports both departure and arrival SY commands simultaneously
-- Departure SY: Contains configured departure airport code (e.g., LAX) in command_full
-- Arrival SY: Contains different destination airport code (e.g., PEK) in command_full
-- Both SY types have identical compartment configurations
-- AIRC validation checks aircraft registration against both SY types
-- Configuration: departure_airport_code in database_schema.json
-
-### 5. HBPRProcessor Class - Batch Processing
-
-**Location**: `scripts/hbpr_list_processor.py`
-
-**Purpose**: Processes HBPR list files, extracts records, and populates a database via a connection, with integrated data cleaning.
-
-#### Methods
-
-```python
-def __init__(self, conn: sqlite3.Connection) -> None:
-    """
-    Initialize HBPR processor
-    
-    Args:
-        conn (sqlite3.Connection): An active database connection object.
+main()
     """
 
 def process(self, file_content: str) -> None:
@@ -2202,55 +3004,277 @@ main()
 
 ## 📊 Data Flow and Processing Pipeline
 
-### 1. File Processing Pipeline
+This section illustrates how data flows through the three-layer architecture.
+
+### Cross-Layer Communication Pattern
+
 ```
-Input File → Data Cleaning → HBPRProcessor → In-Memory Database Population → CHbpr Validation → UI Display
+┌─────────────────────────────────────────────────────────┐
+│ UI Layer (ui/)                                           │
+│  - User action triggers UI function                     │
+└────────────────────┬────────────────────────────────────┘
+                     │ get_hbpr_database_client()
+                     ↓
+┌─────────────────────────────────────────────────────────┐
+│ UI Common (ui/common.py)                                 │
+│  - Manages DbPortClient lifecycle                       │
+│  - Creates RemoteSqliteConnection                       │
+└────────────────────┬────────────────────────────────────┘
+                     │ Returns HbprDatabase(conn)
+                     ↓
+┌─────────────────────────────────────────────────────────┐
+│ Scripts Layer (scripts/)                                 │
+│  - HbprDatabase/CHbpr/HBPRProcessor with conn           │
+│  - Business logic execution                             │
+└────────────────────┬────────────────────────────────────┘
+                     │ conn.execute() / conn.cursor()
+                     ↓
+┌─────────────────────────────────────────────────────────┐
+│ Remote_db Layer (remote_db/)                            │
+│  - RemoteSqliteConnection translates to HTTP            │
+│  - DbPortClient sends HTTP request                      │
+│  - Server executes on in-memory SQLite                  │
+└─────────────────────────────────────────────────────────┘
 ```
 
-**Data Cleaning Integration**:
-- **File Reading**: `validateAndCleanFileContent()` removes problematic characters during file parsing
-- **Record Processing**: `cleanHbprRecordContent()` sanitizes individual records before database storage
-- **Storage**: Clean data stored in database, preventing future export issues
+### 1. File Processing Pipeline (Complete Flow)
 
-### 2. Manual Input Pipeline
-```
-UI Input → Data Cleaning → Validation → In-Memory Database Update → Auto-Save → UI Update
-```
+**Layers Involved**: UI → Scripts → Remote_db
 
-**Data Cleaning Integration**:
-- **User Input**: `cleanHbprRecordContent()` sanitizes manual input immediately
-- **Validation**: Clean data validated before database storage
-- **Storage**: Sanitized data stored, preventing future issues
+```
+[UI Layer]
+User uploads file
+  ↓
+ui/database/hbpr.py: create_db_from_content()
+  ↓ calls
+ui/common.py: get_hbpr_database_client()
+  → Returns HbprDatabase instance with RemoteSqliteConnection
 
-### 3. Authentication Flow
-```
-Login Page → SHA256 Hash → Validation → Session State → Authenticated UI
-```
+[Scripts Layer]
+HBPRProcessor(conn).process(file_content)
+  ↓ Data cleaning
+scripts/data_cleaner.py: clean_hbpr_record_content()
+  ↓ Database operations
+HBPRProcessor.store_records() → conn.execute()
+  ↓ Validation
+CHbpr.run() processes each record
+HbprDatabase.update_with_chbpr_results()
 
-### 4. Database Folder Selection Flow
-```
-Folder Picker Button → Native Windows Dialog → Path Selection → Session Storage → Database Discovery → UI Refresh
-```
+[Remote_db Layer]
+RemoteSqliteConnection.execute()
+  → DbPortClient.exec()
+  → HTTP POST /exec
+  → memdb_port_server.py executes on _conn
+  → Response back through layers
 
-### 5. Accepted Passengers Processing Pipeline
-```
-In-Memory DB Query → Filter by boarding_number IS NOT NULL → Apply Filters → Pagination → Statistics Calculation → UI Display
-```
-
-### 6. TKNE-Based Acceptance Rate Calculation (availability-aware)
-```
-In-Memory DB Query → Count records with TKNE IS NOT NULL AND TKNE != '' (fallback to 0 if column missing) → Count accepted passengers → Calculate rate → UI Display
-```
-
-### 7. Data Export Pipeline with Cleaning
-```
-In-Memory DB Query → Data Extraction → Data Cleaning/Formatting → File Generation → Download
+[UI Layer]
+ui/common.py: trigger_auto_save()
+  → HTTP POST /database/save
+  → Persists to disk
+UI displays results
 ```
 
-**Data Cleaning Integration**:
-- **Export Preparation**: `export_as_origin_txt` now exports data from both commands and hbpr_full_records tables, with commands content appearing first.
-- **Format Safety**: Ensures compatibility with spreadsheet applications
-- **Data Integrity**: Preserves essential information while removing problematic characters
+### 2. Manual Record Editing Pipeline
+
+**Layers Involved**: UI → Scripts → Remote_db
+
+```
+[UI Layer]
+ui/process_records/edit_hbpr.py: User edits record
+  ↓ Data cleaning
+scripts/data_cleaner.py: clean_text_for_input()
+  ↓
+ui/common.py: get_hbpr_database_client()
+
+[Scripts Layer]
+CHbpr.run(cleaned_content)
+  ↓ Validation
+CHbpr.is_valid()
+  ↓
+HbprDatabase.update_with_chbpr_results(chbpr)
+  → conn.execute() via RemoteSqliteConnection
+
+[Remote_db Layer]
+RemoteSqliteConnection → DbPortClient → HTTP
+memdb_port_server.py executes UPDATE
+
+[UI Layer]
+Auto-save triggered
+UI refreshes display
+```
+
+### 3. Statistics Retrieval Pipeline
+
+**Layers Involved**: UI → Scripts → Remote_db
+
+```
+[UI Layer]
+ui/home_page.py: Display statistics
+  ↓
+ui/components/main_stats.py: get_and_display_main_statistics()
+  ↓
+ui/common.py: get_hbpr_database_client()
+
+[Scripts Layer]
+HbprDatabase.get_all_statistics()
+  ↓ Multiple queries
+  - get_record_summary()
+  - get_accepted_passengers_stats()
+  - get_missing_hbnb_numbers()
+  - get_deleted_passengers_stats()
+  ↓
+conn.cursor().execute() multiple times
+
+[Remote_db Layer]
+Each query:
+  RemoteSqliteConnection.cursor().execute()
+  → DbPortClient.query()
+  → HTTP POST /query
+  → memdb_port_server.py executes SELECT
+  → Returns results as JSON
+  → Back through layers to UI
+
+[UI Layer]
+ui/components/main_stats.py: display_main_statistics()
+  → Streamlit widgets display metrics
+```
+
+### 4. Authentication and Server Lifecycle
+
+**Layers Involved**: UI → Remote_db (Scripts not involved)
+
+```
+[UI Layer]
+ui/login_page.py: User enters username
+  ↓
+ui/common.py: ensure_memdb_server(username)
+  ↓
+Checks if server is running on user's port
+  ↓
+If not running:
+  subprocess.Popen([python, memdb_port_server.py, --port, PORT])
+  ↓
+Wait for health check
+
+[Remote_db Layer]
+memdb_port_server.py starts
+  - Initializes global state
+  - Binds to port
+  - Ready to accept requests
+
+[UI Layer]
+ui/common.py: DbPortClient(host, port)
+  ↓
+client.login_username(username)
+
+[Remote_db Layer]
+HTTP POST /auth/login
+  → Sets _current_username = username
+  → Returns success
+
+[UI Layer]
+Session state updated
+  - st.session_state.authenticated = True
+  - st.session_state.username = username
+  - st.session_state.db_service_port = port
+Main UI displays
+```
+
+### 5. Database Loading Pipeline
+
+**Layers Involved**: UI → Remote_db
+
+```
+[UI Layer]
+ui/main.py: Database selector
+  ↓
+User selects database file
+  ↓
+ui/common.py: load_database(file_path)
+  ↓
+get_db_port_client()
+
+[Remote_db Layer]
+DbPortClient.load_database(file_path)
+  → HTTP POST /database/load
+  → memdb_port_server.py:
+      1. Opens SQLite file
+      2. Creates in-memory database (:memory:)
+      3. Copies all tables to memory
+      4. Stores _src_file_path
+      5. Returns success
+
+[UI Layer]
+Clear all caches
+  - Statistics cache
+  - Component caches
+Session state updated with database name
+UI displays new database data
+```
+
+### 6. Hot Database Reload Pipeline
+
+**Layers Involved**: UI → Remote_db
+
+```
+[UI Layer]
+ui/home_page.py: User clicks "📥 Reload DB"
+  ↓
+ui/common.py: reload_database_from_disk()
+
+[Remote_db Layer]
+DbPortClient.reload_database()
+  → HTTP POST /database/reload
+  → memdb_port_server.py:
+      1. Checks _src_file_path exists
+      2. Re-reads file from disk
+      3. Drops all in-memory tables
+      4. Re-copies everything to memory
+      5. Returns success
+
+[UI Layer]
+Clear all caches (statistics, components)
+st.rerun() refreshes entire UI
+All components show updated data
+```
+
+### 7. Data Export Pipeline
+
+**Layers Involved**: UI → Scripts → Remote_db
+
+```
+[UI Layer]
+ui/database/export.py: User clicks export
+  ↓
+ui/common.py: get_hbpr_database_client()
+
+[Scripts Layer]
+HbprDatabase.get_connection()
+  → Returns RemoteSqliteConnection
+
+[Remote_db Layer]
+Multiple queries via RemoteSqliteConnection:
+  - SELECT * FROM commands WHERE is_latest = 1
+  - SELECT * FROM hbpr_full_records
+  → All via HTTP POST /query
+
+[Scripts Layer]
+Data formatting and cleaning:
+  - scripts/data_cleaner.py functions
+  - Convert to CSV/TXT format
+
+[UI Layer]
+Generate download link
+User downloads file
+```
+
+### Key Design Patterns
+
+1. **Layer Isolation**: UI never imports from Scripts directly; always through common.py
+2. **Connection Injection**: Scripts receive connection objects, don't create them
+3. **HTTP Transparency**: Scripts layer unaware it's using HTTP (via RemoteSqliteConnection)
+4. **State Management**: UI layer (common.py) manages all session state and client lifecycle
+5. **Cache Control**: UI layer responsible for cache invalidation on data changes
 
 ## Centralized Schema and Migration
 
@@ -2721,33 +3745,214 @@ except sqlite3.OperationalError:
 
 This technical documentation provides comprehensive information about the HBPR Processing System's dual architecture approach with enhanced modular UI design:
 
-## 🏗️ Architecture Summary
+## 🏗️ Architecture Summary and Best Practices
 
-### Local SQLite Architecture (Default)
-- **Best for**: Single-user applications, development, offline usage
-- **Features**: Direct file access, immediate persistence, no network setup
-- **Location**: `ui/components/database_manager.py`
-- **Performance**: Highest performance for local operations
+### Three-Layer Architecture Overview
 
-### Remote HTTP Architecture (Alternative)
-- **Best for**: Multi-user environments, LAN deployments, centralized management
-- **Features**: Network-based access, user isolation, scalable deployment, pandas compatibility
-- **Location**: `remote_db/` directory
-- **Performance**: Network latency overhead, suitable for distributed systems
+The Flight Data Processing System follows a strict **three-layer architecture** designed for maintainability, scalability, and clear separation of concerns:
 
-### Unified API
-Both architectures provide identical APIs, allowing seamless switching between local and remote database operations without code changes. The system automatically detects available architecture and provides transparent operation.
+```
+┌──────────────────────────────────────────────────┐
+│  Layer 3: UI (Presentation)                      │
+│  • Streamlit interface                           │
+│  • User interactions                             │
+│  • Session management                            │
+│  • Navigation and orchestration                  │
+└──────────────┬───────────────────────────────────┘
+               │ Dependency: UI → Scripts
+               ↓
+┌──────────────────────────────────────────────────┐
+│  Layer 2: Scripts (Business Logic)               │
+│  • Data validation and processing                │
+│  • Business rules enforcement                    │
+│  • Core algorithms                               │
+│  • Database operations (via connection objects)  │
+└──────────────┬───────────────────────────────────┘
+               │ Dependency: Scripts → Remote_db
+               ↓
+┌──────────────────────────────────────────────────┐
+│  Layer 1: Remote_db (Database)                   │
+│  • HTTP server/client architecture               │
+│  • In-memory SQLite management                   │
+│  • Connection abstraction                        │
+│  • Database lifecycle management                 │
+└──────────────────────────────────────────────────┘
+```
 
-### Enhanced Features (Version 0.63)
-- **Modular UI Architecture**: Organized tab-based interfaces with separate sub-modules for maintainability
-- **Remote Database Compatibility**: Seamless pandas integration with custom connection objects
-- **Streamlined Navigation**: Consolidated Process Records page with integrated command functionality
-- **Automatic Persistence**: Changes saved to disk automatically
-- **Data Cleaning**: Comprehensive sanitization at input, storage, and export
-- **Statistics Caching**: Efficient data retrieval with automatic invalidation
-- **UI Components**: Reusable, modular interface components
-- **Error Handling**: Robust exception management across all layers
-- **Cross-Platform**: Windows-native folder picker and path handling
-- **Hot Database Reload**: Real-time database synchronization when files are manually modified
+### Layer Characteristics
 
-The system is designed for flexibility, allowing deployment in both traditional single-user environments and modern distributed, multi-user architectures with a clean, maintainable codebase structure.
+#### Layer 1: Remote_db (Foundation)
+- **Responsibility**: Database abstraction and HTTP communication
+- **Key Files**: `memdb_port_server.py`, `db_port_client.py`, `remote_sqlite_adapter.py`, `hbpr_database_client.py`
+- **Dependencies**: None (depends only on Python standard library and sqlite3)
+- **Interface**: Exposes HTTP endpoints and client classes
+- **State**: Manages in-memory database state, user authentication
+
+#### Layer 2: Scripts (Business Logic)
+- **Responsibility**: Core business logic and data processing
+- **Key Files**: `hbpr_info_processor.py`, `hbpr_list_processor.py`, `command_processor.py`, `data_cleaner.py`
+- **Dependencies**: Remote_db layer (receives connection objects)
+- **Interface**: Exposes classes (CHbpr, HbprDatabase, HBPRProcessor, CommandProcessor)
+- **State**: Stateless processing; all state in database
+
+#### Layer 3: UI (Presentation)
+- **Responsibility**: User interface and application orchestration
+- **Key Files**: `main.py`, `common.py`, page files, component files
+- **Dependencies**: Scripts layer (via common.py bridge), Remote_db layer (for lifecycle management)
+- **Interface**: Streamlit web interface
+- **State**: Session state (st.session_state), component caches
+
+### Development Best Practices
+
+#### ✅ DO: Follow Layer Boundaries
+
+```python
+# ✅ CORRECT: UI calls Scripts via connection from Remote_db
+from ui.common import get_hbpr_database_client
+from scripts.hbpr_info_processor import CHbpr
+
+db = get_hbpr_database_client()  # Remote_db connection
+chbpr = CHbpr()                   # Scripts layer
+chbpr.run(content)
+db.update_with_chbpr_results(chbpr)
+```
+
+```python
+# ❌ INCORRECT: UI directly imports and uses Scripts without proper connection
+from scripts.hbpr_info_processor import HbprDatabase
+import sqlite3
+
+conn = sqlite3.connect("database.db")  # Bypasses Remote_db layer!
+db = HbprDatabase(conn)                 # Breaks architecture
+```
+
+#### ✅ DO: Use Connection Injection
+
+```python
+# ✅ CORRECT: Scripts receive connection objects
+class HbprDatabase:
+    def __init__(self, conn: sqlite3.Connection):
+        self.conn = conn  # Agnostic to connection type
+
+# ✅ CORRECT: UI provides RemoteSqliteConnection
+conn = get_hbpr_database_client().get_connection()
+processor = HBPRProcessor(conn)
+```
+
+```python
+# ❌ INCORRECT: Scripts create their own connections
+class HbprDatabase:
+    def __init__(self, db_path: str):
+        self.conn = sqlite3.connect(db_path)  # Breaks abstraction!
+```
+
+#### ✅ DO: Manage State in UI Layer
+
+```python
+# ✅ CORRECT: UI layer manages all session state
+def show_page():
+    if 'db_client' not in st.session_state:
+        st.session_state.db_client = get_hbpr_database_client()
+    
+    db = st.session_state.db_client
+    stats = db.get_all_statistics()
+```
+
+```python
+# ❌ INCORRECT: Scripts layer manages UI state
+class HbprDatabase:
+    def __init__(self, conn):
+        self.conn = conn
+        self.ui_cache = {}  # NO! Scripts should be stateless
+```
+
+#### ✅ DO: Use ui/common.py as Bridge
+
+```python
+# ✅ CORRECT: All database access through common.py
+from ui.common import (
+    get_hbpr_database_client,  # Get Scripts layer DB instance
+    get_db_port_client,         # Get Remote_db layer client
+    load_database,              # Database operations
+    trigger_auto_save
+)
+```
+
+```python
+# ❌ INCORRECT: UI components directly import Remote_db
+from remote_db.db_port_client import DbPortClient
+
+client = DbPortClient("127.0.0.1", 51201)  # Bypass common.py!
+```
+
+#### ✅ DO: Clear Separation of Concerns
+
+```python
+# ✅ CORRECT: Each layer has distinct responsibilities
+
+# Remote_db: Database access
+class DbPortClient:
+    def query(self, sql, params): ...
+
+# Scripts: Business logic
+class CHbpr:
+    def run(self, content):
+        # Validation logic here
+        pass
+
+# UI: Presentation and orchestration
+def show_edit_page():
+    db = get_hbpr_database_client()
+    chbpr = CHbpr()
+    # Orchestrate the flow
+```
+
+### Architecture Benefits
+
+1. **Maintainability**: Each layer can be modified independently
+2. **Testability**: Scripts layer can be tested with mock connections
+3. **Scalability**: Remote_db layer enables future LAN deployment
+4. **Flexibility**: Can swap database implementation without affecting Scripts/UI
+5. **Clarity**: Clear boundaries prevent "spaghetti code"
+
+### Migration from Legacy Code
+
+If you find code that violates the architecture:
+
+1. **Identify the layer** where code currently resides
+2. **Determine proper layer** based on responsibility
+3. **Move business logic** to Scripts layer
+4. **Move UI code** to UI layer
+5. **Use connection injection** instead of direct file access
+6. **Update imports** to respect layer boundaries
+
+### Performance Considerations
+
+- **Layer 1 (Remote_db)**: HTTP overhead ~1-5ms per request (acceptable for local 127.0.0.1)
+- **Layer 2 (Scripts)**: Pure Python, no overhead
+- **Layer 3 (UI)**: Streamlit caching reduces recomputation
+
+### Enhanced Features (Version 0.63+)
+
+- ✅ **Three-Layer Architecture**: Clear separation of concerns
+- ✅ **Per-User Database Servers**: Isolated in-memory databases (ports 51201-51203)
+- ✅ **Simplified Authentication**: Username-only login without IP tracking
+- ✅ **HTTP Transparency**: Scripts unaware of HTTP communication
+- ✅ **Automatic Persistence**: In-memory changes auto-saved to disk
+- ✅ **Hot Database Reload**: Real-time synchronization with external file changes
+- ✅ **Modular UI**: Tab-based organization with reusable components
+- ✅ **Statistics Caching**: Efficient data retrieval with smart invalidation
+- ✅ **Data Cleaning**: Comprehensive sanitization at all stages
+- ✅ **Server Lifecycle Control**: UI buttons for Start/Restart/Shutdown
+
+### Future Architecture Enhancements
+
+Potential improvements while maintaining layer structure:
+
+1. **WebSocket Support**: Real-time updates (Layer 1 enhancement)
+2. **LAN Deployment**: Multi-machine support (Layer 1 extension)
+3. **Plugin System**: Extensible business logic (Layer 2 enhancement)
+4. **Theme System**: Customizable UI (Layer 3 enhancement)
+5. **API Gateway**: External API access (New layer above Layer 3)
+
+All enhancements should respect the three-layer architecture and maintain clear boundaries.
