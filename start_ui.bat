@@ -91,7 +91,7 @@ streamlit run ui/main.py --server.address 0.0.0.0 --server.port 8501 --browser.s
 
 echo.
 echo [INFO] HBPR UI has been stopped.
-echo [INFO] Database servers are managed by IP sessions and will remain active
+echo [INFO] Database servers remain active - use server controls in login page
 echo [INFO] Deactivating virtual environment...
 deactivate
 pause

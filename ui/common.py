@@ -64,93 +64,76 @@ def _is_server_running(port: int) -> bool:
         return False
 
 
-def get_client_ip() -> str:
-    """
-    获取客户端IP地址
-    支持本地连接(127.0.0.1)和LAN连接(如192.168.x.x)
-    """
-    try:
-        # 使用新的st.context.headers API获取请求头
-        headers = st.context.headers
-        if headers:
-            # 检查代理转发的真实IP
-            ip = headers.get("X-Forwarded-For", headers.get("X-Real-Ip"))
-            if ip:
-                # X-Forwarded-For可能包含多个IP，取第一个
-                return ip.split(",")[0].strip()
-    except Exception:
-        pass
-    
-    # 如果无法获取，尝试使用session state中存储的IP
-    if hasattr(st, 'session_state') and 'client_ip' in st.session_state:
-        return st.session_state.client_ip
-    
-    # 默认返回本地IP
-    return "127.0.0.1"
-
-
 def ensure_memdb_server(username: str) -> tuple:
     """
-    Ensure a per-user in-memory DB HTTP server is running on the mapped port.
+    确保指定用户的内存数据库HTTP服务器正在运行
+    简化版：不再检查IP，只做用户名登录
     Returns: (ok: bool, port: int, message: str)
-    Behavior:
-    - If server already running → check session and register IP
-    - Else spawn remote_db/memdb_port_server.py on that port and wait until healthy
+    行为:
+    - 如果服务器已运行 → 直接调用登录接口
+    - 否则启动服务器并等待健康检查通过，然后登录
     """
     port = _port_for_username(username)
     if not port:
         return False, 0, "No port mapping for user"
     
-    client_ip = get_client_ip()
     server_already_running = _is_server_running(port)
     
     if server_already_running:
-        # 服务器已运行，检查是否有其他IP在使用
+        # 服务器已运行，直接登录用户名
         try:
             client = DbPortClient("127.0.0.1", port)
-            active_ips_resp = client.get_active_ips()
-            active_ips = active_ips_resp.get("active_ips", [])
-            
-            # 检查当前IP是否已有session
-            session_check = client.check_session(client_ip)
-            if session_check.get("has_session"):
-                # 当前IP有有效session，续期
-                client.register_session(client_ip)
-                return True, port, "Session restored"
-            
-            # 检查是否有其他IP在使用
-            if active_ips and client_ip not in active_ips:
-                return False, port, "Another IP is currently logged in"
-            
-            # 注册当前IP
-            client.register_session(client_ip)
-            return True, port, "OK"
+            result = client.login_username(username)
+            if result.get("ok"):
+                return True, port, "OK"
+            return False, port, "Login failed"
         except Exception as e:
             return False, 0, f"Failed to connect to server: {e}"
     
-    # Spawn server
-    server_path = None
+    # 启动服务器
     try:
-        # Resolve script path relative to project root
+        # 解析服务器脚本路径（相对于项目根目录）
         from pathlib import Path
         project_root = Path(__file__).resolve().parents[1]
         server_path = str(project_root / 'remote_db' / 'memdb_port_server.py')
-        subprocess.Popen([sys.executable, server_path, '--port', str(port)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        # 验证服务器脚本是否存在
+        if not Path(server_path).exists():
+            return False, 0, f"Server script not found: {server_path}"
+        
+        # 启动服务器进程，捕获输出用于调试
+        proc = subprocess.Popen(
+            [sys.executable, server_path, '--port', str(port)], 
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        
+        # 给进程一点时间启动
+        time.sleep(0.2)
+        
+        # 检查进程是否立即失败
+        if proc.poll() is not None:
+            # 进程已经退出，读取错误信息
+            stdout, stderr = proc.communicate(timeout=1)
+            error_msg = stderr if stderr else stdout
+            return False, 0, f"Server failed to start: {error_msg[:200]}"
+            
     except Exception as e:
         return False, 0, f"Failed to start server: {e}"
     
-    # Wait until health OK
-    for _ in range(30):
+    # 等待服务器健康检查通过（增加到10秒超时）
+    for i in range(100):
         if _is_server_running(port):
-            # 服务器启动成功，注册IP
+            # 服务器启动成功，登录用户名
             try:
                 client = DbPortClient("127.0.0.1", port)
-                client.register_session(client_ip)
+                client.login_username(username)
             except Exception:
                 pass
             return True, port, "OK"
         time.sleep(0.1)
-    return False, 0, "Timed out starting server"
+    return False, 0, "Timed out starting server (waited 10 seconds)"
 
 
 # --- New Database Client Management ---
@@ -251,9 +234,9 @@ def reload_database_from_disk():
     return False
 
 
-def logout_current_ip():
+def logout_current_user():
     """
-    登出当前IP的session
+    登出当前用户（简化版，不再涉及IP）
     返回: (success: bool, message: str)
     """
     client = get_db_port_client()
@@ -261,31 +244,13 @@ def logout_current_ip():
         return False, "No database connection"
     
     try:
-        client_ip = get_client_ip()
-        result = client.logout_session(client_ip)
+        result = client.logout_username()
         if result.get("ok"):
-            return True, f"Session cleared for IP {client_ip}"
+            return True, "Logged out successfully"
         else:
-            return False, "Failed to logout session"
+            return False, "Failed to logout"
     except Exception as e:
         return False, f"Error logging out: {e}"
-
-
-def get_active_session_count():
-    """
-    获取当前活跃的session数量
-    返回: int (活跃session数，失败返回-1)
-    """
-    client = get_db_port_client()
-    if not client:
-        return -1
-    
-    try:
-        result = client.get_active_ips()
-        active_ips = result.get("active_ips", [])
-        return len(active_ips)
-    except Exception:
-        return -1
 
 
 def shutdown_db_server():
@@ -299,6 +264,38 @@ def shutdown_db_server():
             # Server might already be down
             return True
     return False
+
+
+def restart_db_server(username: str) -> tuple:
+    """
+    重启数据库服务器
+    Returns: (ok: bool, port: int, message: str)
+    """
+    # 先关闭服务器
+    shutdown_db_server()
+    # 等待服务器完全关闭
+    time.sleep(0.5)
+    # 重新启动服务器
+    return ensure_memdb_server(username)
+
+
+def get_server_status(port: int) -> dict:
+    """
+    获取服务器状态信息
+    Returns: dict with keys: running (bool), auth_status (dict or None)
+    """
+    if not port:
+        return {"running": False, "auth_status": None}
+    
+    if not _is_server_running(port):
+        return {"running": False, "auth_status": None}
+    
+    try:
+        client = DbPortClient("127.0.0.1", port)
+        auth_status = client.auth_status()
+        return {"running": True, "auth_status": auth_status}
+    except Exception:
+        return {"running": True, "auth_status": None}
 
 
 def load_database(path: str):

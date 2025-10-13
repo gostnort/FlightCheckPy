@@ -5,42 +5,34 @@ Login and authentication page for HBPR UI
 
 import streamlit as st
 from ui.common import (authenticate_user, get_icon_base64, ensure_memdb_server, 
-                       get_client_ip, logout_current_ip, get_db_port_client)
+                       logout_current_user, restart_db_server, shutdown_db_server,
+                       get_server_status, _port_for_username)
 from remote_db.db_port_client import DbPortClient
 
 
 def _check_auto_login():
     """
-    检查当前IP是否有有效session，如果有则自动登录
+    快速自动登录检查 - 只检查上次使用的端口
     返回: (should_auto_login: bool, username: str, port: int)
     """
-    # 获取所有可能的用户端口
-    import hashlib
-    valid_users = {
-        'c7c5b358d4097f8e2798c54f2ab6c3574a0cc82c87a3acf4ac9f038af4f75d2c': (51201, 'User1'),
-        '9fe93417853739c1c18c2e8b051860d1a317824f1aa91304d16f3fe832486f7a': (51202, 'User2'),
-        '239127e09157cbafb6212123b102aa1103241946b3684c232c44b8367c3a4d47': (51203, 'User3')
-    }
+    # 只检查session state中存储的上次登录信息
+    if 'last_username' not in st.session_state:
+        return False, None, None
     
-    client_ip = get_client_ip()
+    username = st.session_state.last_username
+    port = _port_for_username(username)
     
-    # 检查每个端口是否有当前IP的session
-    for user_hash, (port, username_hint) in valid_users.items():
-        try:
-            client = DbPortClient("127.0.0.1", port)
-            # 检查服务器是否运行
-            health = client.health()
-            if not health.get("ok"):
-                continue
-            
-            # 检查当前IP是否有session
-            session_check = client.check_session(client_ip)
-            if session_check.get("has_session"):
-                # 找到有效session，返回username（从session state获取）
-                if 'last_username' in st.session_state:
-                    return True, st.session_state.last_username, port
-        except Exception:
-            continue
+    if not port:
+        return False, None, None
+    
+    try:
+        client = DbPortClient("127.0.0.1", port)
+        status = client.auth_status()
+        # 如果服务器上有登录状态，且用户名匹配，则自动登录
+        if status.get("logged_in") and status.get("username") == username:
+            return True, username, port
+    except Exception:
+        pass
     
     return False, None, None
 
@@ -75,11 +67,11 @@ def show_login_page():
             with col1:
                 submit_button = st.form_submit_button("🚀 Login", type="primary", use_container_width=True)
             with col2:
-                clear_button = st.form_submit_button("🔄 Clear Session", use_container_width=True)
+                logout_button = st.form_submit_button("🚪 Logout", use_container_width=True)
             
-            if clear_button:
-                # 登出当前IP的session
-                success, message = logout_current_ip()
+            if logout_button:
+                # 登出当前用户
+                success, message = logout_current_user()
                 if success:
                     st.success(f"✅ {message}")
                     # 清除session state中的用户名
@@ -95,9 +87,6 @@ def show_login_page():
                     st.error("❌ Please enter a username")
                 elif authenticate_user(username):
                     ok, port, msg = ensure_memdb_server(username)
-                    if not ok and msg == "Another IP is currently logged in":
-                        st.error("❌ Another IP is currently logged in. Please use the 'Clear Session' button if you want to force login.")
-                        return
                     if not ok:
                         st.error(f"❌ Failed to prepare DB service: {msg}")
                         return
@@ -107,13 +96,93 @@ def show_login_page():
                     st.session_state.username = username
                     st.session_state.db_service_host = '127.0.0.1'
                     st.session_state.db_service_port = port
-                    if msg == "Session restored":
-                        st.success(f"✅ Welcome back, {username}! Your session has been restored.")
-                    else:
-                        st.success(f"✅ Welcome, {username}! DB service on port {port} is ready.")
+                    st.success(f"✅ Welcome, {username}! DB service on port {port} is ready.")
                     st.rerun()
                 else:
                     st.error("❌ Invalid username. Please try again.")
+        
+        st.markdown("---")
+        
+        # 服务器控制按钮区域 - 始终显示
+        st.markdown("#### 🔧 Server Control")
+        st.caption("Manage the database server lifecycle")
+        
+        # 显示当前服务器状态
+        # 尝试显示状态，即使没有登录过
+        username_for_status = st.session_state.get('last_username')
+        if username_for_status:
+            port_for_status = _port_for_username(username_for_status)
+            if port_for_status:
+                status = get_server_status(port_for_status)
+                
+                if status["running"]:
+                    auth = status.get("auth_status", {})
+                    if auth and auth.get("logged_in"):
+                        st.info(f"🟢 Server running on port {port_for_status} | User: {auth.get('username')}")
+                    else:
+                        st.info(f"🟡 Server running on port {port_for_status} | No user logged in")
+                else:
+                    st.warning(f"🔴 Server not running (port {port_for_status})")
+            else:
+                st.info("ℹ️ No server port assigned yet")
+        else:
+            st.info("ℹ️ Login to see server status")
+        
+        # 服务器控制按钮 - 始终显示，但根据状态调整行为
+        ctrl_col1, ctrl_col2, ctrl_col3 = st.columns(3)
+        
+        with ctrl_col1:
+            if st.button("▶️ Start", use_container_width=True, help="Start the database server"):
+                if 'last_username' in st.session_state:
+                    username = st.session_state.last_username
+                    with st.spinner("Starting server... (may take up to 10 seconds)"):
+                        ok, port, msg = ensure_memdb_server(username)
+                    if ok:
+                        st.success(f"✅ Server started on port {port}")
+                        st.rerun()
+                    else:
+                        st.error(f"❌ Failed to start server: {msg}")
+                else:
+                    st.warning("⚠️ Please login first to determine which server to start")
+        
+        with ctrl_col2:
+            if st.button("🔄 Restart", use_container_width=True, help="Restart the database server"):
+                if 'last_username' in st.session_state:
+                    username = st.session_state.last_username
+                    with st.spinner("Restarting server... (may take up to 10 seconds)"):
+                        ok, port, msg = restart_db_server(username)
+                    if ok:
+                        st.success(f"✅ Server restarted on port {port}")
+                        st.rerun()
+                    else:
+                        st.error(f"❌ Failed to restart server: {msg}")
+                else:
+                    st.warning("⚠️ Please login first to determine which server to restart")
+        
+        with ctrl_col3:
+            if st.button("⏹️ Shutdown", use_container_width=True, help="Shutdown the database server"):
+                username_to_shutdown = st.session_state.get('last_username')
+                if username_to_shutdown:
+                    port_to_shutdown = _port_for_username(username_to_shutdown)
+                    # Create a temporary client to shutdown the specific port
+                    try:
+                        from ui.common import get_db_port_client
+                        # Temporarily set the port for shutdown
+                        old_port = st.session_state.get('db_service_port')
+                        st.session_state.db_service_port = port_to_shutdown
+                        if shutdown_db_server():
+                            st.success("✅ Server shutdown complete")
+                            st.rerun()
+                        else:
+                            st.warning("⚠️ Server may already be down")
+                        # Restore old port
+                        if old_port:
+                            st.session_state.db_service_port = old_port
+                    except Exception as e:
+                        st.error(f"❌ Shutdown error: {e}")
+                else:
+                    st.warning("⚠️ Login first to determine which server to shutdown")
+        
         st.markdown("---")
         st.caption("🔐 **Contact administrator for access credentials**")
 

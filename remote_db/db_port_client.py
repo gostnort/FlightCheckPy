@@ -90,35 +90,26 @@ class DbPortClient:
             # Server might close connection before responding, which is expected
             return {"ok": True}
 
-    def register_session(self, ip: str):
+    def login_username(self, username: str):
         """
-        注册IP登录session
-        :param ip: 客户端IP地址
-        :return: 服务器响应字典
+        登录用户名（简化认证，无IP绑定）
+        :param username: 用户名
+        :return: 服务器响应字典，包含ok, username, login_time
         """
-        return self._post("/session/register", {"ip": ip})
+        return self._post("/auth/login", {"username": username})
 
-    def check_session(self, ip: str):
+    def logout_username(self):
         """
-        检查IP是否有有效session
-        :param ip: 客户端IP地址
-        :return: 包含has_session布尔值的字典
-        """
-        return self._post("/session/check", {"ip": ip})
-
-    def logout_session(self, ip: str):
-        """
-        登出指定IP的session
-        :param ip: 客户端IP地址
+        登出当前用户
         :return: 包含ok布尔值的字典
         """
-        return self._post("/session/logout", {"ip": ip})
+        return self._post("/auth/logout", {})
 
-    def get_active_ips(self):
+    def auth_status(self):
         """
-        获取当前活跃的IP列表
-        :return: 包含active_ips列表的字典
+        获取当前认证状态
+        :return: 包含logged_in, username, login_time的字典
         """
-        return self._get("/session/active_ips")
+        return self._get("/auth/status")
 
 
