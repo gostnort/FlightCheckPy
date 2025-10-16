@@ -15,7 +15,7 @@ import os
 from typing import Dict, Optional, Tuple, List
 from datetime import date
 import pandas as pd
-from scripts.hbpr_info_processor import HbprDatabase
+from scripts.hbpr_database import HbprDatabase
 
 # =============================
 # 数据源列名与固定列序号定义（1-based）
@@ -239,6 +239,8 @@ def number_to_english(amount: float) -> str:
         ones = ['', 'ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE']
         teens = ['TEN', 'ELEVEN', 'TWELVE', 'THIRTEEN', 'FOURTEEN', 'FIFTEEN', 'SIXTEEN', 'SEVENTEEN', 'EIGHTEEN', 'NINETEEN']
         tens = ['', '', 'TWENTY', 'THIRTY', 'FORTY', 'FIFTY', 'SIXTY', 'SEVENTY', 'EIGHTY', 'NINETY']
+
+
         def convert_hundreds(n):
             result = ''
             if n >= 100:
@@ -285,10 +287,8 @@ def number_to_english(amount: float) -> str:
 def calculate_cash_and_total_amounts(df_input: pd.DataFrame) -> Tuple[float, float]:
     """
     从输入表第一列计算现金金额和总金额
-    
     Args:
         df_input: 输入的DataFrame
-        
     Returns:
         Tuple[cash_total, total_amount]: 现金金额和总金额
     """
@@ -325,7 +325,6 @@ def get_all_ckin_ccrd_hbnb(db_client: HbprDatabase) -> List[Dict]:
     """查询所有包含CKIN CCRD的HBNB记录"""
     conn = db_client.get_connection()
     cursor = conn.cursor()
-    
     query = (
         """
         SELECT hbnb_number, name, tkne, ckin_msg 
@@ -337,7 +336,6 @@ def get_all_ckin_ccrd_hbnb(db_client: HbprDatabase) -> List[Dict]:
     )
     cursor.execute(query)
     records = cursor.fetchall()
-    
     return [
         {
             'hbnb_number': record[0],
@@ -354,10 +352,8 @@ def find_records_by_tkne(db_client: HbprDatabase, tkne: str) -> List[Dict]:
     clean_tkne = normalize_tkne(tkne)
     if not clean_tkne:
         return []
-    
     conn = db_client.get_connection()
     cursor = conn.cursor()
-    
     query = """
         SELECT hbnb_number, name, tkne, ckin_msg 
         FROM hbpr_full_records 
@@ -365,7 +361,6 @@ def find_records_by_tkne(db_client: HbprDatabase, tkne: str) -> List[Dict]:
     """
     cursor.execute(query, (len(clean_tkne), clean_tkne))
     records = cursor.fetchall()
-    
     return [
         {
             'hbnb_number': record[0],
@@ -621,7 +616,6 @@ def generate_output_excel(result_df: pd.DataFrame, unprocessed_records: List[Dic
     if 'RECEIPT' in wb.sheetnames:
         ws_receipt = wb['RECEIPT']
         # 使用传入的现金总额（已预计算）
-        
         if cash_total > 0:
             english_amount = number_to_english(cash_total)
             ws_receipt.cell(row=8, column=3, value=english_amount)

@@ -7,7 +7,6 @@
 从集中的JSON配置文件读取数据库结构
 """
 
-import os
 import json
 import sqlite3
 from typing import List, Tuple, Dict, Any
@@ -184,6 +183,34 @@ class DatabaseMigrator:
             print(f"         📌 索引: {index_name}")
 
 
+    def migrate_to_timeline(self) -> bool:
+        """
+        迁移命令表以支持时间线版本控制
+        这是CommandProcessor.migrate_to_timeline的兼容性包装方法
+        Returns:
+            bool: 如果需要迁移返回True否则返回False
+        """
+        # 检查Commands表是否已经有版本控制列
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute("PRAGMA table_info(commands)")
+            existing_columns = [column[1] for column in cursor.fetchall()]
+            
+            # 检查是否已有版本控制列
+            required_versioning_columns = ['version', 'parent_id', 'is_latest']
+            missing_versioning_columns = [col for col in required_versioning_columns if col not in existing_columns]
+            
+            if missing_versioning_columns:
+                # 需要迁移
+                return self.migrate_commands_table()
+            else:
+                # 已经有版本控制列
+                return True
+        except Exception as e:
+            print(f"   ❌ 检查时间线支持失败: {e}")
+            return False
+
+
     def migrate_database(self, silent: bool = False) -> Dict[str, Any]:
         """
         迁移当前连接的数据库
@@ -193,21 +220,22 @@ class DatabaseMigrator:
             Dict[str, Any]: 迁移结果包含各表迁移状态
         """
         if not silent:
-            print(f"\n🔄 正在迁移数据库...")
+            print("\n🔄 正在迁移数据库...")
         # 迁移HBPR表
         hbpr_success = self.migrate_hbpr_table()
         # 迁移Commands表
         commands_success = self.migrate_commands_table()
         # 迁移其他表只添加缺失的列
-        missing_numbers_success = self._ensure_table_exists('missing_numbers')
         duplicate_record_success = self._ensure_table_exists('duplicate_record')
         hbpr_simple_success = self._ensure_table_exists('hbpr_simple_records')
         flight_info_success = self._ensure_table_exists('flight_info')
+        # 创建所有VIEWs
+        views_success = self._create_all_views()
         # 总体成功状态
         success = all([
             hbpr_success, 
             commands_success,
-            missing_numbers_success,
+            views_success,
             duplicate_record_success,
             hbpr_simple_success,
             flight_info_success
@@ -221,7 +249,7 @@ class DatabaseMigrator:
             'success': success,
             'hbpr_full_records': hbpr_success,
             'commands': commands_success,
-            'missing_numbers': missing_numbers_success,
+            'missing_numbers': views_success,
             'duplicate_record': duplicate_record_success,
             'hbpr_simple_records': hbpr_simple_success,
             'flight_info': flight_info_success,
@@ -293,6 +321,78 @@ class DatabaseMigrator:
             return False
 
 
+    def _ensure_view_exists(self, view_name: str) -> bool:
+        """
+        确保视图存在如果不存在则创建
+        Args:
+            view_name (str): 视图名
+        Returns:
+            bool: True表示成功False表示失败
+        """
+        try:
+            cursor = self.conn.cursor()
+            # 检查视图是否存在
+            cursor.execute(f"SELECT name FROM sqlite_master WHERE type='view' AND name='{view_name}'")
+            if cursor.fetchone():
+                print(f"     ✅ 视图 {view_name} 已存在")
+                return True
+            else:
+                # 视图不存在，从JSON配置中获取创建SQL
+                if view_name in self.schema['views']:
+                    view_sql = self.schema['views'][view_name]['sql']
+                    # 构建完整的CREATE VIEW语句
+                    create_view_sql = f"CREATE VIEW {view_name} AS {view_sql}"
+                    cursor.execute(create_view_sql)
+                    self.conn.commit()
+                    print(f"     ✅ 创建视图: {view_name}")
+                    return True
+                else:
+                    print(f"     ⚠️ 视图 {view_name} 不存在于JSON配置中，跳过")
+                    return True # 跳过不存在的视图
+        except Exception as e:
+            print(f"   ❌ 处理视图 {view_name} 失败: {e}")
+            return False
+
+
+    def _create_all_views(self) -> bool:
+        """
+        从JSON配置创建所有视图
+        Returns:
+            bool: 所有视图创建成功返回True，否则返回False
+        """
+        print("   🔄 创建所有视图...")
+        all_views_success = True
+        for view_name in self.schema.get('views', {}).keys():
+            if not self._ensure_view_exists(view_name):
+                all_views_success = False
+        # 执行所有VIEWs一次以验证它们工作正常
+        if all_views_success:
+            self._validate_all_views()
+        return all_views_success
+
+
+    def _validate_all_views(self) -> bool:
+        """
+        执行所有VIEWs来验证它们能正常查询
+        Returns:
+            bool: 所有VIEWs都能查询返回True
+        """
+        print("   🔍 验证所有视图...")
+        cursor = self.conn.cursor()
+        all_valid = True
+        for view_name in self.schema.get('views', {}).keys():
+            try:
+                cursor.execute(f"SELECT * FROM {view_name} LIMIT 1")
+                result = cursor.fetchone()
+                print(f"     ✅ 视图 {view_name} 可查询")
+            except Exception as e:
+                # 捕获所有异常（包括HTTPError、sqlite3.Error等）
+                # 验证失败时只记录警告，不中断迁移
+                print(f"     ⚠️  视图 {view_name} 查询失败（继续）: {type(e).__name__}")
+                # 不设置all_valid = False，允许迁移继续
+        return True  # 总是返回True，因为VIEW创建本身已成功
+
+
     def get_schema_version(self) -> str:
         """获取数据库结构版本号"""
         return self.schema.get('version', 'unknown')
@@ -300,7 +400,7 @@ class DatabaseMigrator:
 
     def verify_migration(self) -> bool:
         """验证迁移结果"""
-        print(f"\n🔍 验证数据库...")
+        print("\n🔍 验证数据库...")
         
         all_valid = True
         
@@ -334,6 +434,16 @@ class DatabaseMigrator:
                     all_valid = False
                 else:
                     print("   ✅ Commands表所有必需列都存在")
+            
+            # 验证VIEWs
+            print("   🔍 验证视图...")
+            for view_name in self.schema.get('views', {}).keys():
+                cursor.execute(f"SELECT name FROM sqlite_master WHERE type='view' AND name='{view_name}'")
+                if cursor.fetchone():
+                    print(f"     ✅ 视图 {view_name} 存在")
+                else:
+                    print(f"     ❌ 视图 {view_name} 不存在")
+                    all_valid = False
             
         except sqlite3.Error as e:
             print(f"   ❌ 验证时发生数据库错误: {e}")

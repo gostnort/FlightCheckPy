@@ -202,9 +202,9 @@ def render_database_migration():
                             st.rerun()
                         else:
                             st.warning(f"⚠️ {result['message']}")
-                            if not result['hbpr']:
+                            if not result.get('hbpr_full_records'):
                                 st.error("❌ HBPR表迁移失败")
-                            if not result['commands']:
+                            if not result.get('commands'):
                                 st.error("❌ Commands表迁移失败")
                     else:
                         st.error("❌ 无法获取数据库连接")
@@ -216,19 +216,13 @@ def render_database_migration():
         st.markdown("#### 📋 验证结构")
         if st.button("🔍 验证数据库结构", use_container_width=True, help="检查数据库结构是否符合最新规范"):
             with st.spinner("正在验证数据库结构..."):
-                try:
-                    db_client = get_hbpr_database_client()
-                    if db_client:
-                        conn = db_client.get_connection()
-                        migrator = DatabaseMigrator(conn)
-                        if migrator.verify_migration():
-                            st.success("✅ 数据库结构完整")
-                        else:
-                            st.warning("⚠️ 数据库结构需要更新")
+                db_client = get_hbpr_database_client()
+                if db_client:
+                    migrator = DatabaseMigrator(db_client.get_connection())
+                    if migrator.verify_migration():
+                        st.success("✅ 数据库结构验证通过！")
                     else:
-                        st.error("❌ 无法获取数据库连接")
-                except Exception as e:
-                    st.error(f"❌ 验证失败: {e}")
+                        st.error("❌ 数据库结构验证失败")
     with col3:
         st.markdown("#### ℹ️ 结构信息")
         try:
@@ -236,11 +230,7 @@ def render_database_migration():
             if db_client:
                 conn = db_client.get_connection()
                 migrator = DatabaseMigrator(conn)
-                schema_version = migrator.get_schema_version()
-                st.metric("结构版本", schema_version)
-                # 显示配置文件位置
-                st.caption("📄 配置文件: scripts/database_schema.json")
-            else:
-                st.info("ℹ️ 无结构信息")
+                if migrator.verify_migration():
+                    st.success("✅ 迁移验证通过！")
         except Exception as e:
             st.error(f"❌ 获取信息失败: {e}")

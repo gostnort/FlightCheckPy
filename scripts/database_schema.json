@@ -64,12 +64,6 @@
         {"name": "created_at", "type": "TIMESTAMP", "constraint": "DEFAULT CURRENT_TIMESTAMP"}
       ]
     },
-    "missing_numbers": {
-      "columns": [
-        {"name": "hbnb_number", "type": "INTEGER", "constraint": "PRIMARY KEY"},
-        {"name": "created_at", "type": "TIMESTAMP", "constraint": "DEFAULT CURRENT_TIMESTAMP"}
-      ]
-    },
     "duplicate_record": {
       "columns": [
         {"name": "id", "type": "INTEGER", "constraint": "PRIMARY KEY AUTOINCREMENT"},
@@ -101,6 +95,32 @@
         {"name": "idx_commands_parent", "columns": ["parent_id"]},
         {"name": "idx_commands_latest", "columns": ["command_full", "is_latest"]}
       ]
+    }
+  },
+  "views": {
+    "vw_discontinuous_hbnb": {
+      "description": "缺失的HBNB号码（不连续的号码）- 计算min和max之间缺失的号码",
+      "sql": "WITH all_hbnb AS (SELECT hbnb_number FROM hbpr_full_records UNION SELECT hbnb_number FROM hbpr_simple_records), hbnb_range AS (SELECT MIN(hbnb_number) as min_num, MAX(hbnb_number) as max_num FROM all_hbnb), number_series AS (WITH RECURSIVE nums(n) AS (SELECT (SELECT min_num FROM hbnb_range) UNION ALL SELECT n+1 FROM nums WHERE n < (SELECT max_num FROM hbnb_range)) SELECT n as hbnb_number FROM nums) SELECT ns.hbnb_number FROM number_series ns WHERE NOT EXISTS (SELECT 1 FROM all_hbnb ah WHERE ah.hbnb_number = ns.hbnb_number)"
+    },
+    "vw_home_accepted_counts": {
+      "description": "已接受乘客统计（按舱位分类）",
+      "sql": "SELECT COUNT(*) as total_accepted, MIN(boarding_number) as min_boarding, MAX(boarding_number) as max_boarding, AVG(bag_piece) as avg_bag_piece, AVG(bag_weight) as avg_bag_weight, SUM(bag_piece) as total_bag_pieces, SUM(bag_weight) as total_bag_weight, SUM(CASE WHEN has_infant = 1 THEN 1 ELSE 0 END) as infant_count, SUM(CASE WHEN class = 'F' THEN 1 ELSE 0 END) as accepted_first, SUM(CASE WHEN class = 'C' THEN 1 ELSE 0 END) as accepted_business, SUM(CASE WHEN class = 'Y' THEN 1 ELSE 0 END) as accepted_economy FROM hbpr_full_records WHERE boarding_number IS NOT NULL AND boarding_number > 0"
+    },
+    "vw_home_flags": {
+      "description": "删除乘客统计（XRES和非XRES）",
+      "sql": "SELECT COUNT(*) as total_deleted, SUM(CASE WHEN properties LIKE '%XRES%' THEN 1 ELSE 0 END) as deleted_with_xres, SUM(CASE WHEN (properties NOT LIKE '%XRES%' OR properties IS NULL) THEN 1 ELSE 0 END) as deleted_without_xres FROM hbpr_full_records WHERE is_deleted >= 1"
+    },
+    "vw_deleted_boarding_numbers": {
+      "description": "删除乘客的登机号列表",
+      "sql": "SELECT is_deleted as boarding_number, CASE WHEN properties LIKE '%XRES%' THEN 1 ELSE 0 END as is_xres FROM hbpr_full_records WHERE is_deleted >= 1 ORDER BY is_deleted"
+    },
+    "vw_hbnb_range": {
+      "description": "HBNB号码范围统计",
+      "sql": "WITH all_hbnb AS (SELECT hbnb_number FROM hbpr_full_records UNION SELECT hbnb_number FROM hbpr_simple_records) SELECT MIN(hbnb_number) as min_hbnb, MAX(hbnb_number) as max_hbnb, COUNT(*) as total_found, (MAX(hbnb_number) - MIN(hbnb_number) + 1) as total_expected FROM all_hbnb"
+    },
+    "vw_missing_boarding_numbers": {
+      "description": "缺失的登机号（排除已删除乘客）",
+      "sql": "WITH boarding_range AS (SELECT MIN(boarding_number) as min_bn, MAX(boarding_number) as max_bn FROM hbpr_full_records WHERE boarding_number IS NOT NULL AND boarding_number > 0), number_series AS (WITH RECURSIVE nums(n) AS (SELECT (SELECT min_bn FROM boarding_range) UNION ALL SELECT n+1 FROM nums WHERE n < (SELECT max_bn FROM boarding_range)) SELECT n as boarding_number FROM nums WHERE n IS NOT NULL), existing_boarding AS (SELECT DISTINCT boarding_number FROM hbpr_full_records WHERE boarding_number IS NOT NULL AND boarding_number > 0), deleted_boarding AS (SELECT is_deleted as boarding_number FROM hbpr_full_records WHERE is_deleted >= 1) SELECT ns.boarding_number FROM number_series ns WHERE NOT EXISTS (SELECT 1 FROM existing_boarding eb WHERE eb.boarding_number = ns.boarding_number) AND NOT EXISTS (SELECT 1 FROM deleted_boarding db WHERE db.boarding_number = ns.boarding_number) ORDER BY ns.boarding_number"
     }
   }
 }

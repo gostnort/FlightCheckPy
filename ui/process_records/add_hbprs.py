@@ -5,17 +5,18 @@ Add HBPRs tab for Process Records page - Add HBPR records with duplicate handlin
 
 import streamlit as st
 from ui.common import get_hbpr_database_client, trigger_auto_save
-from scripts.hbpr_list_processor import HBPRProcessor, parse_flight_id_from_content
+from scripts.hbpr_file_processor import HbprProcessor, parse_flight_id_from_content
 from scripts.hbpr_info_processor import CHbpr
+from scripts.pr_processor import process_mixed_commands
 
 
 def show_add_hbprs_tab():
     """显示添加HBPR记录标签页 - 从HBPR列表更新现有数据库"""
-    st.subheader("➕ 从HBPR列表更新当前数据库")
+    st.subheader("➕ 从HBPR/PR列表更新当前数据库")
     uploaded_file = st.file_uploader(
-        "上传HBPR列表文件以更新记录",
+        "上传HBPR/PR列表文件以更新记录",
         type=["txt"],
-        help="上传HBPR列表文件。如果HBNB已存在，创建副本记录并更新；如果不存在，创建新记录。",
+        help="上传HBPR或PR列表文件。支持混合的HBPR和PR命令。PR命令将自动转换为HBPR格式。",
         key="add_hbprs_upload"
     )
     if uploaded_file is not None:
@@ -24,14 +25,45 @@ def show_add_hbprs_tab():
 
 
 def process_and_add_hbprs(uploaded_file):
-    """处理HBPR文件并添加/更新记录，处理重复记录"""
+    """处理HBPR/PR文件并添加/更新记录，处理重复记录"""
     try:
         db = get_hbpr_database_client()
         if not db:
             st.error("❌ 数据库连接不可用")
             return
         file_content = uploaded_file.getvalue().decode("utf-8")
-        with st.spinner("正在处理HBPR文件..."):
+        # 首先处理混合命令，将PR转换为HBPR
+        with st.spinner("正在处理命令文件..."):
+            mixed_result = process_mixed_commands(file_content, db)
+            # 显示PR转换统计
+            if mixed_result['stats']['pr_count'] > 0:
+                st.info("📊 PR命令处理统计:")
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("PR命令总数", mixed_result['stats']['pr_count'])
+                with col2:
+                    st.metric("成功转换", mixed_result['stats']['pr_converted'])
+                with col3:
+                    st.metric("转换失败", mixed_result['stats']['pr_failed'])
+                # 显示失败的PR命令
+                if mixed_result['failed_pr_commands']:
+                    with st.expander(f"❌ 无法转换的PR命令 ({len(mixed_result['failed_pr_commands'])}):"):
+                        for failed in mixed_result['failed_pr_commands']:
+                            st.error(f"错误: {failed['error']}")
+                            st.code(failed['content'][:200] + "..." if len(failed['content']) > 200 else failed['content'])
+            # 如果没有可处理的HBPR命令，返回
+            if not mixed_result['hbpr_commands']:
+                st.error("❌ 没有有效的HBPR命令可处理")
+                return
+            # 重新组合所有HBPR命令为文件内容
+            hbpr_content_list = []
+            for cmd in mixed_result['hbpr_commands']:
+                hbpr_content_list.append(cmd['content'])
+                if cmd.get('original_type') == 'PR':
+                    # 标记这是从PR转换来的
+                    hbpr_content_list.append("")  # 添加空行分隔
+            file_content = '\n>\n'.join(hbpr_content_list)
+        with st.spinner("正在处理HBPR记录..."):
             # 步骤1: 解析文件获取航班信息
             flight_id_from_file = parse_flight_id_from_content(file_content)
             if not flight_id_from_file:
@@ -48,9 +80,12 @@ def process_and_add_hbprs(uploaded_file):
                 st.error(f"数据库航班: **{current_flight_info['flight_id']}**")
                 return
             st.info(f"✅ 航班信息匹配: **{flight_id_from_file}**")
-            # 步骤3: 使用HBPRProcessor解析所有记录
+            # 显示命令来源信息
+            if mixed_result['stats']['pr_converted'] > 0:
+                st.info(f"ℹ️ 已将 {mixed_result['stats']['pr_converted']} 个PR命令转换为HBPR格式")
+            # 步骤3: 使用HbprProcessor解析所有记录
             conn = db.get_connection()
-            processor = HBPRProcessor(conn)
+            processor = HbprProcessor(conn)
             processor.parse_file_content(file_content)
             if not processor.flight_data or flight_id_from_file not in processor.flight_data:
                 st.error("❌ 文件解析失败，未找到有效记录")
@@ -158,10 +193,14 @@ def process_and_add_hbprs(uploaded_file):
             # 自动保存
             if trigger_auto_save():
                 st.toast("✅ 数据库已自动保存")
+            # 显示最终处理结果
+            if mixed_result['stats']['pr_failed'] > 0:
+                st.warning(f"⚠️ 注意: 有 {mixed_result['stats']['pr_failed']} 个PR命令无法转换，请检查这些记录的TKNE是否存在于数据库中")
     except Exception as e:
-        st.error(f"❌ 处理HBPR文件时出错: {str(e)}")
+        st.error(f"❌ 处理HBPR/PR文件时出错: {str(e)}")
         import traceback
-        st.error(traceback.format_exc())
+        with st.expander("错误详情"):
+            st.code(traceback.format_exc())
 
 
 def process_updated_records(db, hbnb_list):

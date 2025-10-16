@@ -11,7 +11,7 @@ from collections import defaultdict
 from .data_cleaner import clean_hbpr_record_content
 
 
-class HBPRProcessor:
+class HbprProcessor:
     """HBPR数据处理器"""
 
 
@@ -39,9 +39,7 @@ class HBPRProcessor:
     def parse_file_content(self, file_content: str) -> None:
         """解析HBPR文本内容并按航班提取所有记录"""
         print("Parsing file content...")
-        
         lines = file_content.splitlines()
-        
         # 逐行解析处理
         i = 0
         while i < len(lines):
@@ -132,12 +130,10 @@ class HBPRProcessor:
             if i < len(lines) and lines[i].strip().startswith('>'):
                 break
         record_content = '\n'.join(record_lines)
-        
         # 清理记录内容，移除问题字符
         cleaned_content = clean_hbpr_record_content(record_content, hbnb_num)
         if cleaned_content != record_content:
             print(f"⚠️  HBNB {hbnb_num} record content cleaned: {len(record_content)} -> {len(cleaned_content)} characters")
-        
         return hbnb_num, cleaned_content, i
 
 
@@ -324,12 +320,12 @@ def main():
     print("=" * 50)
     print("该脚本现在应该作为模块导入，而不是直接运行。")
     print("用法示例:")
-    print("  from scripts.hbpr_list_processor import HBPRProcessor")
+    print("  from scripts.hbpr_file_processor import HbprProcessor")
     print("  from ui.common import get_hbpr_database_client # Assuming UI is running")
     print("  db_client = get_hbpr_database_client()")
     print("  if db_client:")
     print("      conn = db_client.get_connection()")
-    print("      processor = HBPRProcessor(conn)")
+    print("      processor = HbprProcessor(conn)")
     print("      with open('sample_hbpr_list.txt', 'r') as f:")
     print("          content = f.read()")
     print("      processor.process(content)")

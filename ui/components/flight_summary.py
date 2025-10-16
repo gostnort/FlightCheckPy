@@ -1,20 +1,19 @@
 #!/usr/bin/env python3
 """
-Home metrics helper for the FlightCheckPy UI.
+Flight summary and metrics helper for the FlightCheckPy UI.
 
 Responsibilities:
 - Create lightweight SQLite views for live-updating summary counts
-- Parse SY command text to extract compartment configuration (CNF/JxYy)
-- Provide a single function returning the values needed by the home page
+- Extract compartment configuration from SY commands (using Scripts layer)
+- Build flight summary messages for home page display
 
 All SQL is defensive and will auto-create views if missing.
 """
 
-import re
 import sqlite3
 from typing import Dict, Optional, Tuple
 from ui.common import get_hbpr_database_client
-from ui.components.main_stats import get_missing_boarding_numbers
+from scripts.commands_parsing.sy import extract_cnf_from_text
 
 
 def _get_conn() -> sqlite3.Connection:
@@ -117,30 +116,6 @@ def create_or_refresh_views() -> None:
     conn.commit()
 
 
-def _parse_cnf_from_text(text: str) -> Optional[Tuple[int, int, int]]:
-    """Extract CNF compartment numbers from SY command text.
-    Returns a tuple (f, j, y) where f=0 if not present.
-    支持的格式:
-    - CNF/J36Y356 → (0, 36, 356)
-    - CNF/F8J42Y261 → (8, 42, 261)
-    使用单一正则表达式匹配2或3个舱位数字
-    """
-    if not text:
-        return None
-    # 匹配 CNF/ 后跟 2 或 3 个 字母+数字 组合
-    # 捕获3个数字组，第3个可选
-    match = re.search(r'CNF\s*/?\s*[A-Z]\s*(\d+)\s*[A-Z]\s*(\d+)\s*(?:[A-Z]\s*(\d+))?', text)
-    if match:
-        groups = match.groups()
-        if groups[2] is None:
-            # 只有2个舱位 (J, Y)，F设为0
-            return (0, int(groups[0]), int(groups[1]))
-        else:
-            # 有3个舱位 (F, J, Y)
-            return (int(groups[0]), int(groups[1]), int(groups[2]))
-    return None
-
-
 def get_sy_compartments() -> Optional[Tuple[int, int, int]]:
     """Find the latest SY command and parse CNF.
     Both departure and arrival SY have identical compartment configurations.
@@ -173,8 +148,9 @@ def get_sy_compartments() -> Optional[Tuple[int, int, int]]:
     if not cmd:
         return None
     command_full, content = cmd
+    # 使用 Scripts 层的解析函数（遵循三层架构）
     for text in (content or "", command_full or ""):
-        result = _parse_cnf_from_text(text)
+        result = extract_cnf_from_text(text)
         if result:
             return result
     return None
@@ -230,167 +206,6 @@ def get_home_summary() -> Dict[str, object]:
         'y_cnf': int(y_cnf or 0),
         'ratio': ratio,
     }
-
-
-def get_debug_data() -> Dict[str, object]:
-    """返回用于手动验证统计数据的调试数据
-    注意：ID员工仅存在于C和Y舱，不存在于F舱
-    """
-    conn = _get_conn()
-    cur = conn.cursor()
-    debug_data = {}
-    # 按舱位获取总数 - 使用COUNT(DISTINCT)保持一致性
-    cur.execute("""
-        SELECT class, COUNT(DISTINCT hbnb_number) as total_count,
-               SUM(CASE WHEN boarding_number IS NOT NULL AND boarding_number > 0 THEN 1 ELSE 0 END) as with_bn,
-               SUM(CASE WHEN boarding_number IS NULL OR boarding_number = 0 THEN 1 ELSE 0 END) as without_bn
-        FROM hbpr_full_records 
-        GROUP BY class
-    """)
-    debug_data['class_breakdown'] = cur.fetchall()
-    # 获取XRES计数
-    cur.execute("""
-        SELECT class, COUNT(DISTINCT hbnb_number) as xres_count
-        FROM hbpr_full_records 
-        WHERE INSTR(','||IFNULL(properties,'')||',', ',XRES') > 0
-        GROUP BY class
-    """)
-    debug_data['xres_counts'] = cur.fetchall()
-    # 获取ID员工计数 (SA, PAD-2, PAD-SA) - 仅C和Y舱，不含F舱
-    cur.execute("""
-        SELECT class, COUNT(DISTINCT hbnb_number) as id_staff_count
-        FROM hbpr_full_records 
-        WHERE class IN ('C', 'Y')
-          AND (INSTR(','||IFNULL(properties,'')||',', ',SA') > 0
-           OR INSTR(','||IFNULL(properties,'')||',', ',PAD-2') > 0
-           OR INSTR(','||IFNULL(properties,'')||',', ',PAD-SA') > 0)
-        GROUP BY class
-    """)
-    debug_data['id_staff_counts'] = cur.fetchall()
-    # 获取空属性计数
-    cur.execute("""
-        SELECT class, COUNT(DISTINCT hbnb_number) as empty_props_count
-        FROM hbpr_full_records 
-        WHERE LENGTH(TRIM(IFNULL(properties,''))) = 0
-        GROUP BY class
-    """)
-    debug_data['empty_properties'] = cur.fetchall()
-    # 获取每个类别的样本记录
-    cur.execute("""
-        SELECT hbnb_number, class, boarding_number, properties
-        FROM hbpr_full_records 
-        WHERE INSTR(','||IFNULL(properties,'')||',', ',XRES') > 0
-        LIMIT 5
-    """)
-    debug_data['xres_samples'] = cur.fetchall()
-    cur.execute("""
-        SELECT hbnb_number, class, boarding_number, properties
-        FROM hbpr_full_records 
-        WHERE class IN ('C', 'Y')
-          AND (INSTR(','||IFNULL(properties,'')||',', ',SA') > 0
-           OR INSTR(','||IFNULL(properties,'')||',', ',PAD-2') > 0
-           OR INSTR(','||IFNULL(properties,'')||',', ',PAD-SA') > 0)
-        LIMIT 5
-    """)
-    debug_data['id_staff_samples'] = cur.fetchall()
-    cur.execute("""
-        SELECT hbnb_number, class, boarding_number, properties
-        FROM hbpr_full_records 
-        WHERE (boarding_number IS NULL OR boarding_number = 0)
-          AND INSTR(','||IFNULL(properties,'')||',', ',XRES') = 0
-          AND INSTR(','||IFNULL(properties,'')||',', ',SA') = 0
-          AND INSTR(','||IFNULL(properties,'')||',', ',PAD-2') = 0
-          AND INSTR(','||IFNULL(properties,'')||',', ',PAD-SA') = 0
-          AND LENGTH(TRIM(IFNULL(properties,''))) > 0
-        LIMIT 5
-    """)
-    debug_data['noshow_samples'] = cur.fetchall()
-    conn.close()
-    return debug_data
-
-
-def get_debug_summary() -> str:
-    """Return a formatted debug summary string for manual verification"""
-    try:
-        debug_data = get_debug_data()
-        summary = []
-        summary.append("🔍 Debug Data for Manual Verification")
-        summary.append("")
-        # 添加deleted passengers和missing boarding numbers的完整信息
-        try:
-            # 获取deleted passengers完整信息
-            db = get_hbpr_database_client()
-            all_stats = db.get_all_statistics()
-            deleted_stats = all_stats.get('deleted_passengers_stats', {})
-            if deleted_stats and deleted_stats.get('total_deleted', 0) > 0:
-                summary.append("**🗑️ Deleted Passengers (Complete List):**")
-                summary.append(f"- Total Deleted: {deleted_stats.get('total_deleted', 0)}")
-                xres_nums = deleted_stats.get('xres_boarding_numbers', [])
-                non_xres_nums = deleted_stats.get('original_boarding_numbers', [])
-                if xres_nums:
-                    summary.append(f"- XRES Deleted BN: {', '.join(map(str, sorted(xres_nums)))}")
-                if non_xres_nums:
-                    summary.append(f"- Non-XRES Deleted BN: {', '.join(map(str, sorted(non_xres_nums)))}")
-                all_deleted = sorted(xres_nums + non_xres_nums)
-                if all_deleted:
-                    summary.append(f"- All Deleted BN: {', '.join(map(str, all_deleted))}")
-                summary.append("")
-            # 获取missing boarding numbers完整信息
-            # An internal class to wrap the database object
-            class DBWrapper:
-                def __init__(self, real_db):
-                    self.db_file = real_db.db_file
-                    self._real_db = real_db
-                def find_database(self):
-                    pass
-                def get_all_statistics(self):
-                    return self._real_db.get_all_statistics()
-            # Back to try block
-            wrapped_db = DBWrapper(db)
-            missing_numbers = get_missing_boarding_numbers(wrapped_db)
-            if missing_numbers:
-                summary.append("**🔢 Missing Boarding Numbers (Complete List):**")
-                summary.append(f"- Total Missing: {len(missing_numbers)}")
-                summary.append(f"- Missing BN: {', '.join(map(str, missing_numbers))}")
-                summary.append("")
-        except Exception as e:
-            summary.append(f"**Error getting deleted/missing data: {str(e)}**")
-            summary.append("")
-        # Class breakdown
-        summary.append("**Class Breakdown:**")
-        for row in debug_data['class_breakdown']:
-            summary.append(f"- Class {row[0]}: Total={row[1]}, With BN={row[2]}, Without BN={row[3]}")
-        # XRES counts
-        summary.append("")
-        summary.append("**XRES Counts:**")
-        for row in debug_data['xres_counts']:
-            summary.append(f"- Class {row[0]}: {row[1]} records")
-        # ID staff counts  
-        summary.append("")
-        summary.append("**ID Staff Counts (SA, PAD-2, PAD-SA):**")
-        for row in debug_data['id_staff_counts']:
-            summary.append(f"- Class {row[0]}: {row[1]} records")
-        # Empty properties
-        summary.append("")
-        summary.append("**Empty Properties Counts:**")
-        for row in debug_data['empty_properties']:
-            summary.append(f"- Class {row[0]}: {row[1]} records")
-        # Sample records
-        summary.append("")
-        summary.append("**XRES Sample Records:**")
-        for row in debug_data['xres_samples']:
-            summary.append(f"- HBNB {row[0]}, Class {row[1]}, BN {row[2]}, Props: {row[3]}")
-        summary.append("")
-        summary.append("**ID Staff Sample Records:**")
-        for row in debug_data['id_staff_samples']:
-            summary.append(f"- HBNB {row[0]}, Class {row[1]}, BN {row[2]}, Props: {row[3]}")
-        summary.append("")
-        summary.append("**NOSHOW Sample Records:**")
-        for row in debug_data['noshow_samples']:
-            summary.append(f"- HBNB {row[0]}, Class {row[1]}, BN {row[2]}, Props: {row[3]}")
-        return "\n".join(summary)
-    except Exception as e:
-        return f"Error getting debug data: {str(e)}"
 
 
 def build_summary_message():

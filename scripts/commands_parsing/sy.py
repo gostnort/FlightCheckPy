@@ -156,10 +156,41 @@ def extract_route_from_sy_content(sy_content: str) -> Optional[str]:
     return None
 
 
-def extract_cnf_original_from_sy_content(sy_content: str) -> Optional[str]:
-    """提取CNF原始字符串并转换为展示格式
+def extract_cnf_from_text(text: str) -> Optional[tuple]:
+    """从文本中提取CNF舱位配置，返回元组格式
     
-    例如: 'CNF/J36Y356' -> 'F/8 J/42 Y/261'
+    支持的格式:
+    - CNF/J36Y356 → (0, 36, 356)
+    - CNF/F8J42Y261 → (8, 42, 261)
+    
+    Args:
+        text: 包含CNF信息的文本（可以是命令全文或内容）
+        
+    Returns:
+        (f_count, j_count, y_count) 元组，如果未找到返回None
+        注意：如果只有2个舱位（J/Y），F设为0
+    """
+    if not text:
+        return None
+    # 匹配 CNF/ 后跟 2 或 3 个 字母+数字 组合
+    # 捕获3个数字组，第3个可选
+    match = re.search(r'CNF\s*/?\s*[A-Z]\s*(\d+)\s*[A-Z]\s*(\d+)\s*(?:[A-Z]\s*(\d+))?', text)
+    if match:
+        groups = match.groups()
+        if groups[2] is None:
+            # 只有2个舱位 (J, Y)，F设为0
+            return (0, int(groups[0]), int(groups[1]))
+        else:
+            # 有3个舱位 (F, J, Y)
+            return (int(groups[0]), int(groups[1]), int(groups[2]))
+    return None
+
+
+def extract_cnf_original_from_sy_content(sy_content: str) -> Optional[str]:
+    """提取CNF原始字符串并转换为展示格式（向后兼容）
+    
+    例如: 'CNF/J36Y356' -> 'J/36 Y/356'
+         'CNF/F8J42Y261' -> 'F/8 J/42 Y/261'
     从CNF字符串中提取各舱位和座位数，格式化输出
     
     Args:
@@ -168,23 +199,15 @@ def extract_cnf_original_from_sy_content(sy_content: str) -> Optional[str]:
     Returns:
         格式化后的舱位配置字符串，如果未找到返回None
     """
-    try:
-        lines = sy_content.split('\n')
-        for line in lines:
-            if 'CNF/' in line:
-                # 找到CNF部分: 'CNF/J36Y356'
-                cnf_part = line.split('CNF/')[1].split()[0]
-                
-                # 解析各舱位字母和数字
-                # 匹配模式: 字母后跟数字
-                matches = re.findall(r'([A-Z])(\d+)', cnf_part)
-                
-                if matches:
-                    # 构建输出格式: 'F/8 J/42 Y/261'
-                    result_parts = [f"{letter}/{num}" for letter, num in matches]
-                    return ' '.join(result_parts)
-    except (IndexError, ValueError):
-        return None
+    cnf_tuple = extract_cnf_from_text(sy_content)
+    if cnf_tuple:
+        f, j, y = cnf_tuple
+        parts = []
+        if f > 0:
+            parts.append(f"F/{f}")
+        parts.append(f"J/{j}")
+        parts.append(f"Y/{y}")
+        return ' '.join(parts)
     return None
 
 

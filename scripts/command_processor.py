@@ -748,30 +748,11 @@ class CommandProcessor:
             return False
 
 
-    def migrate_to_timeline(self) -> bool:
-        """
-        Migrate old database schema to support timeline/versioning
-        现在使用统一的DatabaseMigrator进行迁移
-        Returns:
-            bool: True if migration was performed, False if already up to date
-        """
-        if not self.conn:
-            return False
-        try:
-            # 使用统一的DatabaseMigrator进行迁移
-            from scripts.database_migration import DatabaseMigrator
-            migrator = DatabaseMigrator(self.conn)
-            result = migrator.migrate_database(silent=True)
-            return result['commands']
-        except Exception as e:
-            return False
-
-
     def erase_commands_table(self) -> bool:
         """
-        Erase all data from the commands table
-        Returns:
-            bool: True if successful, False otherwise
+        清空commands表中的所有数据
+        返回值:
+            bool: 成功返回True否则返回False
         """
         if not self.conn:
             return False
@@ -799,6 +780,22 @@ class CommandProcessor:
                 conn.rollback()
             except Exception:
                 pass
+            return False
+
+
+    def migrate_to_timeline(self) -> bool:
+        """
+        将Commands表迁移为支持时间线版本控制
+        这个方法使用统一的DatabaseMigrator保持向后兼容性
+        返回值:
+            bool: 需要迁移返回True已有版本支持返回False迁移失败返回False
+        """
+        try:
+            from scripts.database_migration import DatabaseMigrator
+            migrator = DatabaseMigrator(self.conn)
+            return migrator.migrate_to_timeline()
+        except Exception as e:
+            print(f"   ❌ 迁移命令表时间线失败: {e}")
             return False
 
 

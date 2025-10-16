@@ -40,6 +40,37 @@ class SchemaUtils:
             raise Exception(f"Failed to load schema file {schema_file}: {e}")
 
 
+    def create_view(self, conn, view_name: str) -> bool:
+        """
+        创建VIEW
+        Args:
+            conn: 数据库连接
+            view_name: VIEW名称
+        Returns:
+            bool: 是否成功
+        """
+        try:
+            views = self.schema.get('views', {})
+            if view_name not in views:
+                raise ValueError(f"View '{view_name}' not found in schema")
+            view_config = views[view_name]
+            view_sql = view_config.get('sql')
+            if not view_sql:
+                raise ValueError(f"No SQL defined for view '{view_name}'")
+            cursor = conn.cursor()
+            # 删除旧的VIEW（如果存在）
+            cursor.execute(f"DROP VIEW IF EXISTS {view_name}")
+            # 创建新的VIEW
+            create_view_sql = f"CREATE VIEW {view_name} AS {view_sql}"
+            cursor.execute(create_view_sql)
+            conn.commit()
+            print(f"Created view: {view_name}")
+            return True
+        except Exception as e:
+            print(f"Error creating view {view_name}: {e}")
+            return False
+
+
     def generate_create_table_sql(self, table_name: str) -> str:
         """
         从JSON配置生成CREATE TABLE语句

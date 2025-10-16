@@ -13,7 +13,7 @@ from urllib.request import urlopen
 from urllib.error import URLError
 from remote_db.db_port_client import DbPortClient
 from remote_db.remote_sqlite_adapter import RemoteSqliteConnection
-from scripts.hbpr_info_processor import HbprDatabase
+from scripts.hbpr_database import HbprDatabase
 
 
 def get_icon_base64(path):
@@ -76,9 +76,7 @@ def ensure_memdb_server(username: str) -> tuple:
     port = _port_for_username(username)
     if not port:
         return False, 0, "No port mapping for user"
-    
     server_already_running = _is_server_running(port)
-    
     if server_already_running:
         # 服务器已运行，直接登录用户名
         try:
@@ -89,18 +87,15 @@ def ensure_memdb_server(username: str) -> tuple:
             return False, port, "Login failed"
         except Exception as e:
             return False, 0, f"Failed to connect to server: {e}"
-    
     # 启动服务器
     try:
         # 解析服务器脚本路径（相对于项目根目录）
         from pathlib import Path
         project_root = Path(__file__).resolve().parents[1]
         server_path = str(project_root / 'remote_db' / 'memdb_port_server.py')
-        
         # 验证服务器脚本是否存在
         if not Path(server_path).exists():
             return False, 0, f"Server script not found: {server_path}"
-        
         # 启动服务器进程，捕获输出用于调试
         proc = subprocess.Popen(
             [sys.executable, server_path, '--port', str(port)], 
@@ -108,20 +103,16 @@ def ensure_memdb_server(username: str) -> tuple:
             stderr=subprocess.PIPE,
             text=True
         )
-        
         # 给进程一点时间启动
         time.sleep(0.2)
-        
         # 检查进程是否立即失败
         if proc.poll() is not None:
             # 进程已经退出，读取错误信息
             stdout, stderr = proc.communicate(timeout=1)
             error_msg = stderr if stderr else stdout
             return False, 0, f"Server failed to start: {error_msg[:200]}"
-            
     except Exception as e:
         return False, 0, f"Failed to start server: {e}"
-    
     # 等待服务器健康检查通过（增加到10秒超时）
     for i in range(100):
         if _is_server_running(port):
@@ -138,12 +129,12 @@ def ensure_memdb_server(username: str) -> tuple:
 
 # --- New Database Client Management ---
 
+
 def get_db_port_client():
     """Gets/creates the DbPortClient for the current session."""
     port = st.session_state.get("db_service_port")
     if not port:
         return None
-    
     client_key = f"db_port_client_{port}"
     if client_key not in st.session_state:
         st.session_state[client_key] = DbPortClient("127.0.0.1", port)
@@ -156,7 +147,6 @@ def get_hbpr_database_client():
     client = get_db_port_client()
     if not client or not port:
         return None
-        
     hbpr_client_key = f"hbpr_db_client_{port}"
     if hbpr_client_key not in st.session_state:
         remote_conn = RemoteSqliteConnection(client)
@@ -222,7 +212,6 @@ def reload_database_from_disk():
                 hbpr_client_key = f"hbpr_db_client_{port}"
                 if hbpr_client_key in st.session_state:
                     del st.session_state[hbpr_client_key]
-
                 st.success(f"✅ Database reloaded from disk: {result.get('db_name', 'Unknown')}")
                 return True
             else:
@@ -242,7 +231,6 @@ def logout_current_user():
     client = get_db_port_client()
     if not client:
         return False, "No database connection"
-    
     try:
         result = client.logout_username()
         if result.get("ok"):
@@ -286,10 +274,8 @@ def get_server_status(port: int) -> dict:
     """
     if not port:
         return {"running": False, "auth_status": None}
-    
     if not _is_server_running(port):
         return {"running": False, "auth_status": None}
-    
     try:
         client = DbPortClient("127.0.0.1", port)
         auth_status = client.auth_status()
@@ -312,7 +298,6 @@ def load_database(path: str):
             hbpr_client_key = f"hbpr_db_client_{port}"
             if hbpr_client_key in st.session_state:
                 del st.session_state[hbpr_client_key]
-            
             client.load_database(path)
             # 清除未保存状态标志（加载新数据库时重置状态）
             st.session_state.db_has_unsaved_changes = False
@@ -325,6 +310,7 @@ def load_database(path: str):
 
 
 # --- New Database Selectbox Widget ---
+
 
 def create_database_selectbox(label="💾 Select Database:", key="global_db_select", custom_folder=None):
     """
@@ -539,3 +525,4 @@ def parse_hbnb_input(input_text: str) -> list:
             except ValueError as e:
                 raise ValueError(f"Invalid number format '{part}': {str(e)}")
     return sorted(list(hbnb_numbers))
+

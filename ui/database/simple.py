@@ -14,13 +14,11 @@ def show_simple_records():
     if not is_db_available():
         st.warning("⚠️ Please select a database from the sidebar to begin.")
         return
-
     try:
         db = get_hbpr_database_client()
         if not db:
             st.error("❌ Database connection not available.")
             return
-
         # Simple HBNB record functionality
         _handle_simple_record_input(db)
         # Display record list area - simple records view only
@@ -127,8 +125,6 @@ def _create_simple_records(db, hbnb_numbers):
             st.metric("Errors", error_count, delta=f"-{error_count}" if error_count > 0 else None)
         if created_count > 0:
             st.success(f"✅ Successfully created {created_count} simple records!")
-            # 更新missing_numbers表
-            _update_missing_numbers(db)
             # 设置刷新标志
             st.session_state.refresh_home = True
     except Exception as e:
@@ -165,11 +161,3 @@ def _show_simple_records_view(db):
     else:
         st.info("ℹ️ No simple records found in database.")
 
-
-def _update_missing_numbers(db):
-    """更新missing_numbers表"""
-    try:
-        db.update_missing_numbers_table()
-        st.info("🔄 Updated missing numbers table")
-    except Exception as e:
-        st.warning(f"⚠️ Warning: Could not update missing numbers table: {str(e)}")

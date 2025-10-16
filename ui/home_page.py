@@ -6,8 +6,8 @@ Home page for HBPR UI - System overview and quick actions
 import streamlit as st
 import pandas as pd
 from ui.common import apply_global_settings, get_hbpr_database_client, is_db_available, reload_database_from_disk
-from ui.components.home_metrics import build_summary_message
-from ui.components.main_stats import get_and_display_main_statistics
+from ui.components.flight_summary import build_summary_message
+from ui.components.main_stats import display_main_statistics
 from ui.components.home_flight_sheet import build_flight_sheet_data, render_flight_sheet_table, has_required_sy_commands
 
 
@@ -29,7 +29,8 @@ def show_home_page():
                 st.error("❌ No database loaded in memory")
                 return
             with st.spinner("Loading database statistics..."):
-                get_and_display_main_statistics(db)
+                all_stats = db.get_all_statistics()
+                display_main_statistics(all_stats)
         except Exception as e:
             st.error(f"❌ Error loading main statistics: {e}")
     with col2:
@@ -73,7 +74,7 @@ def show_home_page():
                 reload_database_from_disk()
                 st.rerun()
     # 显示缺失号码表格
-    missing_numbers = db.get_all_statistics().get('missing_numbers', []) if db.get_all_statistics() else []
+    missing_numbers = db.get_missing_hbnb_numbers() if db else []
     if missing_numbers:
         st.subheader("🚫 Missing HBNB Numbers")
         # 分页显示缺失号码
@@ -109,33 +110,32 @@ def show_home_page():
     col_left, col_right = st.columns(2)
     with col_left:
         st.markdown("""
-        使用左侧边栏中的导航按钮访问不同功能：
         ## 🗄️ **数据库管理**
-        - 从HBPR列表文件构建数据库
-        - 导入和处理HBPR列表数据
-        - 管理数据库文件并查看航班信息
-        ## 🔍 **处理记录** 
-        - 手动添加/编辑单个HBPR记录
-        - 验证和处理所有记录
-        - 创建简单的HBNB占位符
-        - 将处理后的数据导出到Excel
-        - 对记录进行排序和筛选
-        ## 📊 **Excel处理器**
-        - 导入包含TKNE数据的Excel文件
-        - 处理EMD销售日报
-        - 生成格式化的输出文件
-        - 自动匹配CKIN CCRD记录
+        - 从HBPR列表文件创建、导入和管理数据库。
+        - 查看航班信息和数据库状态。
+        - 自动保存和加载数据库到内存服务。
+        ## 🔍 **记录处理** 
+        - 手动添加/编辑HBPR和PR（旅客记录）。
+        - 验证HBPR和PR记录的格式和内容。
+        - 替换或复制现有记录。
+        - 追踪和更新HBNB（航班登机号）缺失情况。
+        - 批量处理HBPR记录。
         """)
     with col_right:
         st.markdown("<br><br>", unsafe_allow_html=True)
         st.markdown("""
-        ## 📋 **其他指令**
-        - 添加/编辑指令分析数据  
-        - 处理EMD（电子杂费单）记录
-        - 分析指令模式和验证
+        ## 📊 **Excel处理器**
+        - 导入EMD（电子杂费单）销售日报Excel文件。
+        - 自动匹配TKNE（票号）与HBPR记录，并提取CKIN CCRD（值机信用卡）信息。
+        - 处理废票（Void EMDs）。
+        - 生成格式化的输出Excel报告。
+        ## 📋 **指令分析**
+        - 解析、验证和管理AIRC、SY等系统指令。
+        - 提取指令中的航班号和日期信息。
+        - 支持指令的版本控制和历史查看。
+        - 删除或编辑指令记录。
         ## ⚙️ **设置**
-        - 配置字体族和大小偏好
-        
-        **💡 开始使用：** 从边栏下拉菜单中选择数据库，然后使用导航按钮访问所需功能。
+        - 配置字体族和大小偏好。
+        **💡 开始使用：** 从边栏下拉菜单中选择或创建数据库，然后使用导航按钮访问所需功能。
         """)
 

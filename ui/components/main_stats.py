@@ -11,7 +11,7 @@ def display_main_statistics(all_stats, db=None):
     Display main HBPR statistics in a reusable format
     Args:
         all_stats: Dictionary containing all statistics from get_all_statistics()
-        db: HbprDatabase instance (optional, for missing BN calculation)
+        db: HbprDatabase instance (optional, deprecated - no longer needed)
     """
     if not all_stats:
         st.error("❌ No statistics available")
@@ -21,6 +21,7 @@ def display_main_statistics(all_stats, db=None):
     missing_numbers = all_stats.get('missing_numbers', [])
     accepted_stats = all_stats.get('accepted_passengers_stats', {})
     deleted_stats = all_stats.get('deleted_passengers_stats', {})
+    missing_boarding_numbers = all_stats.get('missing_boarding_numbers', [])
     # First row: Main metrics
     m1, m2, m3 = st.columns(3)
     with m1:
@@ -41,12 +42,9 @@ def display_main_statistics(all_stats, db=None):
         st.metric("Accepted Passengers", value, delta)
     # Second row: Deleted passenger statistics and Missing BN
     st.subheader("🗑️ Deleted Passengers")
-    missing_numbers = []
-    if db:
-        missing_numbers = get_missing_boarding_numbers(db)
     # 检查是否有任何数据需要显示
     has_deleted = deleted_stats and deleted_stats.get('total_deleted', 0) > 0
-    has_missing = missing_numbers and len(missing_numbers) > 0
+    has_missing = missing_boarding_numbers and len(missing_boarding_numbers) > 0
     if not has_deleted and not has_missing:
         st.info("✅ No deleted passengers or missing boarding numbers found")
     else:
@@ -55,22 +53,7 @@ def display_main_statistics(all_stats, db=None):
             display_deleted_stats(deleted_stats)   
         with d2:
             # 显示缺失的boarding_number统计（在同一个section下）
-            display_missing_boarding_numbers(missing_numbers)  
-
-
-def get_and_display_main_statistics(db):
-    """
-    Get all statistics from database and display them
-    Args:
-        db: HbprDatabase instance
-    """
-    try:
-        all_stats = db.get_all_statistics()
-        display_main_statistics(all_stats, db)
-        return all_stats  # Return for additional processing if needed
-    except Exception as e:
-        st.error(f"❌ Error loading statistics: {e}")
-        return None
+            display_missing_boarding_numbers(missing_boarding_numbers)  
 
 
 def display_detailed_range_info(all_stats):
@@ -97,11 +80,6 @@ def display_detailed_range_info(all_stats):
     with col4:
         missing_count = len(missing_numbers)
         st.metric("Missing Numbers", missing_count)
-
-
-"""
-Calculation functions for deleted passenger and missing boarding number statistics
-"""
 
 
 def display_deleted_stats(deleted_stats):
@@ -146,69 +124,4 @@ def display_missing_boarding_numbers(missing_numbers):
     else:
         delta = f"BN: {', '.join(map(str, missing_numbers[:40]))}..."
     st.metric("Missing BN", missing_count, delta)
-
-
-def get_and_display_deleted_stats(db):
-    """
-    Get deleted passenger statistics from database and display them
-    Args:
-        db: HbprDatabase instance
-    """
-    try:
-        all_stats = db.get_all_statistics()
-        deleted_stats = all_stats.get('deleted_passengers_stats', {})
-        if deleted_stats and deleted_stats.get('total_deleted', 0) > 0:
-            st.subheader("🗑️ Deleted Passengers")
-            display_deleted_stats(deleted_stats) 
-        else:
-            st.info("✅ No deleted passengers found")
-    except Exception as e:
-        st.error(f"❌ Error loading deleted passenger statistics: {e}")
-
-
-def get_missing_boarding_numbers(db):
-    """
-    从数据库中获取缺失的boarding_number（排除已删除乘客的号码）
-    Args:
-        db: HbprDatabase instance
-    Returns:
-        list: 真正缺失的boarding_number列表（不包括删除乘客的号码）
-    """
-    try:
-        # 使用全局内存数据库连接
-        conn = db.get_connection()
-        cursor = conn.cursor()
-        # 获取所有有效的boarding_number（非空且非0）
-        cursor.execute("""
-            SELECT DISTINCT boarding_number 
-            FROM hbpr_full_records 
-            WHERE boarding_number IS NOT NULL 
-            AND boarding_number > 0
-            ORDER BY boarding_number
-        """)
-        boarding_numbers = [row[0] for row in cursor.fetchall()]
-        # 获取已删除乘客的统计数据
-        all_stats = db.get_all_statistics()
-        deleted_stats = all_stats.get('deleted_passengers_stats', {})
-        # 收集所有已删除乘客的boarding_number
-        deleted_boarding_numbers = set()
-        if deleted_stats:
-            xres_nums = deleted_stats.get('xres_boarding_numbers', [])
-            non_xres_nums = deleted_stats.get('original_boarding_numbers', [])
-            deleted_boarding_numbers = set(xres_nums + non_xres_nums)
-        # 不要关闭共享内存连接
-        if not boarding_numbers:
-            return []
-        # 找出缺失的连续号码
-        min_bn = min(boarding_numbers)
-        max_bn = max(boarding_numbers)
-        expected_numbers = set(range(min_bn, max_bn + 1))
-        existing_numbers = set(boarding_numbers)
-        missing_numbers = expected_numbers - existing_numbers
-        # 从缺失号码中排除已删除乘客的号码
-        truly_missing_numbers = sorted(missing_numbers - deleted_boarding_numbers)
-        return truly_missing_numbers
-    except Exception as e:
-        print(f"Error getting missing boarding numbers: {e}")
-        return []
 

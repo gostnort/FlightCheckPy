@@ -45,7 +45,7 @@ The application follows a **three-layer architecture** with clear separation of 
 │                   Scripts Layer (scripts/)                       │
 │  Business logic and data processing                              │
 │  • HBPR record validation and parsing (CHbpr, HbprDatabase)    │
-│  • Batch processing (HBPRProcessor)                             │
+│  • Batch processing (HbprProcessor)                             │
 │  • Command processing (CommandProcessor)                         │
 │  • Data cleaning and utilities                                   │
 └────────────────────┬────────────────────────────────────────────┘
@@ -80,8 +80,10 @@ The application follows a **three-layer architecture** with clear separation of 
 #### Layer 2: Scripts (Business Logic Layer)
 **Purpose**: Implements core business logic and data processing
 - **Record Processing**: CHbpr class for individual HBPR validation
+- **Record Management**: RecordProcessor for general record operations and validation
 - **Database Operations**: HbprDatabase class for all database CRUD operations
-- **Batch Processing**: HBPRProcessor for file parsing and bulk operations
+- **Batch Processing**: HbprProcessor for file parsing and bulk operations
+- **PR Conversion**: PR to HBPR converter for command format transformation
 - **Command Processing**: CommandProcessor for airline command management
 - **Utilities**: Data cleaning, configuration, and helper functions
 
@@ -98,7 +100,9 @@ The application follows a **three-layer architecture** with clear separation of 
 FlightCheckPy/
 ├── scripts/                    # Core processing modules
 │   ├── hbpr_info_processor.py  # HBPR record processing, validation, and statistics
-│   ├── hbpr_list_processor.py  # Batch processing and database creation
+│   ├── hbpr_file_processor.py  # Batch processing and database creation
+│   ├── record_processor.py     # General record processing and validation logic
+│   ├── pr_to_hbpr_converter.py # PR command to HBPR format conversion
 │   ├── excel_processor.py      # Excel-to-EMD processing via TKNE/CKIN CCRD mapping
 │   ├── command_processor.py    # Airline command processing and timeline management
 │   ├── general_func.py         # Utility functions and configuration
@@ -111,8 +115,8 @@ FlightCheckPy/
 │   ├── main.py                 # Main UI coordinator with Windows integration
 │   ├── common.py               # Common utilities and DB client management
 │   ├── components/
-│   │   ├── main_stats.py       # Main statistics display, UI logic and calculation functions
-│   │   └── home_metrics.py     # Home page metrics and debug information
+│   │   ├── main_stats.py       # Main statistics display (UI presentation only)
+│   │   └── flight_summary.py   # Flight summary messages and VIEW management
 │   ├── login_page.py           # Authentication interface
 │   ├── home_page.py            # System overview with real-time statistics
 │   ├── database_page.py        # Database management orchestrator
@@ -228,7 +232,7 @@ class DbPortClient:
 
 **Purpose**: Compatibility layer mimicking sqlite3.Connection API
 
-**Why Needed**: Allows Scripts layer (HbprDatabase, HBPRProcessor) to use standard sqlite3 API while communicating with HTTP server
+**Why Needed**: Allows Scripts layer (HbprDatabase, HbprProcessor) to use standard sqlite3 API while communicating with HTTP server
 
 **Class Interfaces**:
 ```python
@@ -498,13 +502,30 @@ def get_deleted_passengers_stats(self) -> Dict[str, Any]:
             - original_boarding_numbers: List of original boarding numbers for non-XRES deleted passengers
     """
 
+def get_missing_boarding_numbers(self) -> List[int]:
+    """
+    从VIEW中获取缺失的登机号（自动排除已删除乘客）
+    
+    Returns:
+        List[int]: 缺失的登机号列表
+        
+    Features:
+        - 直接查询vw_missing_boarding_numbers VIEW
+        - 数据库层自动计算，实时更新
+        - 自动排除已删除乘客的登机号
+    """
+
 def get_all_statistics(self) -> Dict[str, Any]:
     """
     Get all statistics efficiently
     
     Returns:
-        Dict[str, Any]: Complete statistics including hbnb_range_info, 
-                       missing_numbers, accepted_stats, record_summary, deleted_passengers_stats
+        Dict[str, Any]: Complete statistics including:
+            - hbnb_range_info: HBNB range information
+            - missing_numbers: Missing HBNB numbers
+            - accepted_passengers_stats: Accepted passengers statistics
+            - deleted_passengers_stats: Deleted passengers statistics
+            - missing_boarding_numbers: Missing boarding numbers (excluding deleted passengers)
     """
 ```
 
@@ -667,9 +688,9 @@ def get_tkne_count(self) -> int:
     """
 ```
 
-### 2.3 HBPRProcessor Class - Batch Processing
+### 2.3 HbprProcessor Class - Batch Processing
 
-**Location**: `scripts/hbpr_list_processor.py`
+**Location**: `scripts/hbpr_file_processor.py`
 
 **Purpose**: Processes HBPR list files, extracts records, and populates a database via a connection, with integrated data cleaning.
 
@@ -909,22 +930,6 @@ def clean_hbpr_record_content(text: str) -> str:
     - Optimized for HBPR record format
     - Preserves essential formatting
     - Removes binary/hexadecimal artifacts
-    """
-
-def clean_text_for_database(text: str) -> str:
-    """
-    Clean text for database storage, removing control characters
-    
-    Args:
-        text (str): Text to clean for database
-        
-    Returns:
-        str: Text safe for database storage
-        
-    Features:
-    - Database-specific cleaning rules
-    - Preserves SQL-safe characters
-    - Normalizes text formatting
     """
 ```
 
@@ -1341,46 +1346,23 @@ def display_main_statistics(all_stats: Dict[str, Any], db: HbprDatabase = None) 
     Display main HBPR statistics in reusable format
     
     Args:
-        all_stats: Complete statistics dictionary
-        db: Database instance for missing boarding number calculation (optional)
+        all_stats: Complete statistics dictionary (from db.get_all_statistics())
+        db: Database instance (optional, deprecated - no longer needed)
         
     Features:
         - Max HBNB, Missing Count, Accepted Passengers metrics
         - Unified deleted passenger and missing boarding number display
         - Two-column layout for compact presentation
-        - Intelligent display logic (info message when no data)
+        - All data from all_stats dictionary, no additional queries needed
     """
 
-def get_and_display_main_statistics(db: HbprDatabase) -> Dict[str, Any]:
+def display_deleted_stats(deleted_stats: Dict[str, Any]) -> None:
     """
-    Get all statistics from database and display them with missing boarding numbers
-    
-    Args:
-        db: HbprDatabase instance
-        
-    Returns:
-        Dict[str, Any]: Complete statistics for additional processing
-        
+    Display merged deleted passenger statistics    
     Features:
-        - Single function call for complete statistics display
-        - Integrated missing boarding number calculation
-        - Automatic caching through database layer
-    """
-
-def get_missing_boarding_numbers(db: HbprDatabase) -> List[int]:
-    """
-    Calculate truly missing boarding numbers excluding deleted passengers (pure calculation)
-    
-    Args:
-        db: HbprDatabase instance
-        
-    Returns:
-        List[int]: Truly missing boarding numbers (not including deleted passengers)
-        
-    Features:
-        - Detects discontinuous boarding number sequences
-        - Excludes deleted passenger boarding numbers
-        - Pure calculation function with no UI dependencies
+        - Combined XRES and non-XRES deleted passengers in single metric
+        - Intelligent boarding number list truncation (40 numbers max)
+        - Consistent "Del in Records" metric display
     """
 
 def display_missing_boarding_numbers(missing_numbers: List[int]) -> None:
@@ -1396,7 +1378,7 @@ def display_missing_boarding_numbers(missing_numbers: List[int]) -> None:
     """
 ```
 
-#### Home Metrics Component (`ui/components/home_metrics.py`)
+#### Flight Summary Component (`ui/components/flight_summary.py`)
 
 ```python
 def create_or_refresh_views() -> None:
@@ -1576,9 +1558,9 @@ def validate_and_clean_file_content(file_path: str, encoding: str = 'utf-8') -> 
 ```
 
 **Integration Points**:
-- **File Reading**: `scripts/hbpr_list_processor.py` - `parse_file()` method
-- **Record Parsing**: `scripts/hbpr_list_processor.py` - `parse_full_record()` method  
-- **Database Storage**: `scripts/hbpr_list_processor.py` and `scripts/hbpr_info_processor.py`
+- **File Reading**: `scripts/hbpr_file_processor.py` - `parse_file()` method
+- **Record Parsing**: `scripts/hbpr_file_processor.py` - `parse_full_record()` method
+- **Database Storage**: `scripts/hbpr_file_processor.py` and `scripts/hbpr_database.py`
 - **UI Input Validation**: `ui/process_records/add_edit_record.py` - `validate_full_hbpr_record()`
 
 #### 2. Export-time Fix
@@ -1619,14 +1601,6 @@ def show_export_data() -> None:
 
 **Key Functions**:
 ```python
-def clean_text_for_database(text: str) -> str:
-    """
-    Clean text for database storage, removing control characters   
-    Args:
-        text (str): Text to clean for database        
-    Returns:
-        str: Text safe for database storage
-    """
 
 def clean_database_connection(conn: sqlite3.Connection) -> bool:
     """
@@ -1742,7 +1716,7 @@ def get_missing_boarding_numbers(db) -> List[int]:
 - **UI Components**: Unified calculation and display (main_stats.py) logic
 - **Database Migration**: Automatic field creation and data population on first use
 - **Cache Invalidation**: Statistics cache cleared on database modifications
-- **Debug Information**: Complete boarding number lists included in debug output (home_metrics.py)
+- **Complete Data Display**: Complete boarding number lists displayed in main statistics component
 - **Unified Display**: Deleted passengers and missing boarding numbers shown together in two-column layout
 
 ### Hot Database Reload System
@@ -1837,7 +1811,7 @@ sequenceDiagram
     participant Cache as Session State
 
     User->>UI: Click "🔄 Refresh"
-    UI->>Cache: Clear component caches (home_metrics_cache, main_stats_cache, flight_sheet_cache)
+    UI->>Cache: Clear component caches (flight_summary_cache, main_stats_cache, flight_sheet_cache)
     UI->>Cache: Clear database client caches
     UI->>UI: st.rerun() - refresh page
 ```
@@ -1893,8 +1867,8 @@ The system implements a modular component architecture with separated calculatio
 
 ```
 ui/components/
-├── main_stats.py          # Main statistics display with calculation functions
-└── home_metrics.py        # Home page metrics and comprehensive debug information
+├── main_stats.py          # Main statistics display (UI presentation only)
+└── flight_summary.py      # Flight summary messages and VIEW management
 ```
 
 #### Key Functions
@@ -1905,25 +1879,13 @@ def display_main_statistics(all_stats: Dict[str, Any], db: HbprDatabase = None) 
     """
     Display main HBPR statistics in reusable format with unified deleted/missing passenger display    
     Args:
-        all_stats: Complete statistics dictionary
-        db: Database instance for missing boarding number calculation (optional)    
+        all_stats: Complete statistics dictionary (from db.get_all_statistics())
+        db: Database instance (optional, deprecated - no longer needed)
     Features:
         - Max HBNB, Missing Count, Accepted Passengers metrics
         - Unified deleted passenger and missing boarding number display in two-column layout
+        - All data from all_stats dictionary, no additional queries needed
         - Consistent formatting across pages
-        - Intelligent display logic (info message when no data, columns when data exists)
-    """
-
-def get_and_display_main_statistics(db: HbprDatabase) -> Dict[str, Any]:
-    """
-    Get all statistics from database and display them with missing boarding numbers   
-    Returns:
-        Dict[str, Any]: Complete statistics for additional processing        
-    Features:
-        - Single function call for complete statistics display
-        - Integrated missing boarding number calculation and display
-        - Error handling and user feedback
-        - Automatic caching through database layer
     """
 
 def display_deleted_stats(deleted_stats: Dict[str, Any]) -> None:
@@ -1937,45 +1899,16 @@ def display_deleted_stats(deleted_stats: Dict[str, Any]) -> None:
 
 def display_missing_boarding_numbers(missing_numbers: List[int]) -> None:
     """
-    Display missing boarding number statistics
+    Display missing boarding number statistics (pure display function)
     
     Features:
         - Missing boarding number count and list display
         - Intelligent truncation for large lists (40 numbers max)
-        - Integration with deleted passenger exclusion logic
-    """
-
-def get_and_display_deleted_stats(db: HbprDatabase) -> None:
-    """
-    Get and display comprehensive deleted passenger statistics with missing boarding numbers
-    
-    Features:
-        - Complete deleted passenger statistics retrieval and display
-        - Missing boarding number calculation and display
-        - Error handling for missing data
-        - Integration with statistics caching
+        - Data provided from all_stats['missing_boarding_numbers']
     """
 ```
 
-**main_stats.py**:
-```python
-def get_missing_boarding_numbers(db: HbprDatabase) -> List[int]:
-    """
-    Calculate truly missing boarding numbers excluding deleted passengers (pure calculation)   
-    Args:
-        db: HbprDatabase instance        
-    Returns:
-        List[int]: Truly missing boarding numbers (not including deleted passengers)        
-    Features:
-        - Detects discontinuous boarding number sequences
-        - Excludes deleted passenger boarding numbers to prevent duplication
-        - Returns sorted list of genuinely missing numbers
-        - Pure calculation function with no UI dependencies
-        - Integrates with deleted passenger statistics for exclusion logic
-    """
-```
-
-**home_metrics.py**:
+**flight_summary.py**:
 ```python
 def create_or_refresh_views() -> None:
     """
@@ -2076,43 +2009,30 @@ def get_debug_summary() -> str:
 
 #### Usage Examples
 ```python
-# In home page or database page - unified display with missing boarding numbers
-from ui.components.main_stats import get_and_display_main_statistics
+# In home page or database page - unified display with all statistics
+# For main statistics display (all data from db.get_all_statistics())
+from ui.components.main_stats import display_main_statistics
 from ui.common import get_hbpr_database_client
 
 db_client = get_hbpr_database_client()
 if db_client:
-    all_stats = get_and_display_main_statistics(db_client)
-
-# For deleted passenger statistics with missing boarding numbers
-from ui.components.main_stats import get_and_display_deleted_stats
-db_client = get_hbpr_database_client()
-if db_client:
-    get_and_display_deleted_stats(db_client)
-
-# For missing boarding number calculation only (pure function)
-from ui.components.main_stats import get_missing_boarding_numbers
-db_client = get_hbpr_database_client()
-if db_client:
-    missing_numbers = get_missing_boarding_numbers(db_client)
+    all_stats = db_client.get_all_statistics()
+    display_main_statistics(all_stats)
 
 # For flight summary display
-from ui.components.home_metrics import get_home_summary
-summary = get_home_summary()
+from ui.components.flight_summary import build_summary_message
+summary_message = build_summary_message()
+# Returns formatted flight summary string for display
 
-# For complete debug information with full boarding number lists
-from ui.components.home_metrics import get_debug_summary
-debug_info = get_debug_summary()
-# Contains complete deleted passenger and missing boarding number lists
+# Individual display components (data from all_stats)
+from ui.components.main_stats import display_deleted_stats, display_missing_boarding_numbers
 
-# Separated calculation and display approach
-from ui.components.main_stats import get_missing_boarding_numbers
-from ui.components.main_stats import display_missing_boarding_numbers
+all_stats = db_client.get_all_statistics()
+deleted_stats = all_stats.get('deleted_passengers_stats', {})
+missing_boarding_numbers = all_stats.get('missing_boarding_numbers', [])
 
-db_client = get_hbpr_database_client()
-if db_client:
-    missing_numbers = get_missing_boarding_numbers(db_client)  # Pure calculation
-    display_missing_boarding_numbers(missing_numbers)  # UI display
+display_deleted_stats(deleted_stats)
+display_missing_boarding_numbers(missing_boarding_numbers)
 ```
 
 #### 4. Character Cleaning Strategy
@@ -2273,7 +2193,7 @@ get_hbpr_database_client()
 ├── HbprDatabase instance
 │   ├── get_hbpr_record()
 │   └── update_with_chbpr_results()
-└── HBPRProcessor.process()
+└── HbprProcessor.process()
     ├── parse_file_content()
     └── store_records()
 ```
@@ -2400,22 +2320,7 @@ def clean_hbpr_record_content(text: str) -> str:
     - Preserves essential formatting
     - Removes binary/hexadecimal artifacts
     """
-
-def clean_text_for_database(text: str) -> str:
-    """
-    Clean text for database storage, removing control characters
     
-    Args:
-        text (str): Text to clean for database
-        
-    Returns:
-        str: Text safe for database storage
-        
-    Features:
-    - Database-specific cleaning rules
-    - Preserves SQL-safe characters
-    - Normalizes text formatting
-    """
 
 def validate_and_clean_file_content(file_path: str, encoding: str = 'utf-8') -> Tuple[List[str], bool]:
     """
@@ -2760,8 +2665,8 @@ def create_database_from_file() -> None:
 
 def create_db_from_content(file_content: str) -> None:
     """
-    Parse flight ID via scripts.hbpr_list_processor.parse_flight_id_from_content,
-    build DB file with HBPRProcessor, load into memory, then auto-process all.
+    Parse flight ID via scripts.hbpr_file_processor.parse_flight_id_from_content,
+    build DB file with HbprProcessor, load into memory, then auto-process all.
     """
 ```
 
@@ -2846,7 +2751,7 @@ def process_and_add_hbprs(uploaded_file):
     Steps:
     1. Parse flight information from uploaded file
     2. Validate flight info matches current database
-    3. Use HBPRProcessor to parse all records (full and simple)
+    3. Use HbprProcessor to parse all records (full and simple)
     4. For each full record:
        - Check if HBNB exists in database
        - Compare content (strip whitespace for comparison)
@@ -2965,7 +2870,7 @@ get_hbpr_database_client()
 ├── HbprDatabase instance
 │   ├── get_hbpr_record()
 │   └── update_with_chbpr_results()
-└── HBPRProcessor.process()
+└── HbprProcessor.process()
     ├── parse_file_content()
     └── store_records()
 ```
@@ -3024,7 +2929,7 @@ This section illustrates how data flows through the three-layer architecture.
                      ↓
 ┌─────────────────────────────────────────────────────────┐
 │ Scripts Layer (scripts/)                                 │
-│  - HbprDatabase/CHbpr/HBPRProcessor with conn           │
+│  - HbprDatabase/CHbpr/HbprProcessor with conn           │
 │  - Business logic execution                             │
 └────────────────────┬────────────────────────────────────┘
                      │ conn.execute() / conn.cursor()
@@ -3051,11 +2956,11 @@ ui/common.py: get_hbpr_database_client()
   → Returns HbprDatabase instance with RemoteSqliteConnection
 
 [Scripts Layer]
-HBPRProcessor(conn).process(file_content)
+HbprProcessor(conn).process(file_content)
   ↓ Data cleaning
 scripts/data_cleaner.py: clean_hbpr_record_content()
   ↓ Database operations
-HBPRProcessor.store_records() → conn.execute()
+HbprProcessor.store_records() → conn.execute()
   ↓ Validation
 CHbpr.run() processes each record
 HbprDatabase.update_with_chbpr_results()
@@ -3287,9 +3192,10 @@ The database schema is now centralized in a single JSON configuration and applie
 - Deprecated: `scripts/commands_migration.py` (functionality merged into the unified migrator)
 
 Benefits:
-- Single source of truth for all tables and indexes
-- One-click migration from the UI; automatic creation of missing tables/columns
-- Consistent structure across scripts (`hbpr_info_processor.py`, `hbpr_list_processor.py`, `command_processor.py`)
+- Single source of truth for all tables, indexes, and views
+- One-click migration from the UI; automatic creation of missing tables/columns/views
+- Consistent structure across scripts (`hbpr_info_processor.py`, `hbpr_file_processor.py`, `hbpr_database.py`, `command_processor.py`)
+- Auto-updating statistics via SQLite Views (no manual refresh needed)
 
 ### Schema Configuration
 
@@ -3302,7 +3208,8 @@ The database schema JSON includes a `config` section for system-wide settings:
   "config": {
     "departure_airport_code": "LAX"
   },
-  "tables": { ... }
+  "tables": { ... },
+  "views": { ... }
 }
 ```
 
@@ -3311,6 +3218,48 @@ The database schema JSON includes a `config` section for system-wide settings:
   - Used by `scripts/commands_parsing/sy.py` for flight type detection
   - Default: "LAX"
   - Can be changed to match different operational airports
+
+### SQLite Views (Auto-Updating Statistics)
+
+The system uses SQLite VIEWs for real-time, auto-updating statistics calculations. Views are defined in `database_schema.json` and automatically created/migrated by `HbprDatabase.__init__()`.
+
+**Key Views**:
+
+1. **`missing_numbers`** - 缺失的HBNB号码
+   - 自动计算HBNB范围内的缺失号码
+   - 实时更新，无需手动刷新
+
+2. **`vw_home_accepted_counts`** - 已接受乘客统计
+   - 总数、婴儿数、舱位分类（F/C/Y）
+   - 行李统计（件数、重量）
+   - 登机号范围（min/max）
+
+3. **`vw_home_flags`** - 删除乘客统计
+   - XRES删除乘客数量
+   - 非XRES删除乘客数量
+   - 总删除乘客数
+
+4. **`vw_deleted_boarding_numbers`** - 删除乘客的登机号列表
+   - 所有删除乘客的原始登机号
+   - XRES标记（is_xres字段）
+
+5. **`vw_hbnb_range`** - HBNB号码范围信息
+   - 最小/最大HBNB号码
+   - 实际记录数
+   - 预期记录数
+
+6. **`vw_missing_boarding_numbers`** - 缺失的登机号（排除已删除乘客）
+   - 自动检测不连续的登机号序列
+   - 自动排除已删除乘客的登机号
+   - 返回真正缺失的登机号列表
+   - 实时更新，始终反映最新数据
+
+**Benefits**:
+- ✅ **实时更新**: 数据变化时自动反映在统计中
+- ✅ **简化代码**: UI层只需简单查询，无需复杂计算
+- ✅ **性能优化**: 数据库层计算比Python更高效
+- ✅ **一致性**: 所有页面使用相同的VIEW，保证数据一致
+- ✅ **可维护性**: 统计逻辑集中在schema定义中
 
 ## 🗄️ Database Schema
 
@@ -3537,7 +3486,7 @@ print(f"Boarding range: {accepted_stats['min_boarding']} - {accepted_stats['max_
 ```python
 # Batch processing is now handled within the UI
 # See ui/database_page.py for building a database from a file,
-# which uses HBPRProcessor internally.
+# which uses HbprProcessor internally.
 ```
 
 ### Data Cleaning Operations
@@ -3790,9 +3739,9 @@ The Flight Data Processing System follows a strict **three-layer architecture** 
 
 #### Layer 2: Scripts (Business Logic)
 - **Responsibility**: Core business logic and data processing
-- **Key Files**: `hbpr_info_processor.py`, `hbpr_list_processor.py`, `command_processor.py`, `data_cleaner.py`
+- **Key Files**: `hbpr_info_processor.py`, `hbpr_file_processor.py`, `record_processor.py`, `hbpr_database.py`, `pr_to_hbpr_converter.py`, `command_processor.py`, `data_cleaner.py`
 - **Dependencies**: Remote_db layer (receives connection objects)
-- **Interface**: Exposes classes (CHbpr, HbprDatabase, HBPRProcessor, CommandProcessor)
+- **Interface**: Exposes classes (CHbpr, RecordProcessor, HbprDatabase, HbprProcessor, CommandProcessor)
 - **State**: Stateless processing; all state in database
 
 #### Layer 3: UI (Presentation)
@@ -3819,7 +3768,7 @@ db.update_with_chbpr_results(chbpr)
 
 ```python
 # ❌ INCORRECT: UI directly imports and uses Scripts without proper connection
-from scripts.hbpr_info_processor import HbprDatabase
+from scripts.hbpr_database import HbprDatabase
 import sqlite3
 
 conn = sqlite3.connect("database.db")  # Bypasses Remote_db layer!
@@ -3836,7 +3785,7 @@ class HbprDatabase:
 
 # ✅ CORRECT: UI provides RemoteSqliteConnection
 conn = get_hbpr_database_client().get_connection()
-processor = HBPRProcessor(conn)
+processor = HbprProcessor(conn)
 ```
 
 ```python

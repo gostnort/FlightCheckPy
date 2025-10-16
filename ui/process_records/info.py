@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Info tab for Process Records page - Error display only
+信息标签页用于流程记录页面 - 仅错误显示
 """
 
 import pandas as pd
 import streamlit as st
 
 from ui.common import get_hbpr_database_client, is_db_available
-from .add_edit_record import apply_font_settings
+from .edit_hbpr import apply_font_settings
 
 
 def execute_query_to_dataframe(db, query, params=None):
