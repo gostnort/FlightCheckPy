@@ -39,7 +39,8 @@ def display_main_statistics(all_stats, db=None):
         value = f"{adult} + {infant}Inf"
         # 只显示非零的舱位
         delta = f"{f}/{c}/{y}" if f > 0 else f"{c}/{y}"
-        st.metric("Accepted Passengers", value, delta)
+        st.metric("Accepted Passengers", value)
+        st.caption(f"_{delta}_")
     # Second row: Deleted passenger statistics and Missing BN
     st.subheader("🗑️ Deleted Passengers")
     # 检查是否有任何数据需要显示
@@ -105,7 +106,8 @@ def display_deleted_stats(deleted_stats):
             delta = f"BN: {', '.join(map(str, all_deleted_nums[:40]))}..."
     else:
         delta = "No Del BN"
-    st.metric("Del in Records", total_deleted, delta)
+    st.metric("Del in Records", total_deleted)
+    st.caption(f"_{delta}_")
 
 
 def display_missing_boarding_numbers(missing_numbers):
@@ -123,5 +125,6 @@ def display_missing_boarding_numbers(missing_numbers):
         delta = f"BN: {', '.join(map(str, missing_numbers))}"
     else:
         delta = f"BN: {', '.join(map(str, missing_numbers[:40]))}..."
-    st.metric("Missing BN", missing_count, delta)
+    st.metric("Missing BN", missing_count)
+    st.caption(f"_{delta}_")
 

@@ -182,18 +182,19 @@ class HbprProcessor:
     def create_tables_if_not_exist(self) -> None:
         """为指定航班创建SQLite数据库表如果不存在从JSON配置读取表结构"""
         from scripts.schema_utils import SchemaUtils
-        cursor = self.conn.cursor()
         utils = SchemaUtils()
-        # 创建所有必要的表从JSON配置读取
-        tables_to_create = ['flight_info', 'hbpr_full_records', 'hbpr_simple_records', 'missing_numbers']
-        for table_name in tables_to_create:
-            try:
-                create_sql = utils.generate_create_table_sql(table_name)
-                cursor.execute(create_sql)
-            except Exception as e:
-                print(f"Warning: Could not create table {table_name}: {e}")
-        self.conn.commit()
-        print("Database tables ensured to exist.")
+        
+        # 使用统一的SchemaUtils方法创建所有表
+        if utils.create_all_tables(self.conn):
+            print("✅ All database tables created successfully.")
+        else:
+            print("⚠️ Some database tables failed to create.")
+        
+        # 创建所有视图
+        if utils.create_all_views(self.conn):
+            print("✅ All database views created successfully.")
+        else:
+            print("⚠️ Some database views failed to create.")
 
 
     def store_records(self, flight_id: str) -> None:
@@ -222,13 +223,6 @@ class HbprProcessor:
             cursor.execute(
                 'INSERT INTO hbpr_simple_records (hbnb_number, record_line) VALUES (?, ?)',
                 (hbnb_num, cleaned_line)
-            )
-        # 存储缺失号码
-        missing_numbers = self.find_missing_numbers(flight_id)
-        for num in missing_numbers:
-            cursor.execute(
-                'INSERT INTO missing_numbers (hbnb_number) VALUES (?)',
-                (num,)
             )
         self.conn.commit()
         # 输出存储统计

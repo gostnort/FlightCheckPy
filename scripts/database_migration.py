@@ -356,15 +356,15 @@ class DatabaseMigrator:
 
     def _create_all_views(self) -> bool:
         """
-        从JSON配置创建所有视图
+        从JSON配置创建所有视图（使用统一的SchemaUtils方法）
         Returns:
             bool: 所有视图创建成功返回True，否则返回False
         """
         print("   🔄 创建所有视图...")
-        all_views_success = True
-        for view_name in self.schema.get('views', {}).keys():
-            if not self._ensure_view_exists(view_name):
-                all_views_success = False
+        from scripts.schema_utils import SchemaUtils
+        utils = SchemaUtils()
+        all_views_success = utils.create_all_views(self.conn)
+        
         # 执行所有VIEWs一次以验证它们工作正常
         if all_views_success:
             self._validate_all_views()

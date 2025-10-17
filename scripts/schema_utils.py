@@ -71,6 +71,41 @@ class SchemaUtils:
             return False
 
 
+    def create_all_views(self, conn) -> bool:
+        """
+        从JSON配置创建所有视图
+        统一的视图创建函数，用于初始数据库创建和迁移
+        Args:
+            conn: 数据库连接
+        Returns:
+            bool: 所有视图创建成功返回True
+        """
+        try:
+            cursor = conn.cursor()
+            views = self.schema.get('views', {})
+            all_success = True
+            
+            for view_name in views.keys():
+                # 检查VIEW是否存在
+                cursor.execute(f"SELECT name FROM sqlite_master WHERE type='view' AND name='{view_name}'")
+                view_exists = cursor.fetchone() is not None
+                
+                try:
+                    if not self.create_view(conn, view_name):
+                        all_success = False
+                    else:
+                        status = "重新创建" if view_exists else "创建"
+                        print(f"  ✅ {status}视图: {view_name}")
+                except Exception as e:
+                    print(f"  ❌ 创建视图 {view_name} 失败: {e}")
+                    all_success = False
+            
+            return all_success
+        except Exception as e:
+            print(f"创建所有视图失败: {e}")
+            return False
+
+
     def generate_create_table_sql(self, table_name: str) -> str:
         """
         从JSON配置生成CREATE TABLE语句
@@ -112,6 +147,39 @@ class SchemaUtils:
         for table_name in self.schema['tables'].keys():
             result[table_name] = self.generate_create_table_sql(table_name)
         return result
+
+
+    def create_all_tables(self, conn) -> bool:
+        """
+        创建所有表（从JSON配置读取）
+        统一的表创建函数，用于初始数据库创建
+        Args:
+            conn: 数据库连接
+        Returns:
+            bool: 所有表创建成功返回True
+        """
+        try:
+            cursor = conn.cursor()
+            all_success = True
+            
+            # 获取所有表名（不包括已迁移的missing_numbers表）
+            table_names = [name for name in self.get_all_table_names() 
+                          if name != 'missing_numbers']  # 排除已迁移到VIEW的表
+            
+            for table_name in table_names:
+                try:
+                    create_sql = self.generate_create_table_sql(table_name)
+                    cursor.execute(create_sql)
+                    print(f"  ✅ 创建表: {table_name}")
+                except Exception as e:
+                    print(f"  ⚠️ 无法创建表 {table_name}: {e}")
+                    # 表可能已存在，继续处理其他表
+            
+            conn.commit()
+            return all_success
+        except Exception as e:
+            print(f"创建所有表失败: {e}")
+            return False
 
 
     def get_table_columns(self, table_name: str) -> List[str]:

@@ -5,8 +5,7 @@ Login and authentication page for HBPR UI
 
 import streamlit as st
 from ui.common import (authenticate_user, get_icon_base64, ensure_memdb_server, 
-                       logout_current_user, restart_db_server, shutdown_db_server,
-                       get_server_status, _port_for_username)
+                       logout_current_user, get_server_status, _port_for_username)
 from remote_db.db_port_client import DbPortClient
 
 
@@ -50,7 +49,7 @@ def show_login_page():
     # 检查自动登录
     should_auto_login, username, port = _check_auto_login()
     if should_auto_login and username and port:
-        st.info(f"🔄 Welcome back! Restoring your session...")
+        st.info("🔄 Welcome back! Restoring your session...")
         st.session_state.authenticated = True
         st.session_state.username = username
         st.session_state.db_service_host = '127.0.0.1'
@@ -103,85 +102,55 @@ def show_login_page():
         
         st.markdown("---")
         
-        # 服务器控制按钮区域 - 始终显示
+        # 服务器控制按钮区域 - 无需登录即可使用
         st.markdown("#### 🔧 Server Control")
-        st.caption("Manage the database server lifecycle")
+        st.caption("Manage the database server lifecycle (no authentication required)")
         
-        # 显示当前服务器状态
-        # 尝试显示状态，即使没有登录过
-        username_for_status = st.session_state.get('last_username')
-        if username_for_status:
-            port_for_status = _port_for_username(username_for_status)
-            if port_for_status:
-                status = get_server_status(port_for_status)
-                
-                if status["running"]:
-                    auth = status.get("auth_status", {})
-                    if auth and auth.get("logged_in"):
-                        st.info(f"🟢 Server running on port {port_for_status} | User: {auth.get('username')}")
-                    else:
-                        st.info(f"🟡 Server running on port {port_for_status} | No user logged in")
-                else:
-                    st.warning(f"🔴 Server not running (port {port_for_status})")
+        # 获取所有可用的用户端口状态
+        all_ports = [51201, 51202, 51203]  # 3个固定端口
+        port_statuses = {}
+        for p in all_ports:
+            port_statuses[p] = get_server_status(p)
+        
+        # 显示服务器状态概览
+        any_running = any(s["running"] for s in port_statuses.values())
+        if any_running:
+            running_ports = [p for p, s in port_statuses.items() if s["running"]]
+            running_info = ", ".join(str(p) for p in running_ports)
+            auth_users = []
+            for p in running_ports:
+                auth = port_statuses[p].get("auth_status", {})
+                if auth and auth.get("logged_in"):
+                    auth_users.append(f"Port {p}: {auth.get('username')}")
+            if auth_users:
+                st.info(f"🟢 Servers running on ports: {running_info}\n\n" + "\n".join(auth_users))
             else:
-                st.info("ℹ️ No server port assigned yet")
+                st.info(f"🟡 Servers running on ports: {running_info} | No users logged in")
         else:
-            st.info("ℹ️ Login to see server status")
+            st.info("🔴 No servers running")
         
-        # 服务器控制按钮 - 始终显示，但根据状态调整行为
+        # 服务器控制按钮
         ctrl_col1, ctrl_col2, ctrl_col3 = st.columns(3)
         
-        with ctrl_col1:
-            if st.button("▶️ Start", use_container_width=True, help="Start the database server"):
-                if 'last_username' in st.session_state:
-                    username = st.session_state.last_username
-                    with st.spinner("Starting server... (may take up to 10 seconds)"):
-                        ok, port, msg = ensure_memdb_server(username)
-                    if ok:
-                        st.success(f"✅ Server started on port {port}")
-                        st.rerun()
-                    else:
-                        st.error(f"❌ Failed to start server: {msg}")
-                else:
-                    st.warning("⚠️ Please login first to determine which server to start")
-        
+        # 仅保留Shutdown按钮，显示运行中的端口信息
         with ctrl_col2:
-            if st.button("🔄 Restart", use_container_width=True, help="Restart the database server"):
-                if 'last_username' in st.session_state:
-                    username = st.session_state.last_username
-                    with st.spinner("Restarting server... (may take up to 10 seconds)"):
-                        ok, port, msg = restart_db_server(username)
-                    if ok:
-                        st.success(f"✅ Server restarted on port {port}")
+            if st.button("⏹️ Shutdown All", use_container_width=True, help="Shutdown all running database servers"):
+                with st.spinner("Shutting down servers..."):
+                    shutdown_count = 0
+                    # 关闭所有运行中的服务器
+                    for port in all_ports:
+                        if port_statuses[port]["running"]:
+                            try:
+                                client = DbPortClient("127.0.0.1", port)
+                                client.shutdown()
+                                shutdown_count += 1
+                            except Exception:
+                                pass
+                    if shutdown_count > 0:
+                        st.success(f"✅ Shut down {shutdown_count} server(s)")
                         st.rerun()
                     else:
-                        st.error(f"❌ Failed to restart server: {msg}")
-                else:
-                    st.warning("⚠️ Please login first to determine which server to restart")
-        
-        with ctrl_col3:
-            if st.button("⏹️ Shutdown", use_container_width=True, help="Shutdown the database server"):
-                username_to_shutdown = st.session_state.get('last_username')
-                if username_to_shutdown:
-                    port_to_shutdown = _port_for_username(username_to_shutdown)
-                    # Create a temporary client to shutdown the specific port
-                    try:
-                        from ui.common import get_db_port_client
-                        # Temporarily set the port for shutdown
-                        old_port = st.session_state.get('db_service_port')
-                        st.session_state.db_service_port = port_to_shutdown
-                        if shutdown_db_server():
-                            st.success("✅ Server shutdown complete")
-                            st.rerun()
-                        else:
-                            st.warning("⚠️ Server may already be down")
-                        # Restore old port
-                        if old_port:
-                            st.session_state.db_service_port = old_port
-                    except Exception as e:
-                        st.error(f"❌ Shutdown error: {e}")
-                else:
-                    st.warning("⚠️ Login first to determine which server to shutdown")
+                        st.warning("⚠️ No servers were running")
         
         st.markdown("---")
         st.caption("🔐 **Contact administrator for access credentials**")

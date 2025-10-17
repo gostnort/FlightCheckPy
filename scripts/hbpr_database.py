@@ -289,19 +289,12 @@ class HbprDatabase:
             if cursor.fetchone():
                 cursor.execute("DROP TABLE IF EXISTS missing_numbers")
                 self.conn.commit()
-                print("Migrated: Dropped old missing_numbers table")
-            # 创建所有VIEWs
+                print("🔄 迁移: 删除旧的missing_numbers表")
+            
+            # 使用统一的SchemaUtils方法创建所有VIEWs
             from scripts.schema_utils import SchemaUtils
             utils = SchemaUtils()
-            # 获取所有VIEW定义
-            views = utils.schema.get('views', {})
-            for view_name in views.keys():
-                # 检查VIEW是否存在
-                cursor.execute(f"SELECT name FROM sqlite_master WHERE type='view' AND name='{view_name}'")
-                if not cursor.fetchone():
-                    # 创建VIEW
-                    utils.create_view(self.conn, view_name)
-            return True
+            return utils.create_all_views(self.conn)
         except Exception as e:
             print(f"Error ensuring views: {e}")
             return False
