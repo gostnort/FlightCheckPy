@@ -119,6 +119,29 @@ HbprProcessor(conn: sqlite3.Connection)
 | `update_with_chbpr_results` | `(chbpr) -> bool` | Stores CHbpr processing results |
 | `get_flight_info` | `() -> dict` | Returns {flight_id, flight_number, flight_date} |
 | `get_connection` | `() -> sqlite3.Connection` | Returns database connection |
+| `get_all_statistics` | `() -> dict` | Returns all statistics including duplicate detection |
+| `get_duplicate_seats` | `() -> List[Dict]` | Returns [{seat, names, count}, ...] duplicate seat assignments |
+| `get_duplicate_names` | `() -> List[Dict]` | Returns [{name, count}, ...] duplicate passenger names |
+
+---
+
+## UI Components
+
+### Duplicate Detection Display (`ui/components/main_stats.py`)
+
+| Function | Location | Signature | Purpose |
+|----------|----------|-----------|---------|
+| `display_duplicate_seats` | L139 | `(duplicate_seats: List[Dict]) -> None` | Displays duplicate seat assignments with passenger names |
+| `display_duplicate_names` | L152 | `(duplicate_names: List[Dict]) -> None` | Displays duplicate passenger names |
+
+### Home Flight Sheet (`ui/components/home_flight_sheet.py`)
+
+| Function | Location | Signature | Purpose |
+|----------|----------|-----------|---------|
+| `get_special_passenger_counts` | L112 | `(db) -> Dict[str, int]` | Returns special passenger type counts |
+| `get_upda_seats` | L171 | `(db) -> str` | Returns formatted SXPS passenger names |
+| `build_flight_sheet_data` | L301 | `(db) -> List[List[str]]` | Builds 8x13 flight sheet data table |
+| `render_flight_sheet_table` | L500 | `(data: List[List[str]]) -> None` | Renders flight sheet with copy button |
 
 ---
 
