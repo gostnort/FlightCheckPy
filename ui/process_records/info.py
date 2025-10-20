@@ -7,7 +7,7 @@ import pandas as pd
 import streamlit as st
 
 from ui.common import get_hbpr_database_client, is_db_available
-from .edit_hbpr import apply_font_settings
+from .edit_hbpr import apply_font_settings, _handle_record_input
 
 
 def execute_query_to_dataframe(db, query, params=None):
@@ -145,21 +145,13 @@ def show_error_messages(db):
             with st.expander(f"🚫 {display_error}"):
                 st.write(f"**Validated at:** {row['validated_at']}")
                 # 添加查看记录的弹出窗口
-                col1, col2, col3 = st.columns([3, 1, 1])
+                col1, col2 = st.columns([4, 1])
                 with col1:
                     st.write("**Quick Actions:**")
                 with col2:
-                    # 切换到Add/Edit Record标签页的按钮
-                    if st.button("✏️ Edit", key=f"edit_{row['hbnb_number']}", use_container_width=True):
-                        # 设置要切换的标签页
-                        st.session_state.process_records_tab = "✏️ Add/Edit Record"
-                        # 设置要选择的HBNB号码
-                        st.session_state.selected_hbnb_for_edit = row['hbnb_number']
-                        st.rerun()
-                with col3:
                     # 根据当前状态显示不同的按钮样式
                     is_viewing = st.session_state.show_popup_for == row['hbnb_number']
-                    button_text = "❌ Close" if is_viewing else "👀 View"
+                    button_text = "❌ Close" if is_viewing else "✏️ Edit Record"
                     if st.button(button_text, key=f"view_{row['hbnb_number']}", use_container_width=True):
                         if is_viewing:
                             st.session_state.show_popup_for = None
@@ -182,20 +174,38 @@ def show_error_messages(db):
 
 
 def show_record_popup(db, hbnb_number):
-    """显示记录的弹出窗口"""
+    """显示记录编辑弹出窗口 - 可编辑，支持PR命令"""
     try:
         # 获取原始内容
         content = db.get_hbpr_record(hbnb_number)
         # Apply dynamic font settings
         apply_font_settings()
-        # 显示原始内容，使用全宽度
-        st.text_area(
+        # 显示可编辑的文本区域，支持PR命令
+        edited_content = st.text_area(
             "Raw Content:",
             content,
             height=400,
-            disabled=True,
+            disabled=False,
             key=f"popup_content_{hbnb_number}",
         )
+        # 添加保存按钮
+        col1, col2 = st.columns([3, 2])
+        with col1:
+            if st.button("💾 Save Changes", use_container_width=True, key=f"save_{hbnb_number}"):
+                result = _handle_record_input(db, edited_content, is_duplicate=False)
+                if result['success']:
+                    st.success(result['message'])
+                    st.rerun()
+                else:
+                    st.error(result['message'])
+        with col2:
+            if st.button("📋 Create Duplicate", use_container_width=True, key=f"dup_{hbnb_number}"):
+                result = _handle_record_input(db, edited_content, is_duplicate=True)
+                if result['success']:
+                    st.success(result['message'])
+                    st.rerun()
+                else:
+                    st.error(result['message'])
     except Exception as e:
         st.error(f"❌ Error retrieving record: {str(e)}")
 
