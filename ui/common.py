@@ -526,3 +526,27 @@ def parse_hbnb_input(input_text: str) -> list:
                 raise ValueError(f"Invalid number format '{part}': {str(e)}")
     return sorted(list(hbnb_numbers))
 
+
+def detect_file_type(content: str) -> str:
+    """
+    检测文件内容类型：HBPR 或 PR
+    Args:
+        content: 文件内容
+    Returns:
+        str: 'HBPR', 'PR', 或 'UNKNOWN'
+    """
+    if not content or not content.strip():
+        return 'UNKNOWN'
+    # 检查是否包含HBPR或PR命令
+    has_hbpr = '>HBPR:' in content
+    has_pr = '>PR:' in content
+    # 如果两者都有，返回UNKNOWN（不应该混合）
+    if has_hbpr and has_pr:
+        return 'UNKNOWN'
+    # 返回检测到的类型
+    if has_hbpr:
+        return 'HBPR'
+    if has_pr:
+        return 'PR'
+    return 'UNKNOWN'
+

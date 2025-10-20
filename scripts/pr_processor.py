@@ -11,29 +11,24 @@ from scripts.data_cleaner import clean_text_for_input
 
 def split_commands(content):
     """
-    将内容按PR:或HBPR:命令边界分割
+    将PR内容按命令边界分割
+    注意：此函数仅处理PR命令，HBPR由HbprProcessor处理
     Args:
-        content: 原始文本内容
+        content: PR命令内容
     Returns:
-        list: 命令列表，每个命令是一个dict包含type和content
+        list: 命令列表
     """
     # 清理内容
     cleaned_content = clean_text_for_input(content)
+    # 合并相同头部的PR段
+    merged_content = merge_pr_sections(cleaned_content)
     # 使用正则表达式分割命令
-    # 匹配 >PR: 或 >HBPR: 开头的行
-    command_pattern = r'^(>(?:PR|HBPR):.*?)(?=^>(?:PR|HBPR):|\Z)'
+    command_pattern = r'^(>PR:.*?)(?=^>PR:|\Z)'
     commands = []
-    matches = re.findall(command_pattern, cleaned_content, re.MULTILINE | re.DOTALL)
+    matches = re.findall(command_pattern, merged_content, re.MULTILINE | re.DOTALL)
     for match in matches:
-        # 判断命令类型
-        if match.startswith('>PR:'):
-            cmd_type = 'PR'
-        elif match.startswith('>HBPR:'):
-            cmd_type = 'HBPR'
-        else:
-            continue
         commands.append({
-            'type': cmd_type,
+            'type': 'PR',
             'content': match.strip()
         })
     return commands
@@ -67,6 +62,55 @@ def extract_tkne_from_pr(pr_content):
                         tkne_numbers.append(parts[0])  # 只返回主要的TKNE号码
                     break
     return list(set(tkne_numbers))  # 去重
+
+
+def merge_pr_sections(pr_content):
+    """
+    合并多个相同头部的PR命令段
+    只处理PR命令（>PR:），HBPR由HbprProcessor处理
+    Args:
+        pr_content: PR命令内容（仅包含>PR:段）
+    Returns:
+        str: 合并后的PR命令内容
+    """
+    # 按行分割
+    lines = pr_content.splitlines()
+    i = 0
+    current_pr_header = None
+    pr_sections_by_header = {}  # 按头部存储PR段
+    while i < len(lines):
+        current_line = lines[i].rstrip()
+        # 检查是否是PR命令头行
+        if current_line.strip().startswith('>PR:'):
+            # 提取PR头部（去掉末尾的+ 或 -）
+            pr_header = current_line.rstrip('+-').rstrip()
+            current_pr_header = pr_header
+            # 如果这个头部未见过，初始化
+            if current_pr_header not in pr_sections_by_header:
+                pr_sections_by_header[current_pr_header] = []
+            i += 1
+        elif current_line.strip() == '>':
+            # 单独的>标记行，表示一个PR段的结束
+            i += 1
+        elif current_line.lstrip().startswith('-'):
+            # 这是继续行的标记，移除行首的-标记
+            if current_pr_header:
+                content_line = current_line.lstrip().lstrip('-').rstrip()
+                if content_line:  # 只加入非空行
+                    pr_sections_by_header[current_pr_header].append(content_line)
+            i += 1
+        else:
+            # 其他行直接属于当前PR
+            if current_pr_header:
+                pr_sections_by_header[current_pr_header].append(current_line)
+            i += 1
+    # 重新构建内容，将相同头部的PR段合并
+    result_lines = []
+    for pr_header, content_lines in pr_sections_by_header.items():
+        result_lines.append(pr_header)
+        result_lines.extend(content_lines)
+        result_lines.append('')  # 添加空行分隔不同的PR命令
+    return '\n'.join(result_lines)
 
 
 def find_hbpr_header_by_tkne(db, tkne_number):
@@ -139,8 +183,10 @@ def convert_pr_to_hbpr(pr_content, db):
             'error': str or None
         }
     """
+    # 第一步：合并所有相同头部的PR段
+    merged_pr_content = merge_pr_sections(pr_content)
     # 提取TKNE
-    tkne_numbers = extract_tkne_from_pr(pr_content)
+    tkne_numbers = extract_tkne_from_pr(merged_pr_content)
     if not tkne_numbers:
         return {
             'success': False,
@@ -156,7 +202,7 @@ def convert_pr_to_hbpr(pr_content, db):
             hbpr_header = result['hbpr_header']
             hbnb_number = result['hbnb_number']
             # 分割PR内容，找到点线位置
-            pr_lines = pr_content.split('\n')
+            pr_lines = merged_pr_content.split('\n')
             dot_line_index = -1
             for i, line in enumerate(pr_lines):
                 if re.match(r'^\s*\d+\.', line):
@@ -189,9 +235,10 @@ def convert_pr_to_hbpr(pr_content, db):
 
 def process_mixed_commands(content, db):
     """
-    处理混合的PR和HBPR命令内容
+    处理PR命令内容并转换为HBPR
+    注意：此函数仅处理PR命令，HBPR由HbprProcessor处理
     Args:
-        content: 包含PR和/或HBPR命令的内容
+        content: PR命令内容
         db: HbprDatabase instance
     Returns:
         dict: {
@@ -205,21 +252,12 @@ def process_mixed_commands(content, db):
     failed_pr_commands = []
     stats = {
         'total_commands': len(commands),
-        'hbpr_count': 0,
-        'pr_count': 0,
+        'pr_count': len(commands),
         'pr_converted': 0,
         'pr_failed': 0
     }
     for cmd in commands:
-        if cmd['type'] == 'HBPR':
-            # 直接添加HBPR命令
-            hbpr_commands.append({
-                'content': cmd['content'],
-                'original_type': 'HBPR'
-            })
-            stats['hbpr_count'] += 1
-        elif cmd['type'] == 'PR':
-            stats['pr_count'] += 1
+        if cmd['type'] == 'PR':
             # 尝试转换PR命令
             result = convert_pr_to_hbpr(cmd['content'], db)
             if result['success']:

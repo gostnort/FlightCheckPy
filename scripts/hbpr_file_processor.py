@@ -21,8 +21,6 @@ class HbprProcessor:
         Args:
             conn: 数据库连接对象
         """
-        if not conn:
-            raise ValueError("A valid database connection must be provided.")
         self.conn = conn
         # flight_data[flight_id] 航班数据，包括HBNB号码、完整记录和简单记录
         # 使用defaultdict，如果flight_id不存在，则创建一个默认值为{hbnb_numbers: set(), full_records: {}, simple_records: {}}的航班数据
@@ -68,9 +66,6 @@ class HbprProcessor:
         self._assign_simple_records()
         # 输出解析统计
         print(f"Found {len(self.flight_data)} flights")
-        #for flight_id, data in self.flight_data.items():
-        #    print(f"Flight {flight_id}: {len(data['hbnb_numbers'])} HBNB numbers, "
-        #          f"{len(data['full_records'])} full records, {len(data['simple_records'])} simple records")
 
 
     def _assign_simple_records(self) -> None:
@@ -183,13 +178,11 @@ class HbprProcessor:
         """为指定航班创建SQLite数据库表如果不存在从JSON配置读取表结构"""
         from scripts.schema_utils import SchemaUtils
         utils = SchemaUtils()
-        
         # 使用统一的SchemaUtils方法创建所有表
         if utils.create_all_tables(self.conn):
             print("✅ All database tables created successfully.")
         else:
             print("⚠️ Some database tables failed to create.")
-        
         # 创建所有视图
         if utils.create_all_views(self.conn):
             print("✅ All database views created successfully.")
@@ -209,7 +202,7 @@ class HbprProcessor:
         )
         # 存储完整记录（清理重复标题）
         for hbnb_num, content in flight_data['full_records'].items():
-            cleaned_content = self._clean_duplicate_headers(content)
+            cleaned_content = self.clean_duplicate_headers(content)
             # 进一步清理内容，移除问题字符
             final_content = clean_hbpr_record_content(cleaned_content, hbnb_num)
             cursor.execute(
@@ -231,7 +224,7 @@ class HbprProcessor:
         #print(f"Stored {len(missing_numbers)} missing number entries")
 
 
-    def _clean_duplicate_headers(self, content: str) -> str:
+    def clean_duplicate_headers(self, content: str) -> str:
         """清理记录内容中的重复>HBPR:标题和分页标记"""
         lines = content.split('\n')
         cleaned_lines = []
@@ -306,25 +299,4 @@ def parse_flight_id_from_content(file_content: str) -> str | None:
                 flight_parts = flight_info.replace('/', '_').replace('*', '_')
                 return flight_parts
     return None
-
-
-def main():
-    """主函数 - 现在作为一个示例，展示如何使用HBPR处理器"""
-    print("🧹 HBPR List Processor Tool")
-    print("=" * 50)
-    print("该脚本现在应该作为模块导入，而不是直接运行。")
-    print("用法示例:")
-    print("  from scripts.hbpr_file_processor import HbprProcessor")
-    print("  from ui.common import get_hbpr_database_client # Assuming UI is running")
-    print("  db_client = get_hbpr_database_client()")
-    print("  if db_client:")
-    print("      conn = db_client.get_connection()")
-    print("      processor = HbprProcessor(conn)")
-    print("      with open('sample_hbpr_list.txt', 'r') as f:")
-    print("          content = f.read()")
-    print("      processor.process(content)")
-
-
-if __name__ == "__main__":
-    main() 
 
