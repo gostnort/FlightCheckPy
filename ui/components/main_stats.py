@@ -108,10 +108,7 @@ def display_deleted_stats(deleted_stats):
     total_deleted = deleted_stats.get('total_deleted', 0)
     # 显示合并的删除乘客统计
     if all_deleted_nums:
-        if len(all_deleted_nums) <= 40:
-            delta = f"BN: {', '.join(map(str, all_deleted_nums))}"
-        else:
-            delta = f"BN: {', '.join(map(str, all_deleted_nums[:40]))}..."
+        delta = f"BN: {', '.join(map(str, all_deleted_nums))}"
     else:
         delta = "No Del BN"
     st.metric("Del in Records", total_deleted)
@@ -128,10 +125,7 @@ def display_missing_boarding_numbers(missing_numbers):
         return
     missing_count = len(missing_numbers)
     # 显示缺失的登机号数量和号码列表
-    if missing_count <= 40:
-        delta = f"BN: {', '.join(map(str, missing_numbers))}"
-    else:
-        delta = f"BN: {', '.join(map(str, missing_numbers[:40]))}..."
+    delta = f"BN: {', '.join(map(str, missing_numbers))}"
     st.metric("Missing BN", missing_count)
     st.caption(f"_{delta}_")
 
@@ -144,7 +138,7 @@ def display_duplicate_seats(duplicate_seats):
     """
     if not duplicate_seats:
         return
-    st.subheader("🪑 Duplicate Seats")
+    st.subheader("💺 Duplicate Seats")
     for item in duplicate_seats:
         st.write(f"**{item['seat']}**: {item['names']}")
 
@@ -157,7 +151,7 @@ def display_duplicate_names(duplicate_names):
     """
     if not duplicate_names:
         return
-    st.subheader("👤 Duplicate Names")
+    st.subheader("👥 Duplicate Names")
     for item in duplicate_names:
         st.write(f"• {item['name']}")
 
