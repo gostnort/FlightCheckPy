@@ -22,6 +22,8 @@ def display_main_statistics(all_stats, db=None):
     accepted_stats = all_stats.get('accepted_passengers_stats', {})
     deleted_stats = all_stats.get('deleted_passengers_stats', {})
     missing_boarding_numbers = all_stats.get('missing_boarding_numbers', [])
+    duplicate_seats = all_stats.get('duplicate_seats', [])
+    duplicate_names = all_stats.get('duplicate_names', [])
     # First row: Main metrics
     m1, m2, m3 = st.columns(3)
     with m1:
@@ -42,7 +44,6 @@ def display_main_statistics(all_stats, db=None):
         st.metric("Accepted Passengers", value)
         st.caption(f"_{delta}_")
     # Second row: Deleted passenger statistics and Missing BN
-    st.subheader("🗑️ Deleted Passengers")
     # 检查是否有任何数据需要显示
     has_deleted = deleted_stats and deleted_stats.get('total_deleted', 0) > 0
     has_missing = missing_boarding_numbers and len(missing_boarding_numbers) > 0
@@ -54,7 +55,14 @@ def display_main_statistics(all_stats, db=None):
             display_deleted_stats(deleted_stats)   
         with d2:
             # 显示缺失的boarding_number统计（在同一个section下）
-            display_missing_boarding_numbers(missing_boarding_numbers)  
+            display_missing_boarding_numbers(missing_boarding_numbers)
+    # Third row: Duplicate seats and duplicate names
+    # 检查是否有重复数据需要显示
+    has_dup_seats = duplicate_seats and len(duplicate_seats) > 0
+    has_dup_names = duplicate_names and len(duplicate_names) > 0
+    if has_dup_seats or has_dup_names:
+        display_duplicate_seats(duplicate_seats)
+        display_duplicate_names(duplicate_names)
 
 
 def display_detailed_range_info(all_stats):
@@ -117,7 +125,6 @@ def display_missing_boarding_numbers(missing_numbers):
         missing_numbers: 缺失的boarding_number列表
     """
     if not missing_numbers:
-        st.info("✅ No missing boarding numbers found")
         return
     missing_count = len(missing_numbers)
     # 显示缺失的登机号数量和号码列表
@@ -127,4 +134,30 @@ def display_missing_boarding_numbers(missing_numbers):
         delta = f"BN: {', '.join(map(str, missing_numbers[:40]))}..."
     st.metric("Missing BN", missing_count)
     st.caption(f"_{delta}_")
+
+
+def display_duplicate_seats(duplicate_seats):
+    """
+    显示重复座位详情
+    Args:
+        duplicate_seats: 重复座位列表 [{'seat': '31K', 'names': 'SMITH/JOHN,DOE/JANE', 'count': 2}, ...]
+    """
+    if not duplicate_seats:
+        return
+    st.subheader("🪑 Duplicate Seats")
+    for item in duplicate_seats:
+        st.write(f"**{item['seat']}**: {item['names']}")
+
+
+def display_duplicate_names(duplicate_names):
+    """
+    显示重复姓名详情
+    Args:
+        duplicate_names: 重复姓名列表 [{'name': 'SMITH/JOHN', 'count': 2}, ...]
+    """
+    if not duplicate_names:
+        return
+    st.subheader("👤 Duplicate Names")
+    for item in duplicate_names:
+        st.write(f"• {item['name']}")
 

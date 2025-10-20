@@ -39,6 +39,19 @@
   "excluded_properties_home_sheet": [
     "CHD","ET","CIP","IET","SA","PAD","ID","AQQ"
   ],
+  "name_suffixes": [
+    "MR",
+    "MS",
+    "MRS",
+    "MSTR",
+    "PHD",
+    "CHD",
+    "INF",
+    "VIP",
+    "STD"
+  ],
+  "name_suffixes_description": "姓名后缀，用于在查找重复姓名时进行清理（例如：SMITH/JOHN MR会被清理为SMITH/JOHN）",
+  "name_suffixes_description_en": "Name suffixes used to clean names when finding duplicates (e.g., SMITH/JOHN MR will be cleaned to SMITH/JOHN)",
   "notes": "可根据需要添加或删除CKIN类型和Properties。修改后需要重新运行程序。",
   "notes_en": "Add or remove CKIN types and Properties as needed. Restart the application after making changes.",
   "property_normalization_notes": "Properties会自动标准化：去除数字和斜杠后缀（如INF1/0变为INF）",

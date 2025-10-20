@@ -1,226 +1,176 @@
 # Flight Data Processing System - Technical API Documentation
 
-## Project Overview
+## Core Processing APIs
 
-The Flight Data Processing System is a comprehensive Python application for processing and analyzing HBPR (Hotel Booking Passenger Record) data. It utilizes a centralized in-memory database architecture for high performance and data consistency. A dedicated HTTP server manages the SQLite database in memory, with the Streamlit UI acting as a client. This client-server model, running locally, ensures that all parts of the application interact with a single, consistent data source. The system also features automatic persistence of the in-memory database to disk.
+### HBPR Processor (`scripts/hbpr_file_processor.py`)
 
-The system validates and parses records, stores them in the database, and provides a modern Streamlit-based UI for database building, record processing with integrated command functionality and timeline versioning, and Excel output generation by mapping TKNE to CKIN CCRD data.
+#### Class: `HbprProcessor`
 
-**Key Features:**
-- **Centralized In-Memory Database Server**: High-performance client-server architecture where a dedicated Python HTTP server manages the database in-memory for each user session.
-- **Unified UI Client**: The entire Streamlit UI acts as a client, communicating with the database server via HTTP requests, ensuring data consistency.
-- **Automatic Data Persistence**: Changes made in memory are automatically saved back to the source file by the server.
-- **Modular UI Architecture**: Organized tab-based interfaces with separate sub-modules for maintainability and clean code structure.
-- **Remote Database Compatibility**: Seamless pandas integration with custom RemoteSqliteConnection objects, eliminating SQLAlchemy warnings.
-- Multi-source database discovery with visual location indicators
-- Native Windows folder picker integration (topmost) with custom folder persistence
-- Centralized database selection with flight information and session persistence
-- Real-time database switching without application restart
-- Intelligent statistics caching with automatic invalidation on updates
-- Accepted passengers tracking with infant count and class split (Business/Economy)
-- **Hot Database Reload**: Real-time database updates when source files are manually modified
-- Excel Processor: XLS/XLSX import, strict header validation, TKNE → CKIN CCRD mapping, formatted EMD Excel export
-- **Command Functionality**: Integrated into Process Records page with timeline versioning and dual SY support (departure and arrival)
-- TKNE-aware calculations and compatibility handling
-- **Data Cleaning & Export Solutions**: Comprehensive data sanitization at input, storage, and export stages
-- **Deleted Passenger Analytics**: Comprehensive tracking of deleted passengers with XRES property classification
-- **Missing Boarding Number Detection**: Intelligent detection of discontinuous boarding numbers
-- **Reusable UI Components**: Modular component architecture for consistent statistics display
-- **Dual SY Command Support**: System handles both departure and arrival SY commands
+**Constructor**
+```python
+HbprProcessor(conn: sqlite3.Connection)
+```
+- Location: Line 14
+- Initializes processor with database connection
+- Attributes:
+  - `flight_data`: Dict[str, Dict[str, Any]] - indexed by flight_id
+  - `flight_info`: Dict[str, Tuple[str, str]] - (flight_number, date)
+  - `flight_id`: str - current flight ID
+  - `all_simple_records`: Dict[int, str] - simple records by HBNB
 
----
+**Methods**
 
-## v0.63 Major Changes
+| Method | Location | Signature | Returns |
+|--------|----------|-----------|---------|
+| `parse_file_content` | L37 | `(file_content: str) -> None` | Parses HBPR text, extracts records by flight |
+| `parse_full_record` | L89 | `(lines: list[str], start_index: int) -> tuple[int \| None, str, int]` | Returns (hbnb_num, content, next_index) |
+| `store_records` | L195 | `(flight_id: str) -> None` | Stores flight records to database with cleaning |
+| `clean_duplicate_headers` | L229 | `(content: str) -> str` | Removes duplicate >HBPR: headers and +/- markers |
+| `find_missing_numbers` | L162 | `(flight_id: str) -> list[int]` | Finds missing HBNB numbers in range |
+| `generate_report` | L248 | `(flight_id: str) -> None` | Prints processing report |
+| `process` | L277 | `(file_content: str) -> None` | Full pipeline: parse → store → report |
+| `create_tables_if_not_exist` | L177 | `() -> None` | Creates database tables if missing |
 
-### 1. Login Page Refactoring (`ui/login_page.py`)
+**Module-Level Function**
 
-**Purpose**: User authentication and server lifecycle monitoring interface
-
-**Key Changes**:
-- Separated server lifecycle management from user authentication requirements
-- Removed "Start All" and "Restart All" buttons (they require login anyway for port assignment)
-- Kept only "Shutdown All" button for infrastructure control (no authentication required)
-- Enhanced server status display showing all 3 ports (51201, 51202, 51203) with color-coded indicators
-- Display logged-in users for each active port
-- All imports placed at file beginning (C convention style)
-
-**Server Control Design Principle**:
-- Server startup is automatic when a user logs in and gets assigned a port
-- Server shutdown is manual and requires no authentication
-- Status monitoring is accessible without login
-
-### 2. DatabaseMigrator Class (`scripts/database_migration.py`)
-
-**Purpose**: Unified schema migration system with JSON configuration
-
-**Key Methods**:
-- `migrate_database()`: Execute all pending migrations
-- `ensure_table_exists()`: Check and create tables if needed
-- `add_column_if_missing()`: Automatically add missing columns from schema
-- `handle_commands_table_versioning()`: Manage commands table schema versions
-- `create_indexes()`: Build all required database indexes
-- `create_views()`: Create VIEW-based statistics for performance
-
-**Features**:
-- JSON-based schema configuration for easy maintenance
-- Automatic column addition without data loss
-- Transaction support with rollback capability
-- Index management for query optimization
-- Error recovery and validation
-
-### 3. SchemaUtils Class (`scripts/schema_utils.py`)
-
-**Purpose**: Centralized SQL generation from JSON schema configuration
-
-**Key Methods**:
-- `generate_create_table_sql()`: Build CREATE TABLE statements
-- `generate_column_sql()`: Generate column definitions with constraints
-- `generate_indexes()`: Create INDEX statements
-- `generate_views()`: Create VIEW statements for statistics
-
-**Features**:
-- Supports all SQLite data types and constraints
-- Automatic primary key and foreign key generation
-- Index strategy optimization
-- VIEW creation for performance-critical queries
-
-### 4. HbprDatabase Enhanced (`scripts/hbpr_database.py`)
-
-**Features Added**:
-- VIEW-based statistics calculation for better performance
-- Enhanced error resilience with retry logic
-- Automatic connection validation
-- Improved transaction management
-- Better resource cleanup
-
-**Statistics Views**:
-- Total passengers count by flight
-- Class distribution (Business/Economy)
-- Infant count tracking
-- Deleted passenger analytics
-
-### 5. HbprFileProcessor Enhanced (`scripts/hbpr_file_processor.py`)
-
-**Data Cleaning Pipeline Improvements**:
-- Improved binary/hexadecimal character detection and removal
-- Better handling of edge cases in record parsing
-- Enhanced field validation
-- Consistent encoding handling (UTF-8)
-- Comprehensive error logging
+| Function | Location | Signature | Returns |
+|----------|----------|-----------|---------|
+| `parse_flight_id_from_content` | L290 | `(file_content: str) -> str \| None` | Extracts flight ID without full parsing |
 
 ---
 
-## Module Documentation
+### PR Processor (`scripts/pr_processor.py`)
 
-### Core Modules
+| Function | Location | Signature | Returns |
+|----------|----------|-----------|---------|
+| `split_commands` | L12 | `(content: str) -> list[dict]` | Parses PR content into command list with type 'PR' |
+| `merge_pr_sections` | L67 | `(pr_content: str) -> str` | Merges multiple PR sections with same header |
+| `extract_tkne_from_pr` | L37 | `(pr_content: str) -> list[str]` | Extracts TKNE ticket numbers from PR |
+| `find_hbpr_header_by_tkne` | L116 | `(db, tkne_number: str) -> dict` | Returns {found: bool, hbnb_number: int, hbpr_header: str, error: str} |
+| `convert_pr_to_hbpr` | L171 | `(pr_content: str, db) -> dict` | Returns {success: bool, converted_content: str, hbnb_number: int, error: str} |
+| `process_mixed_commands` | L236 | `(content: str, db) -> dict` | Returns {hbpr_commands: list, failed_pr_commands: list, stats: dict} |
+| `validate_pr_content` | L283 | `(pr_content: str) -> dict` | Returns {is_valid: bool, is_pr_command: bool, errors: list} |
+| `display_processing_results` | L322 | `(chbpr) -> None` | Displays CHbpr processing results in Streamlit UI |
 
-#### `scripts/database_migration.py`
-- Handles all schema migrations
-- Manages database versioning
-- Ensures schema consistency across instances
+---
 
-#### `scripts/hbpr_database.py`
-- Main database abstraction layer
-- Manages in-memory SQLite database
-- Handles all CRUD operations
-- Provides statistics views
+### UI Record Processing (`ui/process_records/add_hbprs.py`)
 
-#### `scripts/schema_utils.py`
-- SQL generation utilities
-- Schema configuration management
-- Index and view creation
+| Function | Location | Signature | Purpose |
+|----------|----------|-----------|---------|
+| `show_add_hbprs_tab` | L14 | `() -> None` | Renders file uploader and process button |
+| `process_and_add_hbprs` | L28 | `(uploaded_file) -> None` | Main handler: detects file type, routes to processor |
+| `process_hbpr_file` | L56 | `(file_content: str, db) -> None` | HBPR-specific: validates, parses with HbprProcessor |
+| `process_pr_file` | L86 | `(file_content: str, db) -> None` | PR-specific: converts to HBPR, then processes |
+| `process_records_into_database` | L144 | `(db, processor: HbprProcessor, flight_id_from_file: str) -> None` | Shared: stores records with cleaning, duplicate tracking |
+| `process_updated_records` | L252 | `(db, hbnb_list: list) -> None` | Advanced: processes records with CHbpr |
 
-#### `scripts/hbpr_file_processor.py`
-- File parsing and validation
-- Data cleaning pipeline
-- Record processing
+---
 
-### UI Modules
+### Common Utilities (`ui/common.py`)
 
-#### `ui/login_page.py` (中文: 用户身份验证和服务器生命周期监控界面)
-- User authentication
-- Server status monitoring
-- Server shutdown management
-- Session state management
+| Function | Location | Signature | Returns |
+|----------|----------|-----------|---------|
+| `detect_file_type` | L530 | `(content: str) -> str` | 'HBPR', 'PR', or 'UNKNOWN' |
+| `parse_hbnb_input` | L497 | `(input_text: str) -> list[int]` | Parses "400-410,412,415-420" format |
+| `get_hbpr_database_client` | L144 | `() -> HbprDatabase \| None` | Gets/creates database client from session |
+| `get_db_port_client` | L133 | `() -> DbPortClient \| None` | Gets database port client |
+| `load_database` | L287 | `(path: str) -> bool` | Loads database file into memory |
+| `trigger_auto_save` | L180 | `() -> bool` | Saves in-memory database to disk |
+| `reload_database_from_disk` | L198 | `() -> bool` | Reloads database from disk |
+| `is_db_available` | L157 | `() -> bool` | Checks if database is loaded |
+| `get_database_name` | L169 | `() -> str` | Gets current database name |
+| `authenticate_user` | L28 | `(username: str) -> bool` | Validates user via SHA256 hash |
+| `ensure_memdb_server` | L67 | `(username: str) -> tuple[bool, int, str]` | Ensures server running, returns (ok, port, message) |
+| `create_database_selectbox` | L315 | `(label: str, key: str, custom_folder: str \| None) -> tuple[str, list]` | Creates DB selector widget |
 
-#### `ui/components/main_stats.py` (中文: 主统计显示组件)
-- Display flight statistics
-- Show passenger counts
-- Display class distribution
-- Show infant counts
+---
+
+### Edit Record Processing (`ui/process_records/edit_hbpr.py`)
+
+| Function | Location | Signature | Purpose |
+|----------|----------|-----------|---------|
+| `_handle_record_input` | - | `(db, content: str, is_duplicate: bool = False) -> dict` | Handles PR/HBPR validation, cleaning, saving |
+
+---
+
+### Data Cleaner (`scripts/data_cleaner.py`)
+
+| Function | Signature | Purpose |
+|----------|-----------|---------|
+| `clean_hbpr_record_content` | `(content: str, hbnb_num: int) -> str` | Removes binary/hex artifacts |
+| `clean_text_for_input` | `(text: str) -> str` | Normalizes input text |
+
+---
+
+## Database Layer (`scripts/hbpr_database.py`)
+
+### Class: `HbprDatabase`
+
+| Method | Signature | Purpose |
+|--------|-----------|---------|
+| `check_hbnb_exists` | `(hbnb_number: int) -> dict` | Returns {full_record: bool, simple_record: bool} |
+| `create_full_record` | `(hbnb_number: int, record_content: str) -> bool` | Inserts/replaces full record |
+| `create_simple_record` | `(hbnb_number: int, record_line: str) -> bool` | Inserts simple record |
+| `create_duplicate_record_with_time` | `(hbnb_num: int, hbnb_dup: int, content: str, created_at: str) -> bool` | Creates timestamped duplicate |
+| `get_hbpr_record` | `(hbnb_number: int) -> str` | Retrieves full record content |
+| `delete_simple_record` | `(hbnb_number: int) -> None` | Deletes simple record |
+| `get_original_record_info` | `(hbnb_number: int) -> dict` | Returns {record_content, created_at} |
+| `update_with_chbpr_results` | `(chbpr) -> bool` | Stores CHbpr processing results |
+| `get_flight_info` | `() -> dict` | Returns {flight_id, flight_number, flight_date} |
+| `get_connection` | `() -> sqlite3.Connection` | Returns database connection |
+
+---
+
+## Data Flow
+
+### HBPR Import Flow
+```
+uploaded_file → process_and_add_hbprs()
+  → detect_file_type() = 'HBPR'
+  → process_hbpr_file()
+    → parse_flight_id_from_content()
+    → HbprProcessor.parse_file_content()
+    → process_records_into_database()
+      → processor.clean_duplicate_headers()
+      → clean_hbpr_record_content()
+      → db.check_hbnb_exists()
+      → db.create_full_record() or create_duplicate_record_with_time()
+    → process_updated_records()
+      → CHbpr.run()
+      → db.update_with_chbpr_results()
+  → trigger_auto_save()
+```
+
+### PR Import Flow
+```
+uploaded_file → process_and_add_hbprs()
+  → detect_file_type() = 'PR'
+  → process_pr_file()
+    → process_mixed_commands()
+      → split_commands()
+      → merge_pr_sections()
+      → for each command:
+        → extract_tkne_from_pr()
+        → convert_pr_to_hbpr()
+          → find_hbpr_header_by_tkne()
+          → combine header + body
+    → HbprProcessor.parse_file_content() on converted HBPR
+    → process_records_into_database() [same as HBPR flow]
+```
 
 ---
 
 ## Database Schema
 
-The database schema is managed via JSON configuration in `scripts/database_schema.json`:
-
-```json
-{
-  "tables": {
-    "flights": {
-      "columns": {
-        "id": "INTEGER PRIMARY KEY",
-        "flight_number": "TEXT NOT NULL",
-        "departure_date": "TEXT NOT NULL"
-      }
-    },
-    "passengers": {
-      "columns": {
-        "id": "INTEGER PRIMARY KEY",
-        "flight_id": "INTEGER",
-        "name": "TEXT",
-        "seat": "TEXT"
-      }
-    }
-  }
-}
-```
-
----
-
-## API Endpoints
-
-### Database Port Server (`remote_db/memdb_port_server.py`)
-
-The in-memory database runs on configurable ports (default: 51201-51203):
-
-- **GET** `/status` - Server status
-- **POST** `/query` - Execute SQL query
-- **POST** `/execute` - Execute SQL command
-- **POST** `/shutdown` - Graceful shutdown
-
----
-
-## Error Handling & Resilience
-
-All modules implement comprehensive error handling:
-- Try-catch blocks with specific exception handling
-- Automatic retry logic for transient failures
-- Graceful degradation when resources unavailable
-- Detailed logging for debugging
-
----
-
-## Performance Optimizations
-
-1. **In-Memory Database**: All data cached in memory for fast access
-2. **VIEW-Based Statistics**: Pre-calculated statistics avoid expensive queries
-3. **Index Strategy**: Strategic indexes on frequently queried columns
-4. **Connection Pooling**: Reuse database connections efficiently
-5. **Lazy Loading**: Load data on demand, not all at once
-
----
-
-## Testing & Quality
-
-- Comprehensive error handling
-- Logging at all critical points
-- Validation of inputs
-- Schema consistency checks
-- Transaction integrity verification
+**Key Tables:**
+- `flight_info` - Flight metadata
+- `hbpr_full_records` - Complete HBPR records
+- `hbpr_simple_records` - Simple HBPR records
+- `commands` - Command history
+- `deleted_passengers` - Deleted passenger tracking
 
 ---
 
 **Documentation Last Updated**: v0.63
-**Status**: Active Development
+**Status**: Production

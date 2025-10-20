@@ -168,6 +168,37 @@ def get_special_passenger_counts(db) -> Dict[str, int]:
     return property_counts
 
 
+def get_sxps_seats(db) -> str:
+    """获取有SXPS消息的乘客姓名
+    Args:
+        db: 数据库客户端实例
+    Returns:
+        格式化的乘客姓名字符串，例如: "SXPS passengers: SMITH/JOHN; DOE/JANE; WANG/LI"
+    """
+    try:
+        conn = db.get_connection()
+        cursor = conn.cursor()
+        # 查询有SXPS消息的乘客（排除XRES已删除乘客）
+        cursor.execute("""
+            SELECT name
+            FROM hbpr_full_records
+            WHERE ckin_msg IS NOT NULL
+                  AND ckin_msg LIKE '%SXPS%'
+                  AND (properties IS NULL OR properties NOT LIKE '%XRES%')
+                  AND name IS NOT NULL
+                  AND name != ''
+            ORDER BY name
+        """)
+        rows = cursor.fetchall()
+        if rows:
+            names = [row[0] for row in rows]
+            return f"SXPS passengers: {'; '.join(names)}"
+        return ""
+    except Exception as e:
+        st.error(f"查询SXPS乘客时出错: {e}")
+        return ""
+
+
 def has_required_sy_commands(db) -> bool:
     """检查数据库是否同时包含到达和出发SY命令
     Args:
@@ -267,48 +298,6 @@ def get_airc_command(db) -> Optional[Dict[str, str]]:
         return None
 
 
-def get_duplicate_seats(db) -> str:
-    """查询数据库中重复的座位号及对应的乘客姓名
-    Args:
-        db: 数据库客户端实例
-    Returns:
-        格式化的重复座位字符串，例如: "31K: SMITH/JOHN, DOE/JANE; 45A: WANG/LI, CHEN/WEI"
-    """
-    try:
-        conn = db.get_connection()
-        cursor = conn.cursor()
-        # 查询重复的座位 (只统计非XRES乘客)
-        cursor.execute("""
-            SELECT seat,
-                   GROUP_CONCAT(name, ',') as names,
-                   COUNT(*) as count
-            FROM (
-                SELECT seat, name
-                FROM hbpr_full_records
-                WHERE properties IS NOT NULL
-                      AND properties != ''
-                      AND properties NOT LIKE '%XRES%'
-                      AND seat IS NOT NULL
-                      AND seat != ''
-            )
-            GROUP BY seat
-            HAVING COUNT(*) > 1
-            ORDER BY seat
-        """)
-        duplicate_rows = cursor.fetchall()
-        if duplicate_rows:
-            # 格式化为字符串
-            dup_list = []
-            for seat, names, count in duplicate_rows:
-                dup_list.append(f"{seat} = {names}")
-            return ' ; '.join(dup_list)
-        return ""
-        
-    except Exception as e:
-        st.error(f"查询重复座位时出错: {e}")
-        return ""
-
-
 def build_flight_sheet_data(db) -> List[List[str]]:
     """构建8列x13行的flight sheet数据（带常量模板）
     返回二维列表，每个元素是单元格内容
@@ -349,7 +338,6 @@ def build_flight_sheet_data(db) -> List[List[str]]:
     # 获取命令数据
     arrival_sy, departure_sy = get_sy_commands(db)
     airc_cmd = get_airc_command(db)
-    duplicate_seats = get_duplicate_seats(db) 
     # Row 1 - 航班信息
     if arrival_sy:
         # col 2 (idx 1): arrival flight number
@@ -409,11 +397,14 @@ def build_flight_sheet_data(db) -> List[List[str]]:
     if airc_cmd:
         inop_seats = extract_inop_seats_from_airc_content(airc_cmd['content'])
         sheet_data[7][0] = inop_seats
-    # Row 9 - 重复座位（索引8）
-    if duplicate_seats:
-        sheet_data[8][0] = duplicate_seats
+    # Row 9 - SXPS座位信息（索引8）
+    sxps_seats = get_sxps_seats(db)
+    if sxps_seats:
+        sheet_data[8][0] = sxps_seats
     # Rows 12-13 - 特殊乘客统计（列2-8，即索引1-7）
     special_pax = get_special_passenger_counts(db)
+    # 移除SXPS从统计显示中（因为已经在Row 9显示）
+    special_pax.pop('SXPS', None)
     # 按字母顺序排序属性
     sorted_props = sorted(special_pax.items())
     # 填充到表格的第12和13行（索引11和12），列2-8（索引1-7）

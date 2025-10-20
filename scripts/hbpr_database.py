@@ -921,7 +921,56 @@ class HbprDatabase:
         stats['deleted_passengers_stats'] = self.get_deleted_passengers_stats()
         # Get missing boarding numbers
         stats['missing_boarding_numbers'] = self.get_missing_boarding_numbers()
+        # Get duplicate seats
+        stats['duplicate_seats'] = self.get_duplicate_seats()
+        # Get duplicate names
+        stats['duplicate_names'] = self.get_duplicate_names()
         return stats
+
+
+    def get_duplicate_seats(self):
+        """获取重复座位的统计数据
+        Returns:
+            List[Dict]: 包含座位号、乘客姓名和计数的列表
+                [{'seat': '31K', 'names': 'SMITH/JOHN,DOE/JANE', 'count': 2}, ...]
+        """
+        try:
+            cursor = self.conn.cursor()
+            self.ensure_all_views(verbose=False)
+            cursor.execute("SELECT seat, names, count FROM vw_duplicate_seats ORDER BY seat")
+            results = []
+            for row in cursor.fetchall():
+                results.append({
+                    'seat': row[0],
+                    'names': row[1],
+                    'count': row[2]
+                })
+            return results
+        except Exception as e:
+            print(f"Warning: Error getting duplicate seats: {e}")
+            return []
+
+
+    def get_duplicate_names(self):
+        """获取重复姓名的统计数据（去除后缀后）
+        Returns:
+            List[Dict]: 包含姓名和计数的列表
+                [{'name': 'SMITH/JOHN', 'count': 2}, ...]
+        """
+        try:
+            cursor = self.conn.cursor()
+            self.ensure_all_views(verbose=False)
+            cursor.execute("SELECT cleaned_name, count FROM vw_duplicate_names ORDER BY count DESC, cleaned_name")
+            results = []
+            for row in cursor.fetchall():
+                results.append({
+                    'name': row[0],
+                    'count': row[1]
+                })
+            return results
+        except Exception as e:
+            print(f"Warning: Error getting duplicate names: {e}")
+            return []
 
 
     def create_duplicate_record_table(self):

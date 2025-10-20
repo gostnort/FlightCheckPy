@@ -336,7 +336,7 @@ class CHbpr:
         # 一般订座都有FBA项目
         pat = re.compile(r"\sFBA/\dPC")
         re_match = pat.search(self.__Hbpr)
-        result = {"FBA": 0, "IFBA": 0}
+        result = {"FBA": 1, "IFBA": 0} # 默认有1件FBA
         if re_match:
             try:
                 result["FBA"] = int(self.__Hbpr[re_match.start() + 5])

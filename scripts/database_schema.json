@@ -121,6 +121,14 @@
     "vw_missing_boarding_numbers": {
       "description": "缺失的登机号（排除已删除乘客）",
       "sql": "WITH boarding_range AS (SELECT MIN(boarding_number) as min_bn, MAX(boarding_number) as max_bn FROM hbpr_full_records WHERE boarding_number IS NOT NULL AND boarding_number > 0), number_series AS (WITH RECURSIVE nums(n) AS (SELECT (SELECT min_bn FROM boarding_range) UNION ALL SELECT n+1 FROM nums WHERE n < (SELECT max_bn FROM boarding_range)) SELECT n as boarding_number FROM nums WHERE n IS NOT NULL), existing_boarding AS (SELECT DISTINCT boarding_number FROM hbpr_full_records WHERE boarding_number IS NOT NULL AND boarding_number > 0), deleted_boarding AS (SELECT is_deleted as boarding_number FROM hbpr_full_records WHERE is_deleted >= 1) SELECT ns.boarding_number FROM number_series ns WHERE NOT EXISTS (SELECT 1 FROM existing_boarding eb WHERE eb.boarding_number = ns.boarding_number) AND NOT EXISTS (SELECT 1 FROM deleted_boarding db WHERE db.boarding_number = ns.boarding_number) ORDER BY ns.boarding_number"
+    },
+    "vw_duplicate_seats": {
+      "description": "重复的座位号及对应的乘客姓名（仅统计非XRES乘客）",
+      "sql": "SELECT seat, GROUP_CONCAT(name, ',') as names, COUNT(*) as count FROM (SELECT seat, name FROM hbpr_full_records WHERE properties IS NOT NULL AND properties != '' AND properties NOT LIKE '%XRES%' AND seat IS NOT NULL AND seat != '') GROUP BY seat HAVING COUNT(*) > 1 ORDER BY seat"
+    },
+    "vw_duplicate_names": {
+      "description": "重复的乘客姓名（去除后缀后）及对应的座位号和登机号",
+      "sql": "WITH cleaned_names AS (SELECT hbnb_number, boarding_number, seat, TRIM(CASE WHEN name LIKE '%MR' THEN SUBSTR(name, 1, LENGTH(name)-2) WHEN name LIKE '%MS' THEN SUBSTR(name, 1, LENGTH(name)-2) WHEN name LIKE '%MRS' THEN SUBSTR(name, 1, LENGTH(name)-3) WHEN name LIKE '%MSTR' THEN SUBSTR(name, 1, LENGTH(name)-4) WHEN name LIKE '%PHD' THEN SUBSTR(name, 1, LENGTH(name)-3) WHEN name LIKE '%CHD' THEN SUBSTR(name, 1, LENGTH(name)-3) WHEN name LIKE '%INF' THEN SUBSTR(name, 1, LENGTH(name)-3) WHEN name LIKE '%VIP' THEN SUBSTR(name, 1, LENGTH(name)-3) ELSE name END) as cleaned_name FROM hbpr_full_records WHERE name IS NOT NULL AND name != '' AND properties NOT LIKE '%XRES%') SELECT cleaned_name, GROUP_CONCAT(boarding_number, ',') as boarding_numbers, GROUP_CONCAT(seat, ',') as seats, COUNT(*) as count FROM cleaned_names WHERE cleaned_name != '' GROUP BY cleaned_name HAVING COUNT(*) > 1 ORDER BY count DESC, cleaned_name"
     }
   }
 }

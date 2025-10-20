@@ -15,7 +15,7 @@ def show_home_page():
     """显示主页"""
     apply_global_settings()
     # Create two columns for layout
-    col1, col2 = st.columns(2)
+    col1, col2 = st.columns([3,2])
     with col1:
         st.subheader("📊 Main Statistics")
         try:
