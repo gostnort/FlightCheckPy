@@ -71,12 +71,13 @@ class SchemaUtils:
             return False
 
 
-    def create_all_views(self, conn) -> bool:
+    def create_all_views(self, conn, verbose: bool = True) -> bool:
         """
         从JSON配置创建所有视图
         统一的视图创建函数，用于初始数据库创建和迁移
         Args:
             conn: 数据库连接
+            verbose: 是否打印创建消息（默认True）
         Returns:
             bool: 所有视图创建成功返回True
         """
@@ -95,14 +96,17 @@ class SchemaUtils:
                         all_success = False
                     else:
                         status = "重新创建" if view_exists else "创建"
-                        print(f"  ✅ {status}视图: {view_name}")
+                        if verbose:
+                            print(f"  ✅ {status}视图: {view_name}")
                 except Exception as e:
-                    print(f"  ❌ 创建视图 {view_name} 失败: {e}")
+                    if verbose:
+                        print(f"  ❌ 创建视图 {view_name} 失败: {e}")
                     all_success = False
             
             return all_success
         except Exception as e:
-            print(f"创建所有视图失败: {e}")
+            if verbose:
+                print(f"创建所有视图失败: {e}")
             return False
 
 

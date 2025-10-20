@@ -398,9 +398,10 @@ class DatabaseMigrator:
         return self.schema.get('version', 'unknown')
 
 
-    def verify_migration(self) -> bool:
+    def verify_migration(self, verbose: bool = True) -> bool:
         """验证迁移结果"""
-        print("\n🔍 验证数据库...")
+        if verbose:
+            print("\n🔍 验证数据库...")
         
         all_valid = True
         
@@ -416,10 +417,12 @@ class DatabaseMigrator:
                 missing_columns = set(required_column_names) - set(existing_column_names)
                 
                 if missing_columns:
-                    print(f"   ❌ HBPR表缺少列: {list(missing_columns)}")
+                    if verbose:
+                        print(f"   ❌ HBPR表缺少列: {list(missing_columns)}")
                     all_valid = False
                 else:
-                    print("   ✅ HBPR表所有必需列都存在")
+                    if verbose:
+                        print("   ✅ HBPR表所有必需列都存在")
             
             # 验证Commands表
             cursor.execute("PRAGMA table_info(commands)")
@@ -430,23 +433,29 @@ class DatabaseMigrator:
                 missing_columns = set(required_column_names) - set(existing_column_names)
                 
                 if missing_columns:
-                    print(f"   ❌ Commands表缺少列: {list(missing_columns)}")
+                    if verbose:
+                        print(f"   ❌ Commands表缺少列: {list(missing_columns)}")
                     all_valid = False
                 else:
-                    print("   ✅ Commands表所有必需列都存在")
+                    if verbose:
+                        print("   ✅ Commands表所有必需列都存在")
             
             # 验证VIEWs
-            print("   🔍 验证视图...")
+            if verbose:
+                print("   🔍 验证视图...")
             for view_name in self.schema.get('views', {}).keys():
                 cursor.execute(f"SELECT name FROM sqlite_master WHERE type='view' AND name='{view_name}'")
                 if cursor.fetchone():
-                    print(f"     ✅ 视图 {view_name} 存在")
+                    if verbose:
+                        print(f"     ✅ 视图 {view_name} 存在")
                 else:
-                    print(f"     ❌ 视图 {view_name} 不存在")
+                    if verbose:
+                        print(f"     ❌ 视图 {view_name} 不存在")
                     all_valid = False
             
         except sqlite3.Error as e:
-            print(f"   ❌ 验证时发生数据库错误: {e}")
+            if verbose:
+                print(f"   ❌ 验证时发生数据库错误: {e}")
             all_valid = False
             
         return all_valid

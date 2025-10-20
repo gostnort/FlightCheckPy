@@ -5,7 +5,7 @@ Simple tab for Database page - Simple record management
 
 import streamlit as st
 import pandas as pd
-from ui.common import parse_hbnb_input, get_hbpr_database_client, is_db_available
+from ui.common import parse_hbnb_input, get_hbpr_database_client, is_db_available, trigger_auto_save
 
 
 def show_simple_records():
@@ -111,6 +111,7 @@ def _create_simple_records(db, hbnb_numbers):
                     created_count += 1
             except Exception as e:
                 st.error(f"❌ Error processing HBNB {hbnb_num}: {str(e)}")
+                print(f"DEBUG: Exception creating HBNB {hbnb_num}: {str(e)}", flush=True)
                 error_count += 1
             # 更新进度条
             progress_bar.progress((i + 1) / len(hbnb_numbers))
@@ -127,6 +128,10 @@ def _create_simple_records(db, hbnb_numbers):
             st.success(f"✅ Successfully created {created_count} simple records!")
             # 设置刷新标志
             st.session_state.refresh_home = True
+            # 标记有未保存的更改并保存
+            st.session_state.db_has_unsaved_changes = False
+            if trigger_auto_save():
+                st.toast("✅ 数据库已自动保存")
     except Exception as e:
         st.error(f"❌ Error creating simple records: {str(e)}")
 

@@ -230,7 +230,7 @@ def render_database_migration():
             if db_client:
                 conn = db_client.get_connection()
                 migrator = DatabaseMigrator(conn)
-                if migrator.verify_migration():
+                if migrator.verify_migration(verbose=False):
                     st.success("✅ 迁移验证通过！")
         except Exception as e:
             st.error(f"❌ 获取信息失败: {e}")

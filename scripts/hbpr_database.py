@@ -24,7 +24,7 @@ class HbprDatabase:
         # Caching is disabled for memory database, as it's fast enough
         self.stats_manager = None
         # 确保所有VIEWs存在
-        self.ensure_all_views()
+        self.ensure_all_views(verbose=False)
 
 
     def get_connection(self):
@@ -280,7 +280,7 @@ class HbprDatabase:
             return []
 
 
-    def ensure_all_views(self):
+    def ensure_all_views(self, verbose: bool = True):
         """确保所有VIEWs存在（迁移旧表到VIEW）"""
         try:
             cursor = self.conn.cursor()
@@ -289,12 +289,13 @@ class HbprDatabase:
             if cursor.fetchone():
                 cursor.execute("DROP TABLE IF EXISTS missing_numbers")
                 self.conn.commit()
-                print("🔄 迁移: 删除旧的missing_numbers表")
+                if verbose:
+                    print("🔄 迁移: 删除旧的missing_numbers表")
             
             # 使用统一的SchemaUtils方法创建所有VIEWs
             from scripts.schema_utils import SchemaUtils
             utils = SchemaUtils()
-            return utils.create_all_views(self.conn)
+            return utils.create_all_views(self.conn, verbose=verbose)
         except Exception as e:
             print(f"Error ensuring views: {e}")
             return False
