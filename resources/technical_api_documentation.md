@@ -54,6 +54,36 @@ HbprProcessor(conn: sqlite3.Connection)
 
 ---
 
+### HBPR Information Processor (`scripts/hbpr_info_processor.py`)
+
+#### Class: `CHbpr`
+
+**Constructor**
+```python
+CHbpr()
+```
+- Initializes empty instance, processes HBPR records on demand
+- Attributes: BoardingNumber, HbnbNumber, NAME, SEAT, ASVC_MSG, ASVC_SEAT, TKNE, etc.
+
+**Key Methods**
+
+| Method | Location | Purpose |
+|--------|----------|---------|
+| `run` | L54 | Main entry point: parses HBPR content, extracts all fields |
+| `__ExtractStructuredData` | L203 | Extracts PNR, PSPT_NAME, FBA/IFBA bags, CKIN/ASVC messages |
+| `__CaptureAsvcMessages` | L448 | Captures all ASVC lines, calls __GetAsvcSeat() to extract seat |
+| `__GetAsvcSeat` | L472 | Extracts ASVC seat from ASVC_MSG using regex: `SEAT/[A-Z]\s(\d{1,2}[A-Z])` |
+| `get_structured_data` | L685 | Returns dict with all parsed fields for database storage including ASVC_SEAT |
+
+**Key Fields Extracted**
+- `ASVC_SEAT`: Seat number extracted from ASVC messages (e.g., "47J" from "ASVC- A/0B5/SEAT/E 47J...")
+- `ASVC_MSG`: List of all ASVC service messages
+- `TKNE`: Ticket number
+- `NAME`, `SEAT`, `BOARDING_NUMBER`: Passenger info
+- `error_msg`: Dict with validation errors by category
+
+---
+
 ### UI Record Processing (`ui/process_records/add_hbprs.py`)
 
 | Function | Location | Signature | Purpose |
@@ -116,7 +146,7 @@ HbprProcessor(conn: sqlite3.Connection)
 | `get_hbpr_record` | `(hbnb_number: int) -> str` | Retrieves full record content |
 | `delete_simple_record` | `(hbnb_number: int) -> None` | Deletes simple record |
 | `get_original_record_info` | `(hbnb_number: int) -> dict` | Returns {record_content, created_at} |
-| `update_with_chbpr_results` | `(chbpr) -> bool` | Stores CHbpr processing results |
+| `update_with_chbpr_results` | `(chbpr) -> bool` | Stores CHbpr processing results including asvc_seat |
 | `get_flight_info` | `() -> dict` | Returns {flight_id, flight_number, flight_date} |
 | `get_connection` | `() -> sqlite3.Connection` | Returns database connection |
 | `get_all_statistics` | `() -> dict` | Returns all statistics including duplicate detection |
@@ -161,7 +191,11 @@ uploaded_file → process_and_add_hbprs()
       → db.create_full_record() or create_duplicate_record_with_time()
     → process_updated_records()
       → CHbpr.run()
+        → __ExtractStructuredData()
+        → __CaptureAsvcMessages()
+        → __GetAsvcSeat() [Extracts ASVC_SEAT from ASVC messages]
       → db.update_with_chbpr_results()
+        → Saves all fields including asvc_seat to database
   → trigger_auto_save()
 ```
 
@@ -192,6 +226,24 @@ uploaded_file → process_and_add_hbprs()
 - `hbpr_simple_records` - Simple HBPR records
 - `commands` - Command history
 - `deleted_passengers` - Deleted passenger tracking
+
+**HBPR Full Records Key Columns** (`hbpr_full_records`):
+- `hbnb_number` (INTEGER PRIMARY KEY) - Booking number
+- `record_content` (TEXT) - Raw HBPR record
+- `boarding_number` (INTEGER) - Boarding pass number
+- `name` (TEXT) - Passenger name
+- `seat` (TEXT) - Seat assignment from PAX line
+- `asvc_seat` (TEXT) - Seat number extracted from ASVC message (v0.63+)
+- `asvc_msg` (TEXT) - ASVC service message content
+- `class` (TEXT) - Cabin class (F/C/Y)
+- `tkne` (TEXT) - Ticket number
+- `pnr` (TEXT) - Passenger Name Record
+- `ff` (TEXT) - Frequent flyer number
+- `bag_piece` (INTEGER) - Checked baggage pieces
+- `bag_weight` (INTEGER) - Total baggage weight
+- `is_validated` (BOOLEAN) - Whether CHbpr processing completed
+- `is_valid` (BOOLEAN) - Whether record passed validation
+- `error_*` (TEXT) - Error messages by category (baggage, passport, name, visa, other)
 
 ---
 

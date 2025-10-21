@@ -502,17 +502,21 @@ def render_flight_sheet_table(data: List[List[str]]) -> None:
     """
     # 生成HTML格式的表格用于复制
     html_table_full = convert_to_html_table(data)
-    
     # 使用JSON编码来安全地传递HTML到JavaScript
     html_full_json = json.dumps(html_table_full)
-    
-    # 构建显示用的HTML表格
+    # 检查行是否为空的辅助函数
+    def is_blank_row(row: List[str]) -> bool:
+        """检查行中是否所有单元格都为空"""
+        return all(not str(cell).strip() for cell in row)
     table_rows = []
     for row_idx, row in enumerate(data):
-        # 行8-11（索引7-10）：INOP座位、重复座位、溢出属性等，需要跨列显示
-        if row_idx == 2:
+        # 行3和行7是特殊的固定行，始终不显示
+        if row_idx in [2, 6]:
             continue
+        # 行8-11（索引7-10）：INOP座位、SXPS、ASVC_SEAT、溢出属性等，需要跨列显示
         if row_idx in [7, 8, 9, 10]:
+            if is_blank_row(row):
+                continue
             # 获取第一列的内容（完整字符串）
             cell_content = str(row[0]).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
             if not cell_content.strip():
@@ -526,16 +530,14 @@ def render_flight_sheet_table(data: List[List[str]]) -> None:
                 cell_str = str(cell)
                 # 对于Excel公式，在显示时只显示提示文本，不显示完整公式
                 if cell_str.startswith('='):
-                    display_content = '(ExcelFormula)'
-                else:
-                    # 转义HTML特殊字符
-                    display_content = cell_str.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                    cell_str = '(ExcelFormula)'
+                # 转义HTML特殊字符
+                cell_str = cell_str.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
                 # 空单元格使用&nbsp;
-                if not display_content.strip():
-                    display_content = "&nbsp;"
-                cells.append(f"<td>{display_content}</td>")
+                if not cell_str.strip():
+                    cell_str = "&nbsp;"
+                cells.append(f"<td>{cell_str}</td>")
             table_rows.append("<tr>" + "".join(cells) + "</tr>")
-    
     # HTML样式和表格
     html_table = f"""
     <style>
@@ -569,10 +571,8 @@ def render_flight_sheet_table(data: List[List[str]]) -> None:
     </style>
     <table class="flight-sheet-table">{"".join(table_rows)}</table>
     """
-    
     # 渲染HTML表格
     st.markdown(html_table, unsafe_allow_html=True)
-    
     # 创建复制到剪贴板的HTML和JavaScript（放在表格底部）
     copy_button_html = f"""
     <div style="margin: 10px 0 0 0; padding: 0;">
@@ -585,10 +585,8 @@ def render_flight_sheet_table(data: List[List[str]]) -> None:
             cursor: pointer;
             font-size: 13px;
         ">📋 Copy to Clipboard</button>
-        
         <div id="copyStatus" style="color: green; font-size: 11px; margin: 5px 0 0 0; padding: 0;"></div>
     </div>
-    
     <script>
     function copyToClipboard() {{
         const htmlContent = {html_full_json};
@@ -601,7 +599,6 @@ def render_flight_sheet_table(data: List[List[str]]) -> None:
             'text/html': htmlBlob,
             'text/plain': textBlob
         }});
-        
         navigator.clipboard.write([clipboardItem]).then(function() {{
             document.getElementById('copyStatus').innerText = '✓ 已复制到剪贴板（可直接粘贴到Excel）';
             document.getElementById('copyStatus').style.color = 'green';
@@ -616,10 +613,8 @@ def render_flight_sheet_table(data: List[List[str]]) -> None:
     }}
     </script>
     """
-    
     # 显示复制按钮（放在底部）
     st.components.v1.html(copy_button_html, height=70)
-    
     # 添加说明
     st.caption("💡 点击按钮复制完整表格到剪贴板（可直接粘贴到Excel）")
 
