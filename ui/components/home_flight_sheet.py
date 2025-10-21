@@ -225,7 +225,7 @@ def get_asvc_seat_mismatches(db) -> str:
         rows = cursor.fetchall()
         if rows:
             names = [row[0] for row in rows]
-            return f'ASVC seats mismatch: {'; '.join(names)}'
+            return f'ASVC Mismatches: {'; '.join(names)}'
         return ""
     except Exception as e:
         st.error(f"查询座位不匹配乘客时出错: {e}")

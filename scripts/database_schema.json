@@ -34,6 +34,7 @@
         {"name": "pspt_exp_date", "type": "TEXT", "constraint": ""},
         {"name": "ckin_msg", "type": "TEXT", "constraint": ""},
         {"name": "asvc_msg", "type": "TEXT", "constraint": ""},
+        {"name": "asvc_seat", "type": "TEXT", "constraint": ""},
         {"name": "expc_piece", "type": "INTEGER", "constraint": ""},
         {"name": "expc_weight", "type": "INTEGER", "constraint": ""},
         {"name": "asvc_piece", "type": "INTEGER", "constraint": ""},
