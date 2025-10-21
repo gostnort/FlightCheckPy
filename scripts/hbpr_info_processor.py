@@ -35,6 +35,7 @@ class CHbpr:
     PSPT_EXP_DATE = ""
     CKIN_MSG = []
     ASVC_MSG = []
+    ASVC_SEAT = ""
     EXPC_PIECE = 0
     EXPC_WEIGHT = 0
     ASVC_PIECE = 0
@@ -81,6 +82,7 @@ class CHbpr:
             self.PSPT_EXP_DATE = ""
             self.CKIN_MSG = []
             self.ASVC_MSG = []
+            self.ASVC_SEAT = ""
             self.CKIN_EXBG = ""
             self.EXPC_PIECE = 0
             self.EXPC_WEIGHT = 0
@@ -225,6 +227,8 @@ class CHbpr:
         self.__FlyerBenifit()
         # 提取CKIN信息
         self.CKIN_EXBG = self.__CaptureCkin()
+        # 提取ASVC消息和座位信息（独立的早期提取，不依赖登机号）
+        self.__CaptureAsvcMessages()
         return
 
 
@@ -302,18 +306,13 @@ class CHbpr:
 
 
     def __AsvcBagStatement(self):
-        """处理ASVC行李语句"""
-        # 查找所有ASVC-消息
-        asvc_pat = re.compile(r"ASVC-[^\n]*")
-        asvc_matches = asvc_pat.findall(self.__Hbpr)
+        """处理ASVC行李语句（只计算行李件数，ASVC_MSG已在__CaptureAsvcMessages中填充）"""
+        # 使用已填充的ASVC_MSG列表
         result_piece = 0
-        if asvc_matches:
-            for match in asvc_matches:
-                self.ASVC_MSG.append(match.strip())
-        else:
+        if not self.ASVC_MSG:
             return result_piece
-        # 遍历所有ASVC行
-        for asvc_line in asvc_matches:
+        # 遍历所有ASVC行查找PC数量
+        for asvc_line in self.ASVC_MSG:
             # 查找该行中所有的PC数量
             pc_pat = re.compile(r"/PDBG/(\d+)PC")
             pc_matches = pc_pat.findall(asvc_line)
@@ -450,6 +449,49 @@ class CHbpr:
                 self.CKIN_EXBG = msg
                 return msg
         return "CKIN EXBG not found."
+
+
+    def __CaptureAsvcMessages(self):
+        """
+        捕获ASVC消息，并设置ASVC_MSG字段
+        搜索所有以'ASVC-'开头的行
+        如果ASVC信息不存在，则设置ASVC_MSG字段为"ASVC not found."
+        只返回ASVC消息,如果有的话。
+        """
+        # 清空之前的ASVC_MSG列表
+        self.ASVC_MSG.clear()
+        # 使用findall来找到所有匹配的ASVC行
+        pat = re.compile(r"\nASVC-[^\n]*")
+        re_matches = pat.findall(self.__Hbpr)
+        if re_matches:
+            # 将所有找到的ASVC行添加到列表中
+            for match in re_matches:
+                self.ASVC_MSG.append(match.strip())
+        else:
+            #self.ASVC_MSG.append("ASVC not found.")
+            return "ASVC not found."
+        # 提取ASVC座位信息（必须在ASVC_MSG被填充后调用）
+        self.__GetAsvcSeat()
+        return
+
+
+    def __GetAsvcSeat(self):
+        """获取ASVC座位信息
+        从已填充的ASVC_MSG列表中提取座位号
+        匹配格式: SEAT/[format_char] [seat_number]，例如 SEAT/E 47L
+        """
+        if not self.ASVC_MSG:
+            return
+        # 遍历ASVC_MSG列表查找座位信息
+        for asvc_msg in self.ASVC_MSG:
+            if "SEAT" in asvc_msg:
+                # 匹配格式: SEAT/[format_char] [seat_number]
+                # 例如: ASVC- A/0B5/SEAT/E 47L CNY1000 A/EMDA-9994565054384/1
+                seat_match = re.search(r"SEAT/[A-Z]\s(\d{1,2}[A-Z])", asvc_msg)
+                if seat_match:
+                    self.ASVC_SEAT = seat_match.group(1)
+                    self.debug_msg.append(f"ASVC seat found: {self.ASVC_SEAT}")
+                    return
 
 
     def __MatchingBag(self):
@@ -664,6 +706,7 @@ class CHbpr:
             'PSPT_EXP_DATE': self.PSPT_EXP_DATE,
             'CKIN_MSG': '; '.join(self.CKIN_MSG) if self.CKIN_MSG else '',
             'ASVC_MSG': '; '.join(self.ASVC_MSG) if self.ASVC_MSG else '',
+            'ASVC_SEAT': self.ASVC_SEAT,
             'EXPC_PIECE': self.EXPC_PIECE,
             'EXPC_WEIGHT': self.EXPC_WEIGHT,
             'ASVC_PIECE': self.ASVC_PIECE,

@@ -199,6 +199,39 @@ def get_sxps_seats(db) -> str:
         return ""
 
 
+def get_asvc_seat_mismatches(db) -> str:
+    """获取ASVC座位与seat列不匹配的乘客姓名
+    
+    使用vw_asvc_seat_mismatches视图查询，该视图：
+    1. 从asvc_seat列提取ASVC座位
+    2. 包括seat为NULL或seat不等于asvc_seat的乘客
+    3. 排除已删除乘客（XRES）
+    
+    Args:
+        db: 数据库客户端实例
+    Returns:
+        格式化的乘客姓名字符串，例如: "SMITH/JOHN; DOE/JANE"，无匹配则返回空字符串
+    """
+    try:
+        conn = db.get_connection()
+        cursor = conn.cursor()
+        
+        # 查询座位不匹配的乘客（使用视图）
+        cursor.execute("""
+            SELECT name
+            FROM vw_asvc_seat_mismatches
+            ORDER BY name
+        """)
+        rows = cursor.fetchall()
+        if rows:
+            names = [row[0] for row in rows]
+            return f'ASVC seats mismatch: {'; '.join(names)}'
+        return ""
+    except Exception as e:
+        st.error(f"查询座位不匹配乘客时出错: {e}")
+        return ""
+
+
 def has_required_sy_commands(db) -> bool:
     """检查数据库是否同时包含到达和出发SY命令
     Args:
@@ -401,6 +434,10 @@ def build_flight_sheet_data(db) -> List[List[str]]:
     sxps_seats = get_sxps_seats(db)
     if sxps_seats:
         sheet_data[8][0] = sxps_seats
+    # Row 10 - ASVC座位不匹配乘客（索引9）
+    asvc_mismatches = get_asvc_seat_mismatches(db)
+    if asvc_mismatches:
+        sheet_data[9][0] = asvc_mismatches
     # Rows 12-13 - 特殊乘客统计（列2-8，即索引1-7）
     special_pax = get_special_passenger_counts(db)
     # 移除SXPS从统计显示中（因为已经在Row 9显示）

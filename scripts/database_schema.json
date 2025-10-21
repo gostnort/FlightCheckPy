@@ -129,6 +129,10 @@
     "vw_duplicate_names": {
       "description": "重复的乘客姓名（去除后缀后）及对应的座位号和登机号",
       "sql": "WITH cleaned_names AS (SELECT hbnb_number, boarding_number, seat, TRIM(CASE WHEN name LIKE '%MR' THEN SUBSTR(name, 1, LENGTH(name)-2) WHEN name LIKE '%MS' THEN SUBSTR(name, 1, LENGTH(name)-2) WHEN name LIKE '%MRS' THEN SUBSTR(name, 1, LENGTH(name)-3) WHEN name LIKE '%MSTR' THEN SUBSTR(name, 1, LENGTH(name)-4) WHEN name LIKE '%PHD' THEN SUBSTR(name, 1, LENGTH(name)-3) WHEN name LIKE '%CHD' THEN SUBSTR(name, 1, LENGTH(name)-3) WHEN name LIKE '%INF' THEN SUBSTR(name, 1, LENGTH(name)-3) WHEN name LIKE '%VIP' THEN SUBSTR(name, 1, LENGTH(name)-3) ELSE name END) as cleaned_name FROM hbpr_full_records WHERE name IS NOT NULL AND name != '' AND properties NOT LIKE '%XRES%') SELECT cleaned_name, GROUP_CONCAT(boarding_number, ',') as boarding_numbers, GROUP_CONCAT(seat, ',') as seats, COUNT(*) as count FROM cleaned_names WHERE cleaned_name != '' GROUP BY cleaned_name HAVING COUNT(*) > 1 ORDER BY count DESC, cleaned_name"
+    },
+    "vw_asvc_seat_mismatches": {
+      "description": "ASVC座位与seat列不匹配的乘客（asvc_seat从ASVC消息中正确提取）",
+      "sql": "SELECT DISTINCT hbnb_number, name FROM hbpr_full_records WHERE asvc_seat IS NOT NULL AND asvc_seat != '' AND (seat IS NULL OR seat = '' OR seat != asvc_seat) AND (properties IS NULL OR properties NOT LIKE '%XRES%') ORDER BY name"
     }
   }
 }
