@@ -133,13 +133,10 @@ def extract_date_from_command_full(command_full: str) -> Optional[str]:
 
 def extract_route_from_sy_content(sy_content: str) -> Optional[str]:
     """从SY内容提取航线
-    
     查找以'*'开头的行，提取航线代码
     例如: '*LAXPEK R035/326...' -> 'LAXPEK'
-    
     Args:
-        sy_content: SY命令内容
-        
+        sy_content: SY命令内容    
     Returns:
         航线代码，如果未找到返回None
     """
@@ -151,6 +148,27 @@ def extract_route_from_sy_content(sy_content: str) -> Optional[str]:
                 # 提取'*'后面的第一个单词（航线代码）
                 route = stripped[1:].split()[0] if len(stripped) > 1 else None
                 return route if route else None
+    except (IndexError, ValueError):
+        return None
+    return None
+
+
+def extract_destination_from_sy_content(sy_content: str) -> Optional[str]:
+    """从SY内容提取目的地代码（航线后3个字母）
+    
+    例如: '*LAXPEK R035/326...' -> 'PEK'
+    从航线代码中提取后3个字母作为目的地
+    Args:
+        sy_content: SY命令内容    
+    Returns:
+        目的地代码（3字母），如果未找到返回None
+    """
+    try:
+        route = extract_route_from_sy_content(sy_content)
+        if route and len(route) >= 6:
+            # 航线通常是6个字母，前3个是出发地，后3个是目的地
+            destination = route[-3:].upper()
+            return destination if destination else None
     except (IndexError, ValueError):
         return None
     return None

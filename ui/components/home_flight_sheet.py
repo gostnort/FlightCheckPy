@@ -25,7 +25,8 @@ from scripts.commands_parsing.sy import (
     extract_passenger_counts_from_sy_content,
     extract_gtd_from_sy_content,
     extract_bdt_from_sy_content,
-    is_departure_sy
+    is_departure_sy,
+    extract_destination_from_sy_content
 )
 from scripts.commands_parsing.airc import extract_inop_seats_from_airc_content
 
@@ -113,8 +114,8 @@ def get_special_passenger_counts(db) -> Dict[str, int]:
     """从数据库查询特殊乘客属性统计
     
     过滤掉home_sheet配置中排除的属性和模式
+    动态排除目的地代码（从SY命令中提取，根据flight_info的航班号查找）
     特殊处理SXPS从ckin_msg列提取
-    
     Args:
         db: 数据库客户端实例
         
@@ -123,6 +124,32 @@ def get_special_passenger_counts(db) -> Dict[str, int]:
     """
     excluded_props, excluded_patterns = load_home_sheet_filter_config()
     property_counts = {}
+    # 获取目的地并将其加入排除列表
+    try:
+        conn = db.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT flight_number
+            FROM flight_info
+            LIMIT 1
+        """)# 从 flight_info 表获取当前航班号
+        flight_info_row = cursor.fetchone()
+        if flight_info_row:
+            flight_number = flight_info_row[0]
+            cursor.execute("""
+                SELECT content
+                FROM commands
+                WHERE command_type = 'SY' AND is_latest = 1 AND flight_number = ?
+                LIMIT 1
+            """, (flight_number,))# 根据航班号在 commands 表中查找对应的 SY 命令
+            sy_row = cursor.fetchone()
+            if sy_row:
+                sy_content = sy_row[0]
+                destination = extract_destination_from_sy_content(sy_content)
+                if destination:# 将目的地加入排除列表
+                    excluded_props.add(destination)
+    except Exception:
+        pass# 如果获取目的地失败，继续进行，不影响其他功能
     
     try:
         conn = db.get_connection()
