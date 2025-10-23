@@ -17,7 +17,6 @@ Python代码格式化工具 - 重新格式化ui/目录下的Python文件以符�
 
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 from typing import List, Dict, Tuple
