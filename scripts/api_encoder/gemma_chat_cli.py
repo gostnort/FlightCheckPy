@@ -11,6 +11,8 @@ import time
 import sys
 from typing import Optional
 from api_encoder import APIEncoder
+import pathlib
+import re
 
 
 class ChatInterface:
@@ -24,69 +26,52 @@ class ChatInterface:
         self.model = None
         self.model_name = None
         self.conversation_history = []
-        self.max_input_tokens = 128000  # 默认输入token限制
-        self.max_output_tokens = 8000   # 默认输出token限制
+        self.max_input_tokens = 0      # 从选定模型的API数据赋值
+        self.max_output_tokens = 0     # 从选定模型的API数据赋值
         self.current_tokens = 0
         
-        # 可用的Gemma模型配置 (仅Google官方模型)
-        self.available_models = {
-            "1": {
-                "name": "gemma-3-1b-it", 
-                "display": "Gemma 3 1B IT (文本生成，轻量快速)",
-                "max_input_tokens": 128000,
-                "max_output_tokens": 8000,
-                "optimization": "文本生成优化"
-            },
-            "2": {
-                "name": "gemma-3-270m-it",
-                "display": "Gemma 3 270M IT (超轻量，移动设备优化)",
-                "max_input_tokens": 128000,
-                "max_output_tokens": 8000,
-                "optimization": "移动设备优化"
-            },
-            "3": {
-                "name": "gemma-3-4b-it",
-                "display": "Gemma 3 4B IT (图像文本转换，中等性能)", 
-                "max_input_tokens": 128000,
-                "max_output_tokens": 8000,
-                "optimization": "图像文本处理优化"
-            },
-            "4": {
-                "name": "gemma-3-12b-it",
-                "display": "Gemma 3 12B IT (图像文本转换，高性能)",
-                "max_input_tokens": 128000,
-                "max_output_tokens": 8000,
-                "optimization": "图像文本处理优化"
-            },
-            "5": {
-                "name": "gemma-3-27b-it",
-                "display": "Gemma 3 27B IT (图像文本转换，最高性能)",
-                "max_input_tokens": 128000,
-                "max_output_tokens": 8000,
-                "optimization": "图像文本处理优化"
-            },
-            "6": {
-                "name": "gemma-3n-E4B-it",
-                "display": "Gemma 3N E4B IT (图像文本转换，实验版)",
-                "max_input_tokens": 32000,
-                "max_output_tokens": 32000,
-                "optimization": "图像文本处理实验"
-            },
-            "7": {
-                "name": "gemma-3n-E4B-it-litert-lm",
-                "display": "Gemma 3N E4B LiteRT LM (文本生成，轻量运行时)",
-                "max_input_tokens": 32000,
-                "max_output_tokens": 32000,
-                "optimization": "轻量运行时优化"
-            },
-            "8": {
-                "name": "gemma-3n-E4B-it-litert-preview",
-                "display": "Gemma 3N E4B LiteRT Preview (图像文本转换，预览版)",
-                "max_input_tokens": 32000,
-                "max_output_tokens": 32000,
-                "optimization": "图像文本处理预览"
-            }
-        }
+        # 动态获取可用的Gemma模型（首次使用空字典，后续从API获取）
+        self.available_models = {}
+
+
+    def fetch_available_models_from_api(self) -> dict:
+        """
+        从Google Generative AI API动态获取可用的Gemma模型
+        直接从API获取模型的token限制，无需hardcode
+        Returns:
+            可用模型的字典，格式: {编号: {name, display, max_input_tokens, max_output_tokens}}
+        """
+        try:
+            # 配置API密钥
+            genai.configure(api_key=self.api_key)
+            
+            # 从API获取所有模型
+            all_models = list(genai.list_models())
+            
+            # 筛选Gemma模型
+            gemma_models = [m for m in all_models if 'gemma' in m.name.lower()]
+            
+            if not gemma_models:
+                print("⚠️  警告: 未能从API获取任何Gemma模型")
+                return {}
+            
+            available_models = {}
+            
+            # 直接从API Model对象获取token限制
+            for idx, model in enumerate(gemma_models, 1):
+                clean_name = model.name.replace("models/", "")
+                available_models[str(idx)] = {
+                    "name": clean_name,
+                    "display": clean_name,
+                    "max_input_tokens": model.input_token_limit,
+                    "max_output_tokens": model.output_token_limit
+                }
+            
+            return available_models
+            
+        except Exception as e:
+            print(f"❌ 无法从API获取模型列表: {e}")
+            return {}
 
 
     def setup_authentication(self) -> bool:
@@ -124,6 +109,18 @@ class ChatInterface:
         Returns:
             模型选择是否成功
         """
+        print("正在从Google Generative AI API获取最新Gemma模型列表...")
+        print()
+        
+        # 动态获取可用模型
+        self.available_models = self.fetch_available_models_from_api()
+        
+        if not self.available_models:
+            print("❌ 无法获取可用的Gemma模型")
+            return False
+        
+        print(f"✅ 成功获取{len(self.available_models)}个Gemma模型")
+        print()
         print("请选择要使用的Gemma模型:")
         print()
         
@@ -131,8 +128,10 @@ class ChatInterface:
             print(f"{key}. {model_info['display']}")
         print()
         
+        max_choice = len(self.available_models)
+        
         while True:
-            choice = input("请选择模型 (1-8): ").strip()
+            choice = input(f"请选择模型 (1-{max_choice}): ").strip()
             if choice in self.available_models:
                 model_info = self.available_models[choice]
                 self.model_name = model_info["name"]
@@ -152,7 +151,7 @@ class ChatInterface:
                     print(f"❌ 模型初始化失败: {e}")
                     return False
             else:
-                print("❌ 无效选择，请输入1-8之间的数字")
+                print(f"❌ 无效选择，请输入1-{max_choice}之间的数字")
 
 
     def estimate_tokens(self, text: str) -> int:
@@ -311,7 +310,6 @@ class ChatInterface:
 基本对话:
   - 直接输入消息与Gemma对话
   - Gemma会记住整个对话历史
-  - 支持文本生成和图像文本转换模型
 
 📝 多行输入:
   方式1: 在行末输入 \\ 然后按回车，自动切换到多行模式
@@ -328,19 +326,17 @@ class ChatInterface:
   /clear    - 清空对话历史
   /tokens   - 显示当前token使用情况
   /history  - 显示对话历史摘要
-  /model    - 显示当前模型信息和优化特性
+  /model    - 显示当前模型信息
   /exit     - 退出聊天界面
 
-🚀 可用模型类型 (8种Google官方模型):
-  1-2. 文本生成优化 (1B, 270M) - 128K输入/8K输出
-  3-5. 图像文本处理 (4B, 12B, 27B) - 128K输入/8K输出
-  6-8. 实验版本 (E4B系列) - 32K输入输出
+🚀 可用模型:
+  模型列表从Google Generative AI API动态获取，
+  确保始终使用最新、支持的模型版本。
 
 💡 提示:
   - 对话历史会影响回复质量和token消耗
   - 当token使用过多时建议使用 /clear 清理历史
   - 使用中文或英文都可以与Gemma对话
-  - 不同模型有不同的优化特性，选择适合的模型
   - 长篇代码、文章等建议使用多行输入模式
         """
         print(help_text)
@@ -363,16 +359,7 @@ class ChatInterface:
 
     def show_model_info(self):
         """显示当前模型信息"""
-        # 查找当前模型的详细信息
-        current_model_info = None
-        for model_info in self.available_models.values():
-            if model_info["name"] == self.model_name:
-                current_model_info = model_info
-                break
-        
         print(f"🤖 当前模型: {self.model_name}")
-        if current_model_info:
-            print(f"⚡ 优化特性: {current_model_info['optimization']}")
         print(f"👤 用户: {self.username}")
         print(f"📊 输入Token限制: {self.max_input_tokens:,}")
         print(f"📤 输出Token限制: {self.max_output_tokens:,}")
@@ -455,6 +442,48 @@ class ChatInterface:
             print(f"❌ 输入错误: {e}")
             return ""
 
+
+    def process_file_references(self, text: str) -> str:
+        """
+        处理用户输入中的文件引用
+        支持格式: `filename.txt` 或 `C:\\path\\to\\file.txt`
+        """
+        pattern = r'`([^`]+)`'
+        matches = re.finditer(pattern, text)
+        result = text
+        for match in matches:
+            file_ref = match.group(1)
+            file_content = None
+            # 检查是否是完整路径
+            if '\\' in file_ref or (file_ref.startswith('/') and not file_ref.startswith('//')):
+                file_path = pathlib.Path(file_ref)
+                try:
+                    if file_path.is_file():
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            file_content = f.read()
+                        print(f"✅ 已读取文件: {file_path}")
+                    else:
+                        print(f"❌ 文件不存在: {file_path}")
+                except Exception as e:
+                    print(f"❌ 读取文件失败 ({file_path}): {e}")
+            # 检查是否是本地文件名
+            elif '.txt' in file_ref and '\\' not in file_ref and not file_ref.startswith('/'):
+                script_dir = pathlib.Path(__file__).parent
+                file_path = script_dir / file_ref
+                try:
+                    if file_path.is_file():
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            file_content = f.read()
+                        print(f"✅ 已读取文件: {file_ref}")
+                    else:
+                        print(f"❌ 文件不存在: {file_ref}")
+                except Exception as e:
+                    print(f"❌ 读取文件失败 ({file_ref}): {e}")
+            if file_content is not None:
+                result = result.replace(f'`{file_ref}`', file_content)
+        return result
+
+
     def start_chat(self):
         """开始聊天循环"""
         print("🚀 聊天界面已启动！")
@@ -467,14 +496,11 @@ class ChatInterface:
             try:
                 # 显示token信息（每5轮对话显示一次）
                 if len(self.conversation_history) % 10 == 0 and len(self.conversation_history) > 0:
-                    self.display_token_info()
-                
+                    self.display_token_info()               
                 # 获取用户输入（支持多行）
-                user_input = self.get_user_input(f"\n👤 {self.username}: ")
-                
+                user_input = self.get_user_input(f"\n👤 {self.username}: ")                
                 if not user_input:
-                    continue
-                    
+                    continue                  
                 # 处理特殊命令
                 if user_input.startswith('/'):
                     command = user_input.lower()
@@ -508,19 +534,17 @@ class ChatInterface:
                     else:
                         print("❌ 未知命令，输入 /help 查看可用命令")
                         continue
-                
+                # 处理文件引用
+                user_input = self.process_file_references(user_input)                
                 # 添加用户消息到历史
-                self.add_to_history("user", user_input)
-                
+                self.add_to_history("user", user_input)                
                 # 发送到Gemma并获取回复
-                response = self.send_message_to_gemma(user_input)
-                
+                response = self.send_message_to_gemma(user_input)               
                 if response:
                     print(f"\n🤖 Gemma: {response}")
                     self.add_to_history("assistant", response)
                 else:
-                    print("\n❌ 抱歉，无法获取回复，请稍后重试")
-                    
+                    print("\n❌ 抱歉，无法获取回复，请稍后重试")                   
             except KeyboardInterrupt:
                 print("\n\n👋 检测到Ctrl+C，正在退出...")
                 break

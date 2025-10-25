@@ -101,7 +101,8 @@ class APIEncoder:
         # 预编码的伪码列表，不包含任何用户名或真实API密钥信息
         return [
             "x8WzWNQJf44=::OXEtGwQ3EjMqQkdsVX5nNxA7Gg82UlJJOgggPmNjBQg/ZQBkO0Jj",
-            "n+k0F4U3OcE=::L2IRURVNFkoDFTZsQ21bfQFBHnYfBSNJLBscdHIZAXEWMnFkLVFf"
+            "n+k0F4U3OcE=::L2IRURVNFkoDFTZsQ21bfQFBHnYfBSNJLBscdHIZAXEWMnFkLVFf",
+            "I5En4JFXy68=::CHw/D2czBSE1QEtsZHN1I3M/DR0pUF5JCwUyKgBnEhogZwxkCk9x"
         ]
 
 
