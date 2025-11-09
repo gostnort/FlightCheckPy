@@ -1,7 +1,8 @@
 import os
+
 # 设置环境变量以解决所有Python进程的编码问题（包括子进程）
-os.environ['PYTHONIOENCODING'] = 'utf-8'
-os.environ['PYTHONUTF8'] = '1'  # Python 3.7+ 强制使用UTF-8模式
+os.environ["PYTHONIOENCODING"] = "utf-8"
+os.environ["PYTHONUTF8"] = "1"  # Python 3.7+ 强制使用UTF-8模式
 
 import webbrowser
 import subprocess
@@ -12,11 +13,12 @@ import time
 import requests
 import threading
 import sys
+
 # 确保当前进程的标准流使用UTF-8编码
-if hasattr(sys.stdout, 'reconfigure'):
-    sys.stdout.reconfigure(encoding='utf-8')
-if hasattr(sys.stderr, 'reconfigure'):
-    sys.stderr.reconfigure(encoding='utf-8')
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
 
 streamlit_proc = None
 
@@ -50,14 +52,18 @@ def get_python_executable():
         tuple: (python_path: str, is_venv: bool) - Python执行文件的完整路径和是否为虚拟环境
     """
     # 常见的虚拟环境目录名
-    venv_dirs = ['venv', '.venv', 'env', '.env']
+    venv_dirs = ["venv", ".venv", "env", ".env"]
     # 检查是否在虚拟环境中
     for venv_dir in venv_dirs:
         if os.path.exists(venv_dir):
             print(f"找到虚拟环境目录: {venv_dir}")
             # Windows虚拟环境路径（转换为绝对路径）
-            python_path = os.path.abspath(os.path.join(venv_dir, 'Scripts', 'python.exe'))
-            pythonw_path = os.path.abspath(os.path.join(venv_dir, 'Scripts', 'pythonw.exe'))
+            python_path = os.path.abspath(
+                os.path.join(venv_dir, "Scripts", "python.exe")
+            )
+            pythonw_path = os.path.abspath(
+                os.path.join(venv_dir, "Scripts", "pythonw.exe")
+            )
             print(f"检查Python路径: {pythonw_path}")
             print(f"Python文件存在: {os.path.exists(pythonw_path)}")
             # 优先使用pythonw.exe（不显示控制台窗口）
@@ -90,13 +96,15 @@ def notify_winotify(title: str, msg: str, icon_path: str = None):
         title=title,
         msg=msg,
         icon=icon_path,
-        duration="short"
+        duration="short",
     )
     toast.set_audio(audio.Default, loop=False)
     toast.show()
 
 
-def wait_for_streamlit(url="http://localhost:8501/_stcore/health", timeout: int = 60) -> bool:
+def wait_for_streamlit(
+    url="http://localhost:8501/_stcore/health", timeout: int = 60
+) -> bool:
     """
     Polls the Streamlit health endpoint until success or timeout.
     Returns True on HTTP 200, False on timeout.
@@ -116,7 +124,9 @@ def start_streamlit():
     global streamlit_proc
     icon_path = get_resource_path("resources/fcp.ico")
     if streamlit_proc and streamlit_proc.poll() is None:
-        notify_winotify("Streamlit Launcher", "Streamlit is already running!", icon_path=icon_path)
+        notify_winotify(
+            "Streamlit Launcher", "Streamlit is already running!", icon_path=icon_path
+        )
         return  # already running
     # 先停止现有的进程
     stop_streamlit()
@@ -131,27 +141,41 @@ def start_streamlit():
     main_py_path = get_resource_path("ui/main.py")
     cmd = [
         python_exec,
-        "-m", "streamlit", "run", main_py_path,
-        "--server.address", "0.0.0.0",
-        "--server.port", "8501",
-        "--browser.serverAddress", "localhost",
-        "--server.headless", "false"
+        "-m",
+        "streamlit",
+        "run",
+        main_py_path,
+        "--server.address",
+        "0.0.0.0",
+        "--server.port",
+        "8501",
+        "--browser.serverAddress",
+        "localhost",
+        "--server.headless",
+        "false",
     ]
     print(f"执行命令: {' '.join(cmd)}")
     # 确保环境变量传递给子进程，并使用UTF-8处理
     env = os.environ.copy()
-    env['PYTHONIOENCODING'] = 'utf-8'
-    env['PYTHONUTF8'] = '1'
-    
-    streamlit_proc = subprocess.Popen(cmd,
-                                     stdout=subprocess.DEVNULL,
-                                     stderr=subprocess.DEVNULL,
-                                     env=env)
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUTF8"] = "1"
+
+    streamlit_proc = subprocess.Popen(
+        cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env
+    )
+
     def watch_and_notify():
         if wait_for_streamlit():
-            notify_winotify("Streamlit Launcher", "Streamlit is ready!", icon_path=icon_path)
+            notify_winotify(
+                "Streamlit Launcher", "Streamlit is ready!", icon_path=icon_path
+            )
         else:
-            notify_winotify("Streamlit Launcher", "Streamlit failed to start in time.", icon_path=icon_path)
+            notify_winotify(
+                "Streamlit Launcher",
+                "Streamlit failed to start in time.",
+                icon_path=icon_path,
+            )
+
     threading.Thread(target=watch_and_notify, daemon=True).start()
     return False
 
@@ -164,17 +188,25 @@ def stop_streamlit():
             # 强制终止进程
             streamlit_proc.kill()
             streamlit_proc.wait(timeout=5)
-            notify_winotify("Streamlit Launcher", "Streamlit stopped successfully!", icon_path=icon_path)
+            notify_winotify(
+                "Streamlit Launcher",
+                "Streamlit stopped successfully!",
+                icon_path=icon_path,
+            )
         except subprocess.TimeoutExpired:
             # 如果超时，强制杀死进程
             streamlit_proc.kill()
-            notify_winotify("Streamlit Launcher", "Streamlit force stopped!", icon_path=icon_path)
+            notify_winotify(
+                "Streamlit Launcher", "Streamlit force stopped!", icon_path=icon_path
+            )
         except Exception as e:
             print(f"Error stopping streamlit: {e}")
         finally:
             streamlit_proc = None
     else:
-        notify_winotify("Streamlit Launcher", "No Streamlit process to stop!", icon_path=icon_path)
+        notify_winotify(
+            "Streamlit Launcher", "No Streamlit process to stop!", icon_path=icon_path
+        )
 
 
 def restart_streamlit(icon, item):
@@ -187,21 +219,27 @@ def open_in_browser(icon, item):
         webbrowser.open("http://localhost:8501")
         notify_winotify("Streamlit Launcher", "Opening browser...", icon_path=icon_path)
     except Exception as e:
-        notify_winotify("Streamlit Launcher", f"Failed to open browser: {e}", icon_path=icon_path)
+        notify_winotify(
+            "Streamlit Launcher", f"Failed to open browser: {e}", icon_path=icon_path
+        )
 
 
 def build_tray():
     icon_path = get_resource_path("resources/fcp.ico")
     icon_image = Image.open(icon_path)
     menu = (
-        MenuItem("Start Streamlit", lambda icon, item: threading.Thread(target=start_streamlit).start()),
+        MenuItem(
+            "Start Streamlit",
+            lambda icon, item: threading.Thread(target=start_streamlit).start(),
+        ),
         MenuItem("Stop Streamlit", lambda icon, item: stop_streamlit()),
         MenuItem("Restart Streamlit", restart_streamlit),
         MenuItem("Open in Browser", open_in_browser),
-        MenuItem("Quit", lambda icon, item: (stop_streamlit(), icon.stop()))
+        MenuItem("Quit", lambda icon, item: (stop_streamlit(), icon.stop())),
     )
-    tray_icon = Icon("StreamlitTray", icon_image, "Flight Check-0.63", menu)
+    tray_icon = Icon("StreamlitTray", icon_image, "Flight Check-0.63.1", menu)
     return tray_icon
+
 
 if __name__ == "__main__":
     # 设置正确的工作目录

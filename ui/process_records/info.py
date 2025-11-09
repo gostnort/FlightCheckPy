@@ -19,16 +19,13 @@ def execute_query_to_dataframe(db, query, params=None):
         conn = db.get_connection()
         cursor = conn.cursor()
         cursor.execute(query, params or [])
-
         # Get column names from cursor description
         if cursor.description:
             columns = [desc[0] for desc in cursor.description]
         else:
             columns = []
-
         # Get all rows
         rows = cursor.fetchall()
-
         # Create DataFrame
         if columns and rows:
             return pd.DataFrame(rows, columns=columns)
@@ -36,7 +33,6 @@ def execute_query_to_dataframe(db, query, params=None):
             return pd.DataFrame(columns=columns)
         else:
             return pd.DataFrame()
-
     except Exception as e:
         st.error(f"❌ Error executing query: {str(e)}")
         return pd.DataFrame()
@@ -135,7 +131,7 @@ def show_error_messages(db):
             error_field = error_field_map[selected_error_type]
             if row[error_field] and row[error_field].strip():
                 # 取错误文本的前70个字符用于标题显示
-                CONST_ERROR_PREVIEW_LENGTH = 70
+                CONST_ERROR_PREVIEW_LENGTH = 90
                 error_preview = row[error_field].strip()[:CONST_ERROR_PREVIEW_LENGTH]
                 if len(row[error_field].strip()) > CONST_ERROR_PREVIEW_LENGTH:
                     error_preview += "..."
@@ -213,20 +209,17 @@ def show_record_popup(db, hbnb_number):
 def show_info_tab():
     """Show the Info tab with error display only (no buttons)"""
     st.subheader("ℹ️ Processing Information")
-
     if not is_db_available():
         st.warning("⚠️ Please select a database from the sidebar to begin.")
         return
-
     try:
         db = get_hbpr_database_client()
         if not db:
             st.error("❌ Database connection is not available.")
             return
-
         # Show error summary and error messages without buttons
         show_error_summary(db)
         show_error_messages(db)
-
     except Exception as e:
         st.error(f"❌ Error accessing database: {str(e)}")
+

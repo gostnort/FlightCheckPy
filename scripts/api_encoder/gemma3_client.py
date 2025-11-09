@@ -8,85 +8,55 @@
 import google.generativeai as genai
 import re
 import threading
-import random
 from scripts.api_encoder.api_encoder import APIEncoder
 
 
 class TimeoutException(Exception):
     """超时异常"""
+
     pass
 
 
 def clean_chinese_text(text: str) -> str:
     """
-    清理文本，只保留中文字符
+    清理文本，只保留中文字符，移除所有标点符号（中英文）
     Args:
         text: 原始文本
     Returns:
-        只包含中文字符的文本
+        只包含中文字符的文本（无标点符号）
     """
+    # 移除所有标点符号（英文和中文）
+    # 英文标点: . , ! ? ; : - _ ( ) [ ] { } " ' ` ~ @ # $ % ^ & * + = | \ / < >
+    # 中文标点: 。，、；！？：""''（）【】《》〈〉「」『』
+    punctuation_pattern = (
+        r'[。，、；！？：""'
+        r"（）【】《》〈〉「」『』\.\,\!\?\;\:\-\_\(\)\[\]\{\}\"\'"
+        r"\`\~\@\#\$\%\^\&\*\+\=\|\\\/\<\>]+"
+    )
+    text_no_punct = re.sub(punctuation_pattern, "", text)
     # 使用正则表达式只保留中文字符
-    chinese_pattern = r'[\u4e00-\u9fff]+'
-    chinese_chars = re.findall(chinese_pattern, text)
-    return ''.join(chinese_chars)
+    chinese_pattern = r"[\u4e00-\u9fff]+"
+    chinese_chars = re.findall(chinese_pattern, text_no_punct)
+    return "".join(chinese_chars)
 
 
 def process_gemma_response(response_text: str) -> str:
     """
-    处理Gemma API返回结果，根据不同格式提取中文内容并生成文件名
-    处理逻辑：
-    1. 如果有**，找下一对**，中间的中文存入list，随机使用其中的两个index作为文件名
-    2. 如果有序号，每个序号的中文存入list，随机使用其中的两个index作为文件名  
-    3. 如果都没有，则直接把中文部分作为文件名
+    处理Gemma API返回结果，提取中文内容并移除所有标点符号
     Args:
-        response_text: Gemma API返回的原始文本  
+        response_text: Gemma API返回的原始文本
     Returns:
-        str: 处理后的文件名用中文描述
+        str: 处理后的文件名用中文描述（无标点符号）
     """
     if not response_text:
         return "未知心情"
-    chinese_list = []
-    # 方法1：查找**包围的中文内容
-    star_pattern = r'\*\*([^*]*?)\*\*'
-    star_matches = re.findall(star_pattern, response_text)
-    if star_matches:
-        for match in star_matches:
-            chinese_text = clean_chinese_text(match)
-            if chinese_text and len(chinese_text) >= 2:  # 至少2个中文字符
-                chinese_list.append(chinese_text)
-    # 方法2：查找序号后的中文内容 (如 "1. 阳光暖心" 或 "1、快乐无比")
-    if not chinese_list:
-        # 更精确的序号匹配模式
-        number_pattern = r'\d+[.\s、]\s*([^\d\n]*?)(?=[.\s]*\d+[.\s、]|$)'
-        number_matches = re.findall(number_pattern, response_text)
-        for match in number_matches:
-            # 清理匹配结果，去除标点符号
-            cleaned_match = re.sub(r'[。，、；！？\s]+', '', match.strip())
-            chinese_text = clean_chinese_text(cleaned_match)
-            if chinese_text and len(chinese_text) >= 2:
-                chinese_list.append(chinese_text)
-    # 方法3：如果前两种方法都没找到，直接提取所有中文
-    if not chinese_list:
-        all_chinese = clean_chinese_text(response_text)
-        if all_chinese:
-            # 尝试按标点符号分割
-            segments = re.split(r'[，。、；！？\s]+', all_chinese)
-            for segment in segments:
-                if len(segment) >= 2:
-                    chinese_list.append(segment)
-    # 如果还是没有找到，返回默认值
-    if not chinese_list:
-        return "默认心情"
-    # 随机选择1-2个词组合成文件名
-    if len(chinese_list) == 1:
-        return chinese_list[0][:8]  # 限制长度
-    elif len(chinese_list) >= 2:
-        # 随机选择两个不同的index
-        indices = random.sample(range(len(chinese_list)), min(2, len(chinese_list)))
-        selected_words = [chinese_list[i] for i in indices]
-        combined = ''.join(selected_words)
-        return combined[:8]  # 限制总长度
-    return chinese_list[0][:8]
+    # 直接提取所有中文字符并移除标点符号
+    cleaned_text = clean_chinese_text(response_text)
+    if cleaned_text:
+        # 限制长度为15个字符
+        trimmed = cleaned_text[:15]
+        return trimmed if trimmed else "默认心情"
+    return "默认心情"
 
 
 def generate_mood_description(cash: float, total_amount: float, username: str) -> str:
@@ -124,17 +94,10 @@ def generate_mood_description(cash: float, total_amount: float, username: str) -
                 mood_category = "惨绝人寰"
         # 配置API
         genai.configure(api_key=api_key)
-        # 创建模型（使用1B模型，增强随机性策略）
-        model = genai.GenerativeModel("gemma-3-1b-it")
-        # 构建多样化提示词，增加随机性
-        random_element = random.randint(1, 10000)
-        prompt_styles = [
-            f"用十个字以内的中文描述{mood_category}心情。随机种子{random_element}",
-            f"十个字以内{mood_category}的心情状态，用中文简短描述。#{random_element}",
-            f"工作时{mood_category}的感觉，中文表达，不超过十字。ID{random_element}",
-            f"描述{mood_category}心境，简洁中文，最多十个字。随机种子{random_element}",
-        ]
-        prompt = random.choice(prompt_styles)
+        # 创建模型（使用12B模型）
+        model = genai.GenerativeModel("gemma-3-12b-it")
+        # 构建提示词
+        prompt = f'用十五个字描述"{mood_category}"相关的心情'
         # 使用多线程实现超时
         result = [None]
         exception = [None]
@@ -144,19 +107,22 @@ def generate_mood_description(cash: float, total_amount: float, username: str) -
             try:
                 # 简单配置，只使用温度参数增加随机性
                 generation_config = {
-                    'temperature': 1.0,  # 适中温度平衡质量和随机性
-                    'max_output_tokens': 120,  # 减少输出长度提高速度
-                    'top_p': 0.9,  # 添加top_p提高多样性
+                    "temperature": 1.2,  # 适中温度平衡质量和随机性
+                    "max_output_tokens": 120,  # 减少输出长度提高速度
+                    "top_p": 0.9,  # 添加top_p提高多样性
                 }
-                response = model.generate_content(prompt, generation_config=generation_config)
+                response = model.generate_content(
+                    prompt, generation_config=generation_config
+                )
                 result[0] = response.text.strip()
                 print(f"response: {response.text.strip()}")
             except Exception as e:
                 exception[0] = e
+
         # 启动API调用线程
         thread = threading.Thread(target=api_call)
         thread.start()
-        thread.join(timeout=4.0)  # 1秒超时
+        thread.join(timeout=6.0)  # 6秒超时
         if thread.is_alive():
             # 超时了
             return "心情失败"
@@ -192,7 +158,6 @@ def main():
             print("请输入有效的数字")
             return
         # 计算比例和生成心情描述
-
         mood = generate_mood_description(cash, total_amount, username)
         print(f"\n您的心情: {mood}")
     except ValueError as e:
@@ -205,4 +170,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
