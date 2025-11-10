@@ -26,26 +26,26 @@ from scripts.commands_parsing.sy import (
     extract_gtd_from_sy_content,
     extract_bdt_from_sy_content,
     is_departure_sy,
-    extract_destination_from_sy_content
+    extract_destination_from_sy_content,
 )
 from scripts.commands_parsing.airc import extract_inop_seats_from_airc_content
 
 
 def load_home_sheet_filter_config() -> tuple:
     """加载flight sheet专用的属性过滤配置
-    
+
     Returns:
         (排除的属性集合, 排除的属性模式列表) 元组
     """
     try:
-        config_path = os.path.join('resources', 'filter_config.json')
+        config_path = os.path.join("resources", "filter_config.json")
         if os.path.exists(config_path):
-            with open(config_path, 'r', encoding='utf-8') as f:
+            with open(config_path, "r", encoding="utf-8") as f:
                 config = json.load(f)
-                excluded = set(config.get('excluded_properties_home_sheet', []))
+                excluded = set(config.get("excluded_properties_home_sheet", []))
                 # 也加载通用的excluded_properties和excluded_property_patterns
-                excluded.update(config.get('excluded_properties', []))
-                patterns = config.get('excluded_property_patterns', [])
+                excluded.update(config.get("excluded_properties", []))
+                patterns = config.get("excluded_property_patterns", [])
                 return excluded, patterns
         return set(), []
     except Exception:
@@ -54,51 +54,53 @@ def load_home_sheet_filter_config() -> tuple:
 
 def normalize_property(prop: str) -> str:
     """标准化Properties：去除数字和斜杠后缀
-    
+
     Args:
         prop: 原始属性字符串
-        
+
     Returns:
         标准化后的属性
     """
     if not prop:
         return prop
     # 去除数字开始的后缀，如 INF1/0 -> INF, PAD-2/ -> PAD
-    normalized = re.sub(r'[0-9/\-].*$', '', prop.strip())
+    normalized = re.sub(r"[0-9/\-].*$", "", prop.strip())
     return normalized if normalized else prop
 
 
-def should_exclude_property(prop: str, excluded_props: Set[str], excluded_patterns: List[str]) -> bool:
+def should_exclude_property(
+    prop: str, excluded_props: Set[str], excluded_patterns: List[str]
+) -> bool:
     """检查属性是否应该被排除
-    
+
     Args:
         prop: 属性字符串
         excluded_props: 排除的属性集合
         excluded_patterns: 排除的属性模式列表（支持*通配符）
-        
+
     Returns:
         True表示应该排除
     """
-    if not prop or prop.strip() == '':
+    if not prop or prop.strip() == "":
         return True
     prop = prop.strip()
-    
+
     # 排除单字符属性（舱位等）
     if len(prop) == 1:
         return True
-    
+
     # 检查是否在排除列表中
     if prop in excluded_props:
         return True
-    
+
     # 检查标准化后的属性是否在排除列表中
     normalized_prop = normalize_property(prop)
     if normalized_prop in excluded_props:
         return True
-    
+
     # 检查是否匹配排除模式
     for pattern in excluded_patterns:
-        if pattern.endswith('*'):
+        if pattern.endswith("*"):
             # 前缀匹配
             prefix = pattern[:-1]
             if prop.startswith(prefix) or normalized_prop.startswith(prefix):
@@ -106,19 +108,19 @@ def should_exclude_property(prop: str, excluded_props: Set[str], excluded_patter
         elif pattern == prop or pattern == normalized_prop:
             # 精确匹配
             return True
-    
+
     return False
 
 
 def get_special_passenger_counts(db) -> Dict[str, int]:
     """从数据库查询特殊乘客属性统计
-    
+
     过滤掉home_sheet配置中排除的属性和模式
     动态排除目的地代码（从SY命令中提取，根据flight_info的航班号查找）
     特殊处理SXPS从ckin_msg列提取
     Args:
         db: 数据库客户端实例
-        
+
     Returns:
         属性名称到数量的字典
     """
@@ -132,29 +134,32 @@ def get_special_passenger_counts(db) -> Dict[str, int]:
             SELECT flight_number
             FROM flight_info
             LIMIT 1
-        """)# 从 flight_info 表获取当前航班号
+        """)  # 从 flight_info 表获取当前航班号
         flight_info_row = cursor.fetchone()
         if flight_info_row:
             flight_number = flight_info_row[0]
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT content
                 FROM commands
                 WHERE command_type = 'SY' AND is_latest = 1 AND flight_number = ?
                 LIMIT 1
-            """, (flight_number,))# 根据航班号在 commands 表中查找对应的 SY 命令
+            """,
+                (flight_number,),
+            )  # 根据航班号在 commands 表中查找对应的 SY 命令
             sy_row = cursor.fetchone()
             if sy_row:
                 sy_content = sy_row[0]
                 destination = extract_destination_from_sy_content(sy_content)
-                if destination:# 将目的地加入排除列表
+                if destination:  # 将目的地加入排除列表
                     excluded_props.add(destination)
     except Exception:
-        pass# 如果获取目的地失败，继续进行，不影响其他功能
-    
+        pass  # 如果获取目的地失败，继续进行，不影响其他功能
+
     try:
         conn = db.get_connection()
         cursor = conn.cursor()
-        
+
         # 查询所有乘客的properties (排除XRES)
         cursor.execute("""
             SELECT DISTINCT hbnb_number, properties
@@ -162,21 +167,25 @@ def get_special_passenger_counts(db) -> Dict[str, int]:
             WHERE properties IS NOT NULL AND properties != ''
                   AND properties NOT LIKE '%XRES%'
         """)
-        
+
         rows = cursor.fetchall()
-        
+
         # 统计每个属性的出现次数
         for hbnb_number, properties_str in rows:
             if properties_str:
-                props = [p.strip() for p in properties_str.split(',') if p.strip()]
+                props = [p.strip() for p in properties_str.split(",") if p.strip()]
                 for prop in props:
                     # 检查是否应该排除
-                    if not should_exclude_property(prop, excluded_props, excluded_patterns):
+                    if not should_exclude_property(
+                        prop, excluded_props, excluded_patterns
+                    ):
                         # 标准化属性名
                         normalized = normalize_property(prop)
                         if normalized:
-                            property_counts[normalized] = property_counts.get(normalized, 0) + 1
-        
+                            property_counts[normalized] = (
+                                property_counts.get(normalized, 0) + 1
+                            )
+
         # 特殊处理SXPS：从ckin_msg提取
         cursor.execute("""
             SELECT COUNT(DISTINCT hbnb_number)
@@ -187,11 +196,11 @@ def get_special_passenger_counts(db) -> Dict[str, int]:
         """)
         sxps_count = cursor.fetchone()[0]
         if sxps_count > 0:
-            property_counts['SXPS'] = sxps_count
-        
+            property_counts["SXPS"] = sxps_count
+
     except Exception as e:
         st.error(f"查询特殊乘客统计时出错: {e}")
-    
+
     return property_counts
 
 
@@ -228,12 +237,12 @@ def get_sxps_seats(db) -> str:
 
 def get_asvc_seat_mismatches(db) -> str:
     """获取ASVC座位与seat列不匹配的乘客姓名
-    
+
     使用vw_asvc_seat_mismatches视图查询，该视图：
     1. 从asvc_seat列提取ASVC座位
     2. 包括seat为NULL或seat不等于asvc_seat的乘客
     3. 排除已删除乘客（XRES）
-    
+
     Args:
         db: 数据库客户端实例
     Returns:
@@ -242,7 +251,7 @@ def get_asvc_seat_mismatches(db) -> str:
     try:
         conn = db.get_connection()
         cursor = conn.cursor()
-        
+
         # 查询座位不匹配的乘客（使用视图）
         cursor.execute("""
             SELECT name
@@ -252,7 +261,7 @@ def get_asvc_seat_mismatches(db) -> str:
         rows = cursor.fetchall()
         if rows:
             names = [row[0] for row in rows]
-            return f'ASVC Mismatches: {'; '.join(names)}'
+            return f"ASVC Mismatches: {'; '.join(names)}"
         return ""
     except Exception as e:
         st.error(f"查询座位不匹配乘客时出错: {e}")
@@ -263,65 +272,65 @@ def has_required_sy_commands(db) -> bool:
     """检查数据库是否同时包含到达和出发SY命令
     Args:
         db: 数据库客户端实例
-        
+
     Returns:
         True表示同时存在到达和出发SY命令
     """
     try:
         conn = db.get_connection()
-        cursor = conn.cursor()    
+        cursor = conn.cursor()
         # 查询所有最新的SY命令
         cursor.execute("""
             SELECT command_full
             FROM commands
             WHERE command_type = 'SY' AND is_latest = 1
-        """)       
-        sy_commands = cursor.fetchall()       
+        """)
+        sy_commands = cursor.fetchall()
         has_arrival = False
-        has_departure = False        
+        has_departure = False
         # 检查是否同时存在到达和出发SY
         for (command_full,) in sy_commands:
             if is_departure_sy(command_full):
                 has_departure = True
             else:
-                has_arrival = True          
+                has_arrival = True
             # 如果两者都找到了，可以提前返回
             if has_arrival and has_departure:
-                return True      
-        return False       
+                return True
+        return False
     except Exception:
         return False
 
 
 def get_sy_commands(db) -> tuple:
-    """获取最新的到达和出发SY命令   
+    """获取最新的到达和出发SY命令
     Args:
-        db: 数据库客户端实例        
+        db: 数据库客户端实例
     Returns:
         (arrival_sy_dict, departure_sy_dict) 元组，每个dict包含command_full和content
     """
     try:
         conn = db.get_connection()
-        cursor = conn.cursor()        
+        cursor = conn.cursor()
         # 查询所有最新的SY命令
         cursor.execute("""
             SELECT command_full, content
             FROM commands
             WHERE command_type = 'SY' AND is_latest = 1
             ORDER BY created_at DESC
-        """)       
-        sy_commands = cursor.fetchall()        
+        """)
+        sy_commands = cursor.fetchall()
         arrival_sy = None
-        departure_sy = None       
+        departure_sy = None
         # 区分到达和出发SY
         for command_full, content in sy_commands:
             if is_departure_sy(command_full):
                 if not departure_sy:  # 只取第一个（最新的）
-                    departure_sy = {'command_full': command_full, 'content': content}
+                    departure_sy = {"command_full": command_full, "content": content}
             else:
                 if not arrival_sy:
-                    arrival_sy = {'command_full': command_full, 'content': content}       
-        return arrival_sy, departure_sy        
+                    arrival_sy = {"command_full": command_full, "content": content}
+        return arrival_sy, departure_sy
     except Exception as e:
         st.error(f"获取SY命令时出错: {e}")
         return None, None
@@ -329,17 +338,17 @@ def get_sy_commands(db) -> tuple:
 
 def get_airc_command(db) -> Optional[Dict[str, str]]:
     """获取最新的AIRC命令
-    
+
     Args:
         db: 数据库客户端实例
-        
+
     Returns:
         包含command_full和content的字典，如果不存在返回None
     """
     try:
         conn = db.get_connection()
         cursor = conn.cursor()
-        
+
         cursor.execute("""
             SELECT command_full, content
             FROM commands
@@ -347,12 +356,12 @@ def get_airc_command(db) -> Optional[Dict[str, str]]:
             ORDER BY created_at DESC
             LIMIT 1
         """)
-        
+
         row = cursor.fetchone()
         if row:
-            return {'command_full': row[0], 'content': row[1]}
+            return {"command_full": row[0], "content": row[1]}
         return None
-        
+
     except Exception as e:
         st.error(f"获取AIRC命令时出错: {e}")
         return None
@@ -371,7 +380,16 @@ def build_flight_sheet_data(db) -> List[List[str]]:
         # Row 1: Flight Info
         ["", "", "", "", "", "DATE:", "", ""],
         # Row 2: Seat Conf. and Times
-        ["Seat Conf.", "", "", "", '="STD: " & IFERROR(VLOOKUP(M1,Parameter!$O:$S,3,0),"---")', '="ETD: " & IFERROR(VLOOKUP(M1,Parameter!$O:$S,4,0),"---")', '="ETA: " & IFERROR(VLOOKUP(M1,Parameter!$O:$S,5,0),"---")', ""],
+        [
+            "Seat Conf.",
+            "",
+            "",
+            "",
+            '="STD: " & IFERROR(VLOOKUP(M1,Parameter!$O:$S,3,0),"---")',
+            '="ETD: " & IFERROR(VLOOKUP(M1,Parameter!$O:$S,4,0),"---")',
+            '="ETA: " & IFERROR(VLOOKUP(M1,Parameter!$O:$S,5,0),"---")',
+            "",
+        ],
         # Row 3: MAX
         ["MAX", "", "", "", "", "", "", ""],
         # Row 4: A/C Reg.
@@ -379,7 +397,16 @@ def build_flight_sheet_data(db) -> List[List[str]]:
         # Row 5: Pax Counts
         ["J/Y = TTL", "", "", "", "J/Y=TTL", "", "", ""],
         # Row 6: ETA/GTD
-        ["ETA", "", "", "", "GTD", "","",'=IFERROR(VLOOKUP(LEFT(N6,3),Parameter!$L:$M,2,0),"---")'],
+        [
+            "ETA",
+            "",
+            "",
+            "",
+            "GTD",
+            "",
+            "",
+            '=IFERROR(VLOOKUP(LEFT(N6,3),Parameter!$L:$M,2,0),"---")',
+        ],
         # Row 7: Comment
         ["Commemt", "", "", "", "", "", "", ""],
         # Row 8: INOP seats
@@ -401,61 +428,89 @@ def build_flight_sheet_data(db) -> List[List[str]]:
     # Row 1 - 航班信息
     if arrival_sy:
         # col 2 (idx 1): arrival flight number
-        sheet_data[0][1] = extract_flight_number_from_command_full(arrival_sy['command_full']) or ""
+        sheet_data[0][1] = (
+            extract_flight_number_from_command_full(arrival_sy["command_full"]) or ""
+        )
         # col 3 (idx 2): arrival flight route
-        sheet_data[0][2] = extract_route_from_sy_content(arrival_sy['content']) or ""
+        sheet_data[0][2] = extract_route_from_sy_content(arrival_sy["content"]) or ""
     if departure_sy:
         # col 5 (idx 4): departure flight number
-        sheet_data[0][4] = extract_flight_number_from_command_full(departure_sy['command_full']) or ""
+        sheet_data[0][4] = (
+            extract_flight_number_from_command_full(departure_sy["command_full"]) or ""
+        )
         # col 6 (idx 5): departure flight route
-        sheet_data[0][5] = extract_route_from_sy_content(departure_sy['content']) or ""
+        sheet_data[0][5] = extract_route_from_sy_content(departure_sy["content"]) or ""
         # col 8 (idx 7): departure flight date
-        sheet_data[0][7] = extract_date_from_command_full(departure_sy['command_full']) or ""
+        sheet_data[0][7] = (
+            extract_date_from_command_full(departure_sy["command_full"]) or ""
+        )
     # Row 2 - 舱位配置
     if departure_sy:
         # col 3 (idx 2): CNF配置
-        cnf_str = extract_cnf_original_from_sy_content(departure_sy['content'])
+        cnf_str = extract_cnf_original_from_sy_content(departure_sy["content"])
         if cnf_str:
             sheet_data[1][2] = cnf_str
     # Row 3 - MAX, no data to fill
     # Row 4 - 机型
     if departure_sy:
         # col 3 (idx 2): 出发机型
-        aircraft = extract_aircraft_type_from_sy_content(departure_sy['content'])
+        aircraft = extract_aircraft_type_from_sy_content(departure_sy["content"])
         if aircraft:
             sheet_data[3][2] = aircraft
         # col 8 (idx 7): "BDT"
-        bdt = extract_bdt_from_sy_content(departure_sy['content'])
+        bdt = extract_bdt_from_sy_content(departure_sy["content"])
         if bdt:
             sheet_data[3][7] = bdt
     # Row 5 - 乘客统计
     if arrival_sy:
         # 列3(索引2): 到达乘客统计
-        pax_count = extract_passenger_counts_from_sy_content(arrival_sy['content'])
-        if pax_count:
-            sheet_data[4][2] = pax_count
+        pax_counts = extract_passenger_counts_from_sy_content(arrival_sy["content"])
+        if pax_counts:
+            ttl = sum(pax_counts["C"])
+            # 'C'项可能有2项或3项，根据实际长度动态拼接显示字符串
+            pax_c_items = pax_counts.get("C", [])
+            pax_c_items_str = " / ".join(str(x) for x in pax_c_items)
+            pax_c_count_str = f"{pax_c_items_str} = {ttl}"
+        if pax_c_count_str:
+            sheet_data[4][2] = pax_c_count_str
             # 根据pax_count中的斜杠数量设置列1(索引0)的标签
-            slash_count = pax_count.count('/')
+            slash_count = len(pax_counts["C"])
             if slash_count == 2:
-                sheet_data[4][0] = 'F/J/Y = TTL'
+                sheet_data[4][0] = "J/Y = TTL"
+            else:
+                sheet_data[4][0] = "F/J/Y = TTL"
     if departure_sy:
         # 列7(索引6): 出发乘客统计
-        pax_count = extract_passenger_counts_from_sy_content(departure_sy['content'])
-        if pax_count:
-            sheet_data[4][6] = pax_count
-            # 根据pax_count中的斜杠数量设置列5(索引4)的标签
-            slash_count = pax_count.count('/')
-            if slash_count == 2:
-                sheet_data[4][4] = 'F/J/Y = TTL'
+        pax_counts = extract_passenger_counts_from_sy_content(departure_sy["content"])
+        if pax_counts and "R" in pax_counts and "RET" in pax_counts:
+            r_values = pax_counts["R"]
+            ret_values = pax_counts["RET"]
+            # 确保R和RET长度相同
+            if len(r_values) == len(ret_values):
+                # 对每个位置取最小值
+                min_values = [
+                    min(r_values[i], ret_values[i]) for i in range(len(r_values))
+                ]
+                # 计算总和
+                total = sum(min_values)
+                # 格式化显示字符串
+                min_values_str = " / ".join(str(x) for x in min_values)
+                pax_count_str = f"{min_values_str} = {total}"
+                sheet_data[4][6] = pax_count_str
+                # 根据子项数量设置列5(索引4)的标签
+                if len(min_values) == 2:
+                    sheet_data[4][4] = "J/Y = TTL"
+                else:
+                    sheet_data[4][4] = "F/J/Y = TTL"
     # Row 6 - GTD值
     if departure_sy:
         # col 6 (idx 5): GTD值
-        gtd = extract_gtd_from_sy_content(departure_sy['content'])
+        gtd = extract_gtd_from_sy_content(departure_sy["content"])
         if gtd:
             sheet_data[5][5] = gtd
     # Row 8 - INOP座位（索引7）
     if airc_cmd:
-        inop_seats = extract_inop_seats_from_airc_content(airc_cmd['content'])
+        inop_seats = extract_inop_seats_from_airc_content(airc_cmd["content"])
         sheet_data[7][0] = inop_seats
     # Row 9 - SXPS座位信息（索引8）
     sxps_seats = get_sxps_seats(db)
@@ -468,7 +523,7 @@ def build_flight_sheet_data(db) -> List[List[str]]:
     # Rows 12-13 - 特殊乘客统计（列2-8，即索引1-7）
     special_pax = get_special_passenger_counts(db)
     # 移除SXPS从统计显示中（因为已经在Row 9显示）
-    special_pax.pop('SXPS', None)
+    special_pax.pop("SXPS", None)
     # 按字母顺序排序属性
     sorted_props = sorted(special_pax.items())
     # 填充到表格的第12和13行（索引11和12），列2-8（索引1-7）
@@ -486,40 +541,42 @@ def build_flight_sheet_data(db) -> List[List[str]]:
             overflow_props.append(f"{count} {prop}")
     # 如果有溢出属性，将它们作为字符串放入第11行（索引10）
     if overflow_props:
-        overflow_str = ', '.join(overflow_props)
+        overflow_str = ", ".join(overflow_props)
         sheet_data[10][0] = overflow_str
     return sheet_data
 
 
 def convert_to_html_table(data: List[List[str]]) -> str:
     """将表格数据转换为HTML格式，用于Excel剪贴板
-    
+
     Args:
         data: 8列x13行的二维列表
-        
+
     Returns:
         HTML格式的表格字符串（Excel兼容）
     """
     # 构建HTML表格，使用Excel兼容的格式
     html_parts = ['<table xmlns:x="urn:schemas-microsoft-com:office:excel">']
-    
+
     for row in data:
-        html_parts.append('<tr>')
+        html_parts.append("<tr>")
         for cell in row:
             cell_str = str(cell)
             # 转义HTML特殊字符
-            cell_content = cell_str.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-            
+            cell_content = (
+                cell_str.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            )
+
             # 检查是否是Excel公式
-            if cell_str.startswith('='):
+            if cell_str.startswith("="):
                 # 保留公式
                 html_parts.append(f'<td x:fmla="{cell_content}">{cell_content}</td>')
             else:
-                html_parts.append(f'<td>{cell_content}</td>')
-        html_parts.append('</tr>')
-    
-    html_parts.append('</table>')
-    return ''.join(html_parts)
+                html_parts.append(f"<td>{cell_content}</td>")
+        html_parts.append("</tr>")
+
+    html_parts.append("</table>")
+    return "".join(html_parts)
 
 
 def render_flight_sheet_table(data: List[List[str]]) -> None:
@@ -531,10 +588,12 @@ def render_flight_sheet_table(data: List[List[str]]) -> None:
     html_table_full = convert_to_html_table(data)
     # 使用JSON编码来安全地传递HTML到JavaScript
     html_full_json = json.dumps(html_table_full)
+
     # 检查行是否为空的辅助函数
     def is_blank_row(row: List[str]) -> bool:
         """检查行中是否所有单元格都为空"""
         return all(not str(cell).strip() for cell in row)
+
     table_rows = []
     for row_idx, row in enumerate(data):
         # 行3和行7是特殊的固定行，始终不显示
@@ -545,7 +604,12 @@ def render_flight_sheet_table(data: List[List[str]]) -> None:
             if is_blank_row(row):
                 continue
             # 获取第一列的内容（完整字符串）
-            cell_content = str(row[0]).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+            cell_content = (
+                str(row[0])
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+            )
             if not cell_content.strip():
                 cell_content = "&nbsp;"
             # 创建跨8列的单元格
@@ -556,10 +620,14 @@ def render_flight_sheet_table(data: List[List[str]]) -> None:
             for cell in row:
                 cell_str = str(cell)
                 # 对于Excel公式，在显示时只显示提示文本，不显示完整公式
-                if cell_str.startswith('='):
-                    cell_str = '(ExcelFormula)'
+                if cell_str.startswith("="):
+                    cell_str = "(ExcelFormula)"
                 # 转义HTML特殊字符
-                cell_str = cell_str.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                cell_str = (
+                    cell_str.replace("&", "&amp;")
+                    .replace("<", "&lt;")
+                    .replace(">", "&gt;")
+                )
                 # 空单元格使用&nbsp;
                 if not cell_str.strip():
                     cell_str = "&nbsp;"
@@ -644,4 +712,3 @@ def render_flight_sheet_table(data: List[List[str]]) -> None:
     st.components.v1.html(copy_button_html, height=70)
     # 添加说明
     st.caption("💡 点击按钮复制完整表格到剪贴板（可直接粘贴到Excel）")
-
