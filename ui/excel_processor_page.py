@@ -17,7 +17,7 @@ from scripts.excel_processor import (
     format_date_ddmmmyy,
 )
 from scripts.api_encoder.mood_rename_worker import start_mood_rename_process
-from scripts.excel_printer import print_excel_file
+from scripts.excel_printer import excel_to_pdf_with_metadata, get_pdf_print_html_component
 
 
 def show_excel_processor():
@@ -243,11 +243,19 @@ def show_excel_processor():
                         if st.button(
                             "🖨️ Print", use_container_width=True, key="print_button"
                         ):
-                            success, message = print_excel_file(output_file)
-                            if success:
-                                st.success(message)
-                            else:
-                                st.error(message)
+                            try:
+                                # 转换Excel为PDF
+                                pdf_bytes = excel_to_pdf_with_metadata(output_file)
+                                # 获取HTML组件用于打开新窗口并打印
+                                html_component = get_pdf_print_html_component(pdf_bytes)
+                                # 使用Streamlit的HTML组件显示
+                                st.components.v1.html(html_component, height=0)
+                                st.success("✅ PDF已打开，请在新窗口中完成打印")
+                            except ImportError as e:
+                                st.error(f"❌ 缺少依赖库: {str(e)}")
+                                st.info("请在终端中运行: pip install weasyprint")
+                            except Exception as e:
+                                st.error(f"❌ 转换PDF失败: {str(e)}")
                 else:
                     st.error(f"❌ 文件不存在: {output_file}")
         except Exception as e:
