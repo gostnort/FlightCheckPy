@@ -17,7 +17,7 @@ from scripts.excel_processor import (
     format_date_ddmmmyy,
 )
 from scripts.api_encoder.mood_rename_worker import start_mood_rename_process
-from scripts.excel_printer import excel_to_pdf_with_metadata, get_pdf_print_html_component
+from scripts.excel_printer import print_excel_file
 
 
 def show_excel_processor():
@@ -243,19 +243,46 @@ def show_excel_processor():
                         if st.button(
                             "🖨️ Print", use_container_width=True, key="print_button"
                         ):
-                            try:
-                                # 转换Excel为PDF
-                                pdf_bytes = excel_to_pdf_with_metadata(output_file)
-                                # 获取HTML组件用于打开新窗口并打印
-                                html_component = get_pdf_print_html_component(pdf_bytes)
-                                # 使用Streamlit的HTML组件显示
-                                st.components.v1.html(html_component, height=0)
-                                st.success("✅ PDF已打开，请在新窗口中完成打印")
-                            except ImportError as e:
-                                st.error(f"❌ 缺少依赖库: {str(e)}")
-                                st.info("请在终端中运行: pip install weasyprint")
-                            except Exception as e:
-                                st.error(f"❌ 转换PDF失败: {str(e)}")
+                            success, message, html_component, metadata = print_excel_file(
+                                output_file
+                            )
+                            if success:
+                                if html_component:
+                                    st.components.v1.html(html_component, height=0)
+                                st.success(message)
+                                if metadata:
+                                    label_map = {
+                                        "flight_number": "航班号",
+                                        "flight_date": "航班日期",
+                                        "record_count": "记录数量",
+                                        "cash_total": "现金合计",
+                                        "total_amount": "总金额",
+                                        "unprocessed_records": "未处理记录",
+                                    }
+                                    st.subheader("📋 打印元数据")
+                                    for key in [
+                                        "flight_number",
+                                        "flight_date",
+                                        "record_count",
+                                        "cash_total",
+                                        "total_amount",
+                                    ]:
+                                        if key in metadata and metadata[key] not in [
+                                            None,
+                                            "",
+                                        ]:
+                                            value = metadata[key]
+                                            if isinstance(value, float):
+                                                value = f"{value:,.2f}"
+                                            st.markdown(
+                                                f"- **{label_map.get(key, key)}**：{value}"
+                                            )
+                                    if metadata.get("unprocessed_records"):
+                                        st.markdown("**未处理记录：**")
+                                        for item in metadata["unprocessed_records"]:
+                                            st.markdown(f"  - {item}")
+                            else:
+                                st.error(message)
                 else:
                     st.error(f"❌ 文件不存在: {output_file}")
         except Exception as e:
