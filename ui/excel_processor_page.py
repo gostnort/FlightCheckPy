@@ -61,6 +61,13 @@ def show_excel_processor():
         )
         # 将debug状态保存到session_state，以便在rerun后恢复
         st.session_state["debug_on"] = debug_on
+    producer_name = st.text_input(
+        "👤 制作人姓名",
+        value=st.session_state.get("producer_name", ""),
+        placeholder="请输入将写入C13的名字",
+        help="该名字将会写入输出模板SUM工作表的C13位置，用于标记制作人。",
+    )
+    st.session_state["producer_name"] = producer_name
     uploaded_file = st.file_uploader(
         "Select the Excel file to process",
         type=["xlsx", "xls"],
@@ -94,6 +101,9 @@ def show_excel_processor():
             if st.button(
                 "🚀 Start Processing", type="primary", use_container_width=True
             ):
+                if not producer_name or not producer_name.strip():
+                    st.error("❌ 请输入制作人姓名后再开始处理。")
+                    return
                 with st.spinner("Processing Excel file..."):
                     try:
                         # Get the database client and pass it to the core processor
@@ -155,7 +165,11 @@ def show_excel_processor():
                     # 生成Excel文件
                     try:
                         core_generate_output_excel(
-                            result_df, unprocessed_records, output_file, cash_total
+                            result_df,
+                            unprocessed_records,
+                            output_file,
+                            cash_total,
+                            producer_name.strip(),
                         )
                     except Exception as e:
                         st.error(f"❌ Failed to generate output file: {str(e)}")
@@ -243,44 +257,13 @@ def show_excel_processor():
                         if st.button(
                             "🖨️ Print", use_container_width=True, key="print_button"
                         ):
-                            success, message, html_component, metadata = print_excel_file(
+                            success, message, html_component, _ = print_excel_file(
                                 output_file
                             )
                             if success:
                                 if html_component:
                                     st.components.v1.html(html_component, height=0)
                                 st.success(message)
-                                if metadata:
-                                    label_map = {
-                                        "flight_number": "航班号",
-                                        "flight_date": "航班日期",
-                                        "record_count": "记录数量",
-                                        "cash_total": "现金合计",
-                                        "total_amount": "总金额",
-                                        "unprocessed_records": "未处理记录",
-                                    }
-                                    st.subheader("📋 打印元数据")
-                                    for key in [
-                                        "flight_number",
-                                        "flight_date",
-                                        "record_count",
-                                        "cash_total",
-                                        "total_amount",
-                                    ]:
-                                        if key in metadata and metadata[key] not in [
-                                            None,
-                                            "",
-                                        ]:
-                                            value = metadata[key]
-                                            if isinstance(value, float):
-                                                value = f"{value:,.2f}"
-                                            st.markdown(
-                                                f"- **{label_map.get(key, key)}**：{value}"
-                                            )
-                                    if metadata.get("unprocessed_records"):
-                                        st.markdown("**未处理记录：**")
-                                        for item in metadata["unprocessed_records"]:
-                                            st.markdown(f"  - {item}")
                             else:
                                 st.error(message)
                 else:

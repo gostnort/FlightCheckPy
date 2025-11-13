@@ -1,3 +1,16 @@
+## v0.63.1
+
+主要改进：
+
+- 修复主页**信息简表**的某个数据采集错误；
+- 修改票务报表的**打印**逻辑和库
+- **筛选表**的勾选内容将会被 Notepad 打开
+
+支持：
+
+- 主机端（Host）需要安装 Microsoft Excel2007 或者以上版本
+- 主机端 Microsoft Print to PDF 这个 Windows Feature 能够正常使用。
+
 # FlightCheckPy v0.63 - 从演示版到生产版的工程变更
 
 ## 版本对标
@@ -9,12 +22,14 @@
 ## 整体架构变更
 
 ### v0.6 设计理念
+
 - 单进程内存数据库
 - 简单的 HBPR/PR 解析
 - 基础的数据验证
 - UI 组件松散耦合
 
 ### v0.63 实际实现
+
 - **远程数据库服务** - 引入独立的数据库端口服务器
 - **分层数据处理** - 专用的处理器、验证器、清理器
 - **完整的数据迁移系统** - DatabaseMigrator 处理架构演变
@@ -27,6 +42,7 @@
 ### 1. 数据库层
 
 #### v0.6 预期
+
 ```
 单一 SQLite 文件
 ├─ hbpr_records 表
@@ -34,6 +50,7 @@
 ```
 
 #### v0.63 实现
+
 ```
 多层数据库架构
 ├─ 本地数据库 (hbpr_database.py)
@@ -53,21 +70,22 @@
 
 **新增字段数:** 从 ~5 个基础字段 → 35+ 个结构化字段
 
-| 字段类别 | v0.6 | v0.63 | 变化 |
-|---------|------|-------|------|
-| 乘客信息 | name, seat | name, seat, boarding_number, class, destination, pnr | +5 |
-| 行李数据 | bag_info | bag_piece, bag_weight, bag_allowance, expc_piece, expc_weight, asvc_piece, fba_piece, ifba_piece | +8 |
-| ASVC 数据 | (无) | asvc_msg, asvc_seat | +2 |
-| 票务数据 | (无) | tkne, ff, inbound_flight, outbound_flight | +4 |
-| 证件数据 | (无) | pspt_name, pspt_exp_date, is_ca_flyer, has_infant | +4 |
-| 验证结果 | (无) | is_validated, is_valid, error_* (5个), validated_at | +7 |
-| 版本控制 | (无) | bol_duplicate, is_deleted | +2 |
+| 字段类别  | v0.6       | v0.63                                                                                            | 变化 |
+| --------- | ---------- | ------------------------------------------------------------------------------------------------ | ---- |
+| 乘客信息  | name, seat | name, seat, boarding_number, class, destination, pnr                                             | +5   |
+| 行李数据  | bag_info   | bag_piece, bag_weight, bag_allowance, expc_piece, expc_weight, asvc_piece, fba_piece, ifba_piece | +8   |
+| ASVC 数据 | (无)       | asvc_msg, asvc_seat                                                                              | +2   |
+| 票务数据  | (无)       | tkne, ff, inbound_flight, outbound_flight                                                        | +4   |
+| 证件数据  | (无)       | pspt_name, pspt_exp_date, is_ca_flyer, has_infant                                                | +4   |
+| 验证结果  | (无)       | is*validated, is_valid, error*\* (5 个), validated_at                                            | +7   |
+| 版本控制  | (无)       | bol_duplicate, is_deleted                                                                        | +2   |
 
 ---
 
 ### 2. 数据处理流程
 
 #### v0.6 预期流程 (线性)
+
 ```
 上传文件
   ↓
@@ -79,6 +97,7 @@
 ```
 
 #### v0.63 实际流程 (多阶段)
+
 ```
 上传文件
   ↓
@@ -135,10 +154,12 @@ CHbpr 处理 (v0.63 核心增强)
 ### 3. 数据验证策略
 
 #### v0.6 预期
+
 - 基础格式校验
 - 简单的错误消息
 
 #### v0.63 实现
+
 ```
 多层次验证系统
 
@@ -179,10 +200,12 @@ CHbpr 处理 (v0.63 核心增强)
 ### 4. PR 命令处理
 
 #### v0.6 预期
+
 - 简单的 PR 解析
 - 直接转换为 HBPR
 
 #### v0.63 实现
+
 ```
 完整的 PR 处理流程
 
@@ -223,10 +246,12 @@ convert_pr_to_hbpr() - 合成新 HBPR
 ### 5. 错误处理策略
 
 #### v0.6 预期
+
 - 简单的 try/catch
 - 用户级错误消息
 
 #### v0.63 实现
+
 ```
 分层错误处理
 
@@ -257,12 +282,14 @@ convert_pr_to_hbpr() - 合成新 HBPR
 ## 数据库管理的演变
 
 ### v0.6 预期
+
 - 静态表结构
 - 手工版本管理
 
 ### v0.63 实现
 
 #### 自动化迁移系统
+
 ```python
 DatabaseMigrator
   ├─ 读取 database_schema.json (中央配置)
@@ -275,17 +302,18 @@ DatabaseMigrator
 ```
 
 #### 9 个数据库 VIEWs (统计和异常检测)
-| VIEW | 用途 | v0.6 | v0.63 |
-|------|------|------|-------|
-| `vw_discontinuous_hbnb` | 缺失 HBNB 号 | ✗ | ✓ |
-| `vw_home_accepted_counts` | 已接受乘客统计 | ✗ | ✓ |
-| `vw_home_flags` | 删除乘客统计 | ✗ | ✓ |
-| `vw_deleted_boarding_numbers` | 删除登机号列表 | ✗ | ✓ |
-| `vw_hbnb_range` | HBNB 号码范围 | ✗ | ✓ |
-| `vw_missing_boarding_numbers` | 缺失登机号 | ✗ | ✓ |
-| `vw_duplicate_seats` | 重复座位 | ✗ | ✓ |
-| `vw_duplicate_names` | 重复乘客名字 | ✗ | ✓ |
-| `vw_asvc_seat_mismatches` | 座位不匹配 | ✗ | ✓ [v0.63新增] |
+
+| VIEW                          | 用途           | v0.6 | v0.63          |
+| ----------------------------- | -------------- | ---- | -------------- |
+| `vw_discontinuous_hbnb`       | 缺失 HBNB 号   | ✗    | ✓              |
+| `vw_home_accepted_counts`     | 已接受乘客统计 | ✗    | ✓              |
+| `vw_home_flags`               | 删除乘客统计   | ✗    | ✓              |
+| `vw_deleted_boarding_numbers` | 删除登机号列表 | ✗    | ✓              |
+| `vw_hbnb_range`               | HBNB 号码范围  | ✗    | ✓              |
+| `vw_missing_boarding_numbers` | 缺失登机号     | ✗    | ✓              |
+| `vw_duplicate_seats`          | 重复座位       | ✗    | ✓              |
+| `vw_duplicate_names`          | 重复乘客名字   | ✗    | ✓              |
+| `vw_asvc_seat_mismatches`     | 座位不匹配     | ✗    | ✓ [v0.63 新增] |
 
 ---
 
@@ -294,6 +322,7 @@ DatabaseMigrator
 ### v0.63 中未在 v0.6 中存在的功能
 
 #### 1. 完整的记录版本控制
+
 ```python
 duplicate_record 表
 ├─ id (自增)
@@ -302,11 +331,13 @@ duplicate_record 表
 ├─ record_content
 └─ created_at (时间戳)
 ```
+
 - 自动备份原记录
 - 支持记录完整历史
 - 时间戳追溯
 
 #### 2. ASVC 座位提取和验证
+
 ```python
 CHbpr.__GetAsvcSeat()
 ├─ 输入: ASVC 消息行
@@ -316,6 +347,7 @@ CHbpr.__GetAsvcSeat()
 ```
 
 #### 3. 命令版本管理
+
 ```sql
 commands 表
 ├─ command_full (完整命令字符串)
@@ -327,6 +359,7 @@ commands 表
 ```
 
 #### 4. 远程数据库服务
+
 ```
 memdb_port_server.py
 ├─ 独立的进程
@@ -341,20 +374,23 @@ memdb_port_server.py
 ## 性能和扩展性
 
 ### v0.6 预期
+
 - 单进程处理
 - 小规模数据集 (~1000 条记录)
 
 ### v0.63 实现
 
 #### 处理能力
-| 指标 | v0.6 | v0.63 |
-|------|------|-------|
-| 单批处理 | ~100 条 | ~1000+ 条 |
-| 记录历史 | 不支持 | 完整版本链 |
-| 并发用户 | 1 | 多用户独立实例 |
-| 数据一致性 | 基础 | 多层验证 |
+
+| 指标       | v0.6    | v0.63          |
+| ---------- | ------- | -------------- |
+| 单批处理   | ~100 条 | ~1000+ 条      |
+| 记录历史   | 不支持  | 完整版本链     |
+| 并发用户   | 1       | 多用户独立实例 |
+| 数据一致性 | 基础    | 多层验证       |
 
 #### 架构扩展性
+
 - 从单进程 → 远程服务架构
 - 从内存数据库 → 磁盘持久化 + 远程访问
 - 从松散耦合 → 紧密集成系统
@@ -364,6 +400,7 @@ memdb_port_server.py
 ## 代码结构的转变
 
 ### v0.6 预期
+
 ```
 scripts/
 ├─ hbpr_processor.py
@@ -372,6 +409,7 @@ scripts/
 ```
 
 ### v0.63 实现
+
 ```
 scripts/
 ├─ hbpr_file_processor.py (HBPR 文件解析)
@@ -417,25 +455,29 @@ ui/
 
 ## 文件大小和复杂度
 
-| 文件 | v0.6 预期 | v0.63 实现 | 行数 | 复杂度 |
-|------|---------|---------|------|--------|
-| hbpr_info_processor.py | ~200 行 | 853 行 | +353% | CHbpr 完整验证系统 |
-| hbpr_database.py | ~300 行 | 1186 行 | +295% | 多层数据操作 + 迁移 |
-| pr_processor.py | ~100 行 | ~350 行 | +250% | PR 合并 + 转换逻辑 |
-| hbpr_file_processor.py | ~150 行 | ~280 行 | +87% | 文件解析 + 清理 |
+| 文件                   | v0.6 预期 | v0.63 实现 | 行数  | 复杂度              |
+| ---------------------- | --------- | ---------- | ----- | ------------------- |
+| hbpr_info_processor.py | ~200 行   | 853 行     | +353% | CHbpr 完整验证系统  |
+| hbpr_database.py       | ~300 行   | 1186 行    | +295% | 多层数据操作 + 迁移 |
+| pr_processor.py        | ~100 行   | ~350 行    | +250% | PR 合并 + 转换逻辑  |
+| hbpr_file_processor.py | ~150 行   | ~280 行    | +87%  | 文件解析 + 清理     |
 
 ---
 
 ## 部署和维护
 
 ### v0.6 预期
+
 - 单一可执行文件
 - 本地数据库文件
 - 无特殊依赖
 
-### v0.63 实现
+### v0.63
+
+实现
 
 #### 启动流程
+
 ```
 1. 启动 memdb_port_server (远程数据库)
    ├─ 监听 51201-51203 端口
@@ -455,6 +497,7 @@ ui/
 ```
 
 #### 依赖项
+
 - Python 3.12.0
 - SQLite 3.25.0+ (ROW_NUMBER() 支持)
 - Streamlit (UI 框架)
@@ -466,26 +509,31 @@ ui/
 ## 预期偏离的工程原因
 
 ### 1. 数据完整性需求
+
 **预期:** 基础数据存储  
 **实现:** 35+ 个字段的结构化数据  
 **原因:** HBPR 信息复杂，需要多维验证
 
 ### 2. 并发访问支持
+
 **预期:** 单用户单进程  
 **实现:** 远程数据库服务 + 多用户隔离  
 **原因:** 实际使用场景需要多人协作
 
 ### 3. 数据历史追溯
+
 **预期:** 覆盖写入  
 **实现:** 完整的版本控制 + 时间戳  
 **原因:** 审计和问题追踪需求
 
 ### 4. 自动化维护
+
 **预期:** 静态表结构  
 **实现:** DatabaseMigrator + 自动迁移  
 **原因:** 避免手工维护 + 向后兼容
 
 ### 5. PR 命令处理
+
 **预期:** 简单转换  
 **实现:** 完整的合并、查询、融合系统  
 **原因:** 实际 PR 命令复杂且经常重复

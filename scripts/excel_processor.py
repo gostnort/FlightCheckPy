@@ -537,9 +537,9 @@ def process_excel_file(db_client: HbprDatabase, df_input: pd.DataFrame, debug: b
     return None, unprocessed_records, debug_logs
 
 
-def generate_output_excel(result_df: pd.DataFrame, unprocessed_records: List[Dict], output_file: str, cash_total: float = 0.0) -> str:
+def generate_output_excel(result_df: pd.DataFrame, unprocessed_records: List[Dict], output_file: str, cash_total: float = 0.0, producer_name: str = '') -> str:
     """根据模板生成输出Excel文件，返回保存路径。
-    使用全局 FLIGHT_NUMBER/FLIGHT_DATE 写入 SUM 表。
+    使用全局 FLIGHT_NUMBER/FLIGHT_DATE 写入 SUM 表，并在C13写入制作人姓名。
     """
     from openpyxl import load_workbook
     template_file = os.path.join("resources", "Out_format.xlsx")
@@ -606,6 +606,8 @@ def generate_output_excel(result_df: pd.DataFrame, unprocessed_records: List[Dic
         except Exception:
             flight_date_str = ''
     ws_sum.cell(row=14, column=3, value=flight_date_str)
+    if producer_name and str(producer_name).strip():
+        ws_sum.cell(row=13, column=3, value=str(producer_name).strip())
     if unprocessed_records:
         row_idx = 15
         for record in unprocessed_records:
