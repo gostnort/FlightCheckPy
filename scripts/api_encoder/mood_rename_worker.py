@@ -9,6 +9,7 @@ import multiprocessing
 import logging
 import sys
 from pathlib import Path
+from typing import Tuple
 
 
 # 延迟导入 - 在进程内部导入，避免multiprocessing spawn问题
@@ -52,6 +53,7 @@ def _rename_worker_process(
     timestamp_file: str,
     fn: str,
     fd: str,
+    shared_status: dict,
 ) -> None:
     """
     后台工作进程：生成心情描述并重命名文件
@@ -132,10 +134,30 @@ def _rename_worker_process(
         old_path.rename(new_path)
         logger.info(f"文件重命名成功: {new_filename}")
         logger.info(f"重命名完成，新文件名: {new_filename}")
+        # 更新共享状态，通知UI层重命名成功
+        shared_status.update({
+            "success": True,
+            "completed": True,
+            "timestamp_file": timestamp_file,
+            "new_filename": new_filename,
+            "new_filepath": str(new_path),
+        })
+        logger.info(f"共享状态已更新: 重命名成功")
     except Exception as e:
         # 记录错误
         error_msg = str(e)
         logger.error(f"重命名过程中发生错误: {error_msg}", exc_info=True)
+        # 更新共享状态，通知UI层重命名失败
+        try:
+            shared_status.update({
+                "success": False,
+                "completed": True,
+                "timestamp_file": timestamp_file,
+                "error": error_msg,
+            })
+            logger.info(f"共享状态已更新: 重命名失败 - {error_msg}")
+        except Exception as status_error:
+            logger.error(f"更新共享状态失败: {status_error}", exc_info=True)
 
 
 def start_mood_rename_process(
@@ -145,7 +167,8 @@ def start_mood_rename_process(
     timestamp_file: str,
     fn: str,
     fd: str,
-) -> multiprocessing.Process:
+    shared_status: dict = None,
+) -> Tuple[multiprocessing.Process, dict]:
     """
     启动后台进程进行心情描述生成和文件重命名
     Args:
@@ -155,8 +178,9 @@ def start_mood_rename_process(
         timestamp_file: 带时间戳的文件路径
         fn: 航班号
         fd: 航班日期（已格式化字符串）
+        shared_status: 共享状态字典（如果为None则创建新的）
     Returns:
-        启动的进程对象
+        (启动的进程对象, 共享状态字典)
     """
     # 使用主进程的logger记录启动信息
     main_logger = logging.getLogger(__name__)
@@ -164,6 +188,16 @@ def start_mood_rename_process(
         logging.basicConfig(level=logging.INFO)
         main_logger = logging.getLogger(__name__)
     main_logger.info(f"启动重命名后台进程: timestamp_file={timestamp_file}")
+    # 创建共享状态字典（如果未提供）
+    if shared_status is None:
+        manager = multiprocessing.Manager()
+        shared_status = manager.dict()
+    # 初始化共享状态
+    shared_status.update({
+        "completed": False,
+        "success": None,
+        "timestamp_file": timestamp_file,
+    })
     # Windows上需要设置multiprocessing启动方法
     try:
         multiprocessing.set_start_method("spawn", force=True)
@@ -171,9 +205,9 @@ def start_mood_rename_process(
         pass  # 已经设置过了
     process = multiprocessing.Process(
         target=_rename_worker_process,
-        args=(cash, total_amount, username, timestamp_file, fn, fd),
+        args=(cash, total_amount, username, timestamp_file, fn, fd, shared_status),
         daemon=False,
     )
     process.start()
     main_logger.info(f"后台进程已启动，PID: {process.pid}")
-    return process
+    return process, shared_status

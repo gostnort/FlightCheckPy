@@ -12,8 +12,10 @@ from typing import Tuple, Optional
 
 try:
     import win32com.client
+    import pythoncom
 except ImportError:
     win32com = None
+    pythoncom = None
 
 
 def excel_to_pdf(filepath: str) -> bytes:
@@ -27,8 +29,10 @@ def excel_to_pdf(filepath: str) -> bytes:
     file_path = Path(filepath)
     if not file_path.exists():
         raise FileNotFoundError(f"文件不存在: {filepath}")
-    if win32com is None:
+    if win32com is None or pythoncom is None:
         raise ImportError("win32com库未安装，请运行: pip install pywin32")
+    # 初始化COM（在Streamlit等多线程环境中必需）
+    pythoncom.CoInitialize()
     excel = None
     wb = None
     try:
@@ -53,9 +57,20 @@ def excel_to_pdf(filepath: str) -> bytes:
     finally:
         # 关闭工作簿和Excel
         if wb:
-            wb.Close(SaveChanges=False)
+            try:
+                wb.Close(SaveChanges=False)
+            except Exception:
+                pass
         if excel:
-            excel.Quit()
+            try:
+                excel.Quit()
+            except Exception:
+                pass
+        # 取消初始化COM
+        try:
+            pythoncom.CoUninitialize()
+        except Exception:
+            pass
 
 
 def get_pdf_print_html_component(pdf_bytes: bytes) -> str:
