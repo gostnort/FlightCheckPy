@@ -1,0 +1,122 @@
+/* resources/styles/main.css - FlightCheckPy 统一外部样式表 */
+
+/* 1. 侧边栏主按钮高亮风格 */
+section[data-testid="stSidebar"] button[kind="primary"] {
+    background-color: #e6ffe6 !important;
+    color: #000000 !important;
+    border: 2px solid #e6ffe6 !important;
+    font-weight: bold !important;
+}
+section[data-testid="stSidebar"] button[kind="primary"]:hover {
+    background-color: #98FB98 !important;
+    border-color: #32CD32 !important;
+    color: #000000 !important;
+}
+section[data-testid="stSidebar"] .stButton > button[data-testid="baseButton-primary"] {
+    background-color: #90EE90 !important;
+    color: #000000 !important;
+    border: 2px solid #32CD32 !important;
+    font-weight: bold !important;
+}
+section[data-testid="stSidebar"] .stButton > button[data-testid="baseButton-primary"]:hover {
+    background-color: #98FB98 !important;
+    border-color: #228B22 !important;
+    color: #000000 !important;
+}
+
+/* 2. 主页面内容区域滚动与底部留白 */
+.main .block-container {
+    padding-top: 0 !important;
+    padding-bottom: 5rem !important;
+    margin-top: 0 !important;
+}
+[data-testid="stMainBlockContainer"] {
+    padding-top: 0 !important;
+    padding-bottom: 5rem !important;
+    margin-top: 0 !important;
+}
+.stMainBlockContainer {
+    padding-top: 0 !important;
+    margin-top: 0 !important;
+}
+
+/* 3. 元素垂直间距紧凑布局 */
+.stVerticalBlock, [data-testid="stVerticalBlock"] {
+    gap: 0.5rem !important;
+    padding-top: 0 !important;
+    padding-bottom: 0.5rem !important;
+    margin-top: 0 !important;
+}
+
+/* 4. 按钮与提示卡片间距规范 */
+.stSuccess, .stDownloadButton {
+    margin-bottom: 1rem !important;
+}
+
+/* 5. 页面高度与全局滚动 */
+section[data-testid="stAppViewContainer"] > .main {
+    min-height: 100vh !important;
+    padding-bottom: 5rem !important;
+}
+.stApp > header {
+    background: transparent;
+}
+.stApp {
+    overflow-y: auto !important;
+}
+
+/* 6. 顶栏、表单组件与布局微调 */
+header[data-testid="stHeader"] {
+    height: 2.5rem !important;
+    min-height: 2.5rem !important;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1) !important;
+    z-index: 999 !important;
+    position: relative !important;
+}
+header[data-testid="stHeader"] [data-testid="stToolbar"] {
+    height: 2.5rem !important;
+    min-height: 2.5rem !important;
+}
+.stApp {
+    padding-top: 0 !important;
+    margin-top: 0 !important;
+    min-height: 100vh !important;
+    height: auto !important;
+    overflow-y: visible !important;
+}
+.stApp > .main {
+    padding-top: 1rem !important;
+    margin-top: 0 !important;
+    padding-bottom: 5rem !important;
+    min-height: calc(100vh - 3rem) !important;
+    height: auto !important;
+    overflow-y: visible !important;
+}
+section[data-testid="stAppViewContainer"] {
+    height: auto !important;
+    min-height: 100vh !important;
+    overflow-y: visible !important;
+}
+section[data-testid="stAppViewContainer"] > .main {
+    height: auto !important;
+    min-height: calc(100vh - 4rem) !important;
+    overflow-y: visible !important;
+}
+.stButton {
+    margin-bottom: 5px !important;
+}
+.stSelectbox, .stSlider, .stTextInput, .stNumberInput {
+    margin-bottom: 5px !important;
+}
+.stTabs {
+    margin-top: 5px !important;
+    margin-bottom: 5px !important;
+}
+.fc-badge-enc {
+    color: #0b3d91;
+    font-weight: 600;
+}
+.fc-badge-plain {
+    color: #555555;
+    font-weight: 600;
+}

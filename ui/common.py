@@ -15,6 +15,7 @@ from urllib.error import URLError
 from remote_db.db_port_client import DbPortClient
 from remote_db.remote_sqlite_adapter import RemoteSqliteConnection
 from scripts.hbpr_database import HbprDatabase
+from ui.style_loader import apply_app_styles, load_custom_css, apply_font_settings
 
 try:
     from start_ui import notify_winotify, get_resource_path
@@ -124,6 +125,7 @@ def ensure_memdb_server(username: str) -> tuple:
         # 启动服务器进程，捕获输出用于调试
         proc = subprocess.Popen(
             [sys.executable, server_path, "--port", str(port)],
+            cwd=str(project_root),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -206,16 +208,31 @@ def get_database_name():
         return "Error"
 
 
+def format_database_choice(db_path: str, current_name: str = None, unsaved: bool = False) -> str:
+    """Label a database file with its storage format."""
+    name = Path(db_path).name
+    badge = "[Encrypted]" if name.lower().endswith(".db.enc") else "[Plain]"
+    if current_name and name == current_name and unsaved:
+        prefix = "🔴 "
+    elif current_name and name == current_name:
+        prefix = "✅ "
+    else:
+        prefix = ""
+    return f"{prefix}{name} {badge}"
+
+
 def trigger_auto_save():
     """
-    Saves the in-memory database to its source file.
-    Automatically clears the unsaved changes flag on success.
+    Queue a disk write for the in-memory database.
+
+    The server snapshots memory before returning. Encryption and file
+    replacement continue on the server's writer thread.
     """
     client = get_db_port_client()
     if client:
         try:
-            client.save()
-            # 清除未保存状态标志
+            result = client.save()
+            st.session_state.db_disk_write_pending = int(result.get("pending") or 0)
             st.session_state.db_has_unsaved_changes = False
             return True
         except Exception as e:
@@ -417,136 +434,13 @@ def create_database_selectbox(
 
 
 def apply_global_settings():
-    """Apply global settings from session state"""
-    if "settings" in st.session_state:
-        # Apply font settings globally
-        apply_font_settings()
-    # Remove the purple vertical block spacing
-    remove_vertical_block_spacing()
-
-
-def apply_font_settings():
-    """Apply font settings from session state"""
-    if "settings" in st.session_state:
-        settings = st.session_state.settings
-        font_family = settings.get("font_family", "Courier New")
-        font_size_percent = settings.get("font_size_percent", 100)
-        base_font_size = 14  # Base font size for data elements
-        actual_font_size = int(base_font_size * font_size_percent / 100)
-        st.markdown(
-            f"""
-        <style>
-        /* Data-specific font settings - only for Raw Content and Data Tables */
-        .stTextArea textarea {{
-            font-family: "{font_family}", monospace !important;
-            font-size: {actual_font_size}px !important;
-        }}
-        /* Data frames */
-        .stDataFrame {{
-            font-family: "{font_family}", monospace !important;
-            font-size: {actual_font_size}px !important;
-        }}
-        </style>
-        """,
-            unsafe_allow_html=True,
-        )
+    """应用全局样式设置（外部CSS + 动态字体配置）"""
+    apply_app_styles()
 
 
 def remove_vertical_block_spacing():
-    """Remove the purple vertical block spacing from stMainBlockContainer while preserving button spacing"""
-    st.markdown(
-        """
-    <style>
-    /* Remove spacing from stMainBlockContainer but keep element gaps */
-    [data-testid="stMainBlockContainer"] {
-        padding-top: 0 !important;
-        padding-bottom: 5rem !important;
-        margin-top: 0 !important;
-    }
-    /* Target the main block container more specifically */
-    .stMainBlockContainer {
-        padding-top: 0 !important;
-        margin-top: 0 !important;
-    }
-    /* Remove the top vertical spacing but keep small gaps between elements */
-    .stVerticalBlock {
-        gap: 0.5rem !important;
-        padding-top: 0 !important;
-        padding-bottom: 0.5rem !important;
-        margin-top: 0 !important;
-    }
-    /* Target the stVerticalBlock inside stMainBlockContainer - keep minimal spacing */
-    [data-testid="stVerticalBlock"] {
-        gap: 0.5rem !important;
-        padding-top: 0 !important;
-        padding-bottom: 0.5rem !important;
-        margin-top: 0 !important;
-    }
-    /* Remove any additional top spacing from the main content area */
-    .main .block-container {
-        padding-top: 0 !important;
-        margin-top: 0 !important;
-    }
-    /* Properly positioned header without overlap */
-    header[data-testid="stHeader"] {
-        height: 2.5rem !important;
-        min-height: 2.5rem !important;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.1) !important;
-        z-index: 999 !important;
-        position: relative !important;
-    }
-    /* Ensure header toolbar is properly sized */
-    header[data-testid="stHeader"] [data-testid="stToolbar"] {
-        height: 2.5rem !important;
-        min-height: 2.5rem !important;
-    }
-    /* Proper spacing for main content */
-    .stApp {
-        padding-top: 0 !important;
-        margin-top: 0 !important;
-        min-height: 100vh !important;
-        height: auto !important;
-        overflow-y: visible !important;
-    }
-    /* Ensure main content doesn't overlap and can scroll properly */
-    .stApp > .main {
-        padding-top: 1rem !important;
-        margin-top: 0 !important;
-        padding-bottom: 5rem !important;
-        min-height: calc(100vh - 3rem) !important;
-        height: auto !important;
-        overflow-y: visible !important;
-    }
-    /* Ensure the app view container allows full content display */
-    section[data-testid="stAppViewContainer"] {
-        height: auto !important;
-        min-height: 100vh !important;
-        overflow-y: visible !important;
-    }
-    /* Make sure the main content area is not height constrained */
-    section[data-testid="stAppViewContainer"] > .main {
-        height: auto !important;
-        min-height: calc(100vh - 4rem) !important;
-        overflow-y: visible !important;
-        padding-bottom: 5rem !important;
-    }
-    /* Ensure buttons have proper spacing */
-    .stButton {
-        margin-bottom: 5px !important;
-    }
-    /* Add spacing between form elements */
-    .stSelectbox, .stSlider, .stTextInput, .stNumberInput {
-        margin-bottom: 5px !important;
-    }
-    /* Add minimal spacing between tabs and other elements */
-    .stTabs {
-        margin-top: 5px !important;
-        margin-bottom: 5px !important;
-    }
-    </style>
-    """,
-        unsafe_allow_html=True,
-    )
+    """兼容旧接口：移除垂直间距（已合并至 resources/styles/main.css）"""
+    load_custom_css()
 
 
 def parse_hbnb_input(input_text: str) -> list:

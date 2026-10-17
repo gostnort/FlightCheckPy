@@ -436,22 +436,82 @@ class HbprDatabase:
 
 
     def create_full_record(self, hbnb_number: int, record_content: str):
-        """创建完整HBPR记录"""
+        """插入或替换完整记录。替换时清空解析列，不在这里再写一份副本。"""
         try:
-            # 清理记录内容，移除问题字符
             cleaned_content = clean_hbpr_record_content(record_content, hbnb_number)
             if cleaned_content != record_content:
                 print(f"⚠️  HBNB {hbnb_number} record content cleaned before saving: {len(record_content)} -> {len(cleaned_content)} characters")
             cursor = self.conn.cursor()
-            # 插入完整记录
             cursor.execute(
-                'INSERT OR REPLACE INTO hbpr_full_records (hbnb_number, record_content) VALUES (?, ?)',
-                (hbnb_number, cleaned_content)
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='duplicate_record'"
             )
-            # 如果存在简单记录，删除它
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='hbpr_simple_records'")
+            has_duplicates = False
+            if cursor.fetchone() is not None:
+                cursor.execute(
+                    "SELECT 1 FROM duplicate_record WHERE original_hbnb_id = ?",
+                    (hbnb_number,),
+                )
+                has_duplicates = cursor.fetchone() is not None
+            bol_duplicate_val = 1 if has_duplicates else 0
+            cursor.execute(
+                "SELECT 1 FROM hbpr_full_records WHERE hbnb_number = ?",
+                (hbnb_number,),
+            )
+            if cursor.fetchone() is not None:
+                cursor.execute("PRAGMA table_info(hbpr_full_records)")
+                existing_columns = {row[1] for row in cursor.fetchall()}
+                assignments = ["record_content = ?"]
+                values = [cleaned_content]
+                if "created_at" in existing_columns:
+                    assignments.append("created_at = CURRENT_TIMESTAMP")
+                cleared_columns = (
+                    "is_valid", "boarding_number", "pnr", "name", "seat", "class",
+                    "destination", "bag_piece", "bag_weight", "bag_allowance", "ff",
+                    "pspt_name", "pspt_exp_date", "ckin_msg", "asvc_msg", "asvc_seat",
+                    "expc_piece", "expc_weight", "asvc_piece", "fba_piece", "ifba_piece",
+                    "flyer_benefit", "is_ca_flyer", "inbound_flight", "outbound_flight",
+                    "properties", "tkne", "error_count", "error_baggage", "error_passport",
+                    "error_name", "error_visa", "error_other", "validated_at",
+                )
+                for column in cleared_columns:
+                    if column in existing_columns:
+                        assignments.append(f"{column} = NULL")
+                for column, default in (("is_validated", 0), ("has_infant", 0), ("is_deleted", 0)):
+                    if column in existing_columns:
+                        assignments.append(f"{column} = ?")
+                        values.append(default)
+                if "bol_duplicate" in existing_columns:
+                    assignments.append("bol_duplicate = ?")
+                    values.append(bol_duplicate_val)
+                values.append(hbnb_number)
+                cursor.execute(
+                    f"UPDATE hbpr_full_records SET {', '.join(assignments)} WHERE hbnb_number = ?",
+                    values,
+                )
+            else:
+                cursor.execute("PRAGMA table_info(hbpr_full_records)")
+                existing_columns = {row[1] for row in cursor.fetchall()}
+                if "bol_duplicate" in existing_columns:
+                    cursor.execute(
+                        """
+                        INSERT INTO hbpr_full_records (hbnb_number, record_content, bol_duplicate)
+                        VALUES (?, ?, ?)
+                        """,
+                        (hbnb_number, cleaned_content, bol_duplicate_val),
+                    )
+                else:
+                    cursor.execute(
+                        "INSERT INTO hbpr_full_records (hbnb_number, record_content) VALUES (?, ?)",
+                        (hbnb_number, cleaned_content),
+                    )
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='hbpr_simple_records'"
+            )
             if cursor.fetchone():
-                cursor.execute("DELETE FROM hbpr_simple_records WHERE hbnb_number = ?", (hbnb_number,))
+                cursor.execute(
+                    "DELETE FROM hbpr_simple_records WHERE hbnb_number = ?",
+                    (hbnb_number,),
+                )
             self.conn.commit()
             print(f"Created full record for HBNB {hbnb_number}")
             return True

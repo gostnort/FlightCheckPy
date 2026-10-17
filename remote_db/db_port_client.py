@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+from urllib.error import HTTPError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
@@ -14,18 +15,27 @@ class DbPortClient:
     def __init__(self, host: str, port: int):
         self.base = f"http://{host}:{port}"
 
+    def _decode(self, resp):
+        return json.loads(resp.read().decode("utf-8"))
+
+    def _request(self, req: Request):
+        try:
+            with urlopen(req, timeout=30) as resp:
+                return self._decode(resp)
+        except HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(detail or str(exc.reason)) from exc
+
     def _post(self, path: str, payload: dict):
         """Helper method to send a POST request with a JSON payload."""
         data = json.dumps(payload).encode("utf-8")
         req = Request(self.base + path, data=data, headers={"Content-Type": "application/json"}, method="POST")
-        with urlopen(req, timeout=30) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+        return self._request(req)
 
     def _get(self, path: str):
         """Helper method to send a GET request."""
         req = Request(self.base + path, method="GET")
-        with urlopen(req, timeout=30) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+        return self._request(req)
 
     def health(self):
         """Checks the health of the database server."""

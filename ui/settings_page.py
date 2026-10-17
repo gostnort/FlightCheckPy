@@ -4,18 +4,21 @@ Settings page for HBPR UI - System configuration
 """
 
 import streamlit as st
+from scripts.config_manager import load_app_config, save_app_config
 
 
 def show_settings():
     """显示设置页面"""
     st.header("⚙️ Settings")
-    # Initialize settings in session state
+    cfg = load_app_config()
+    ui_cfg = cfg.get("ui_settings", {})
+    # Initialize settings in session state from app_config.toml
     if 'settings' not in st.session_state:
         st.session_state.settings = {
-            'theme': 'Auto',
-            'font_family': 'Courier New',
-            'font_size_percent': 100,
-            'show_debug': False,
+            'theme': ui_cfg.get('theme', 'Auto'),
+            'font_family': ui_cfg.get('font_family', 'Courier New'),
+            'font_size_percent': ui_cfg.get('font_size_percent', 100),
+            'show_debug': ui_cfg.get('show_debug', False),
             'auto_refresh': True
         }
     tab1, tab2 = st.tabs(["🎨 UI Settings", "📋 About"])
@@ -53,7 +56,16 @@ def show_settings():
                 'font_family': font_family,
                 'font_size_percent': font_size_percent,
             })
-            st.success("✅ Settings saved successfully!")
+            # 持久化保存到 resources/app_config.toml
+            cfg = load_app_config()
+            if "ui_settings" not in cfg:
+                cfg["ui_settings"] = {}
+            cfg["ui_settings"].update({
+                'font_family': font_family,
+                'font_size_percent': font_size_percent,
+            })
+            save_app_config(cfg)
+            st.success("✅ Settings saved successfully to config!")
             # Force a rerun to apply settings immediately
             st.rerun()
         # Reset settings
@@ -62,13 +74,21 @@ def show_settings():
                 'font_family': 'Courier New',
                 'font_size_percent': 100,
             }
+            cfg = load_app_config()
+            if "ui_settings" not in cfg:
+                cfg["ui_settings"] = {}
+            cfg["ui_settings"].update({
+                'font_family': 'Courier New',
+                'font_size_percent': 100,
+            })
+            save_app_config(cfg)
             st.success("✅ Settings reset to defaults!")
             # Force a rerun to apply settings immediately
             st.rerun()
     with tab2:
         st.subheader("📋 About FlightCheck")
         st.markdown("""
-        **Version:** 0.61
+        **Version:** 0.6.4
         **Developer:** Gostnort 
         **Description:** A comprehensive system for processing and validating HBPR passenger records.
         **Features:**

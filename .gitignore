@@ -2,6 +2,8 @@
 __pycache__/
 sample*
 *.db
+*.db.enc
+resources/.master_key
 uploaded*.txt
 sample_xlsx_vba/
 /sample*

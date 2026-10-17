@@ -6,6 +6,7 @@
 import streamlit as st
 from pathlib import Path
 from ui.common import (
+    format_database_choice,
     get_db_port_client,
     get_database_name,
     load_database
@@ -48,6 +49,17 @@ def render_sidebar_database_selector():
     except Exception:
         st.error("❌ 无法获取数据库列表")
         return
+    try:
+        health = client.health()
+        pending = int(health.get("disk_write_pending") or 0)
+        disk_error = health.get("last_disk_error")
+    except Exception:
+        pending = 0
+        disk_error = None
+    if pending:
+        st.caption(f"正在写盘（{pending}）")
+    if disk_error:
+        st.warning(f"写盘失败: {disk_error}")
     # 创建选择界面
     if not valid_db_files:
         folder_desc = f"'{custom_folder}'" if custom_folder else "'databases'"
@@ -59,14 +71,7 @@ def render_sidebar_database_selector():
     else:
         # 格式化显示名称
         def format_db_name(db_path):
-            name = Path(db_path).name
-            # 如果是当前数据库且有未保存更改，用红色显示
-            if name == current_db and has_unsaved_changes:
-                return f"🔴 {name}"
-            elif name == current_db:
-                return f"✅ {name}"
-            else:
-                return name 
+            return format_database_choice(db_path, current_db, has_unsaved_changes) 
         # 找到当前数据库的索引
         current_index = 0
         if current_db:
@@ -91,7 +96,6 @@ def render_sidebar_database_selector():
                         st.rerun()
                     else:
                         st.error("❌ 加载失败")
-        # 显示当前数据库状态
         if current_db and has_unsaved_changes:
             st.markdown(
                 """<div style='background-color: #ffcccc; padding: 5px; border-radius: 5px; margin-top: 5px;'>

@@ -124,7 +124,7 @@ def show_home_page():
     with col_right:
         st.markdown("<br><br>", unsafe_allow_html=True)
         st.markdown("""
-        ## 📊 **Excel处理器**
+        ## 📊 **EMD Summary**
         - 导入EMD（电子杂费单）销售日报Excel文件。
         - 自动匹配TKNE（票号）与HBPR记录，并提取CKIN CCRD（值机信用卡）信息。
         - 处理废票（Void EMDs）。

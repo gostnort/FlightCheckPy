@@ -8,7 +8,9 @@ import streamlit as st
 import tkinter as tk
 from tkinter import filedialog
 from pathlib import Path
+from scripts.config_manager import get_config_value, set_config_value
 from ui.common import (
+    format_database_choice,
     get_db_port_client,
     is_db_available,
     get_database_name,
@@ -90,14 +92,36 @@ def render_folder_management():
         st.success("✅ 文件夹已创建")
 
 
+def _render_default_format_selector():
+    """Persist the format used the next time a database file is created."""
+    stored = get_config_value("db_preferences", "default_mode", "encrypted")
+    if stored not in ("encrypted", "plain"):
+        stored = "encrypted"
+    if "db_default_mode_radio" not in st.session_state:
+        st.session_state.db_default_mode_radio = stored
+    selected = st.radio(
+        "新建数据库格式",
+        options=["encrypted", "plain"],
+        format_func=lambda mode: "🔒 加密数据库 (.db.enc)" if mode == "encrypted" else "📄 明文数据库 (.db)",
+        key="db_default_mode_radio",
+    )
+    if selected != stored:
+        set_config_value("db_preferences", "default_mode", selected)
+
+
 def render_database_operations():
-    """渲染数据库操作部分"""  
+    """渲染数据库操作部分"""
+    _render_default_format_selector()
     # 保存数据库
     if st.button("💾 保存当前数据库", use_container_width=True, type="primary"):
         if is_db_available():
-            with st.spinner("正在保存..."):
+            with st.spinner("正在提交写盘..."):
                 if trigger_auto_save():
-                    st.success("✅ 数据库已保存")
+                    pending = st.session_state.get("db_disk_write_pending") or 0
+                    if pending:
+                        st.success("✅ 已提交写盘")
+                    else:
+                        st.success("✅ 数据库已保存")
                     st.rerun()
                 else:
                     st.error("❌ 保存失败")
@@ -123,7 +147,7 @@ def render_database_operations():
                 selected_db = st.selectbox(
                     "选择数据库:",
                     options=valid_db_files,
-                    format_func=lambda x: Path(x).name,
+                    format_func=lambda x: format_database_choice(x, get_database_name()),
                     key="management_db_selector"
                 )
                 if st.button("📥 加载选中的数据库", use_container_width=True):

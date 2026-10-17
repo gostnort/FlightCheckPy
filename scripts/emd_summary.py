@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Excel处理核心逻辑模块
+EMD Summary 核心逻辑模块
 
 约定：
 - 输入Excel的表头在第2行（1-based），DataFrame应以该行为列名（使用 header=1 读取）。

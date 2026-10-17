@@ -422,7 +422,7 @@ scripts/
 ├─ schema_utils.py (SQL 生成工具)
 ├─ database_schema.json (架构配置)
 ├─ data_cleaner.py (数据清理)
-└─ excel_processor.py (Excel 导入)
+└─ emd_summary.py (EMD Summary)
 
 remote_db/
 ├─ memdb_port_server.py (数据库服务)

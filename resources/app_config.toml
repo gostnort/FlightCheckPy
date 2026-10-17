@@ -1,0 +1,17 @@
+# FlightCheckPy 应用程序配置文件
+version = "0.6.4"
+
+[db_preferences]
+default_mode = "encrypted"  # "encrypted" (默认加密) 或 "plain" (非加密)
+preload_count = 5           # 登录后静默预热数据库数量
+remember_last_db = true
+last_selected_db = ""
+
+[ui_settings]
+theme = "Auto"
+font_family = "Courier New"
+font_size_percent = 100
+show_debug = false
+
+[emd_summary]
+producer_name = ""

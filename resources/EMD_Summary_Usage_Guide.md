@@ -1,8 +1,8 @@
-# Excel处理器使用指南 (EMD销售日报处理)
+# EMD Summary 使用指南
 
 ## 📋 功能概述
 
-Excel处理器专门用于处理EMD销售日报文件，能够：
+EMD Summary 用于处理 EMD 销售日报文件，能够：
 1. 导入EMD销售日报Excel文件（xlsx/xls格式）
 2. 根据关联ET(TKNE)号码查找数据库中的对应HBPR记录
 3. 解析CKIN CCRD信息并生成标准化输出
@@ -23,8 +23,8 @@ Excel处理器专门用于处理EMD销售日报文件，能够：
 - **操作时间**: 操作时间
 - **产品类型**: 服务类型（逾重PC/选座/升舱等）
 
-### 2. 访问Excel处理器
-1. 在侧边栏导航中点击 **"📊 Excel Processor"**
+### 2. 打开 EMD Summary
+1. 在侧边栏导航中点击 **"📊 EMD Summary"**
 2. 确保已选择正确的HBPR数据库
 
 ### 3. 上传和处理文件

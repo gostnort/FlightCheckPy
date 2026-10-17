@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Excel处理页面 - 导入Excel文件并根据TKNE和CKIN CCRD生成输出文件
+EMD Summary 页面 - 导入 EMD 销售日报并根据 TKNE 和 CKIN CCRD 生成输出文件
 """
 
 import streamlit as st
@@ -13,7 +13,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Tuple
 from ui.common import get_hbpr_database_client, is_db_available
-from scripts.excel_processor import (
+from scripts.emd_summary import (
     process_excel_file as core_process_excel_file,
     generate_output_excel as core_generate_output_excel,
     calculate_cash_and_total_amounts,
@@ -66,9 +66,9 @@ def generate_unique_hashed_filename(fn: str, fd: str) -> Tuple[str, str]:
         time.sleep(0.001)
 
 
-def show_excel_processor():
-    """显示Excel处理页面"""
-    st.markdown("<h3>📊 Excel Processor</h3>", unsafe_allow_html=True)
+def show_emd_summary():
+    """显示 EMD Summary 页面"""
+    st.markdown("<h3>📊 EMD Summary</h3>", unsafe_allow_html=True)
     if not is_db_available():
         st.warning("⚠️ Please select a database from the sidebar to begin.")
         return
@@ -76,7 +76,7 @@ def show_excel_processor():
     st.markdown(
         """
     <style>
-    /* Ensure Excel processor page content is fully visible */
+    /* Ensure EMD Summary page content is fully visible */
     .main .block-container {
         padding-bottom: 6rem !important;
         margin-bottom: 2rem !important;
@@ -200,7 +200,7 @@ def show_excel_processor():
                         df_input
                     )
                     # 重新获取全局变量，确保获取到最新值
-                    from scripts.excel_processor import FLIGHT_NUMBER, FLIGHT_DATE
+                    from scripts.emd_summary import FLIGHT_NUMBER, FLIGHT_DATE
 
                     fn = FLIGHT_NUMBER or "FLIGHT"
                     fd = format_date_ddmmmyy(FLIGHT_DATE) if FLIGHT_DATE else "DATE"

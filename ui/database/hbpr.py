@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
+import sqlite3
+import tempfile
+
 import streamlit as st
 from pathlib import Path
+from scripts.config_manager import get_config_value
+from scripts.crypto_engine import encrypt_sqlite_payload, resolve_master_key
 from ui.common import (
     get_hbpr_database_client,
     get_database_name,
@@ -162,25 +167,45 @@ def create_db_from_content(file_content: str):
         if not flight_id:
             st.error("❌ 无法从文件中解析航班号")
             return
-        # 确定数据库路径
-        db_folder = st.session_state.get('custom_db_folder', 'databases')
-        db_path = Path(db_folder) / f"{flight_id}.db"
-        if db_path.exists():
-            st.error(f"❌ 数据库 {flight_id}.db 已存在")
+        db_folder = Path(st.session_state.get("custom_db_folder", "databases"))
+        db_folder.mkdir(parents=True, exist_ok=True)
+        mode = get_config_value("db_preferences", "default_mode", "encrypted")
+        encrypted = mode != "plain"
+        suffix = ".db.enc" if encrypted else ".db"
+        db_path = db_folder / f"{flight_id}{suffix}"
+        other_path = db_folder / f"{flight_id}{'.db' if encrypted else '.db.enc'}"
+        if db_path.exists() or other_path.exists():
+            st.error(f"❌ 数据库 {flight_id} 已存在")
             return
-        with st.spinner(f"正在创建数据库 {flight_id}.db..."):
-            # 创建数据库
-            import sqlite3
-            conn = sqlite3.connect(str(db_path))
-            # 使用HbprProcessor处理
-            processor = HbprProcessor(conn)
-            processor.process(file_content)
-            # 获取统计信息
-            flight_data = processor.flight_data[flight_id]
-            record_count = len(flight_data['hbnb_numbers']) 
-            conn.close()
+        with st.spinner(f"正在创建数据库 {db_path.name}..."):
+            with tempfile.TemporaryDirectory() as temp_dir:
+                plain_path = Path(temp_dir) / f"{flight_id}.db"
+                conn = sqlite3.connect(plain_path)
+                processor = HbprProcessor(conn)
+                processor.process(file_content)
+                flight_data = processor.flight_data[flight_id]
+                record_count = len(flight_data["hbnb_numbers"])
+                conn.commit()
+                conn.close()
+                plain_bytes = plain_path.read_bytes()
+            if encrypted:
+                try:
+                    master_key = resolve_master_key()
+                except PermissionError as exc:
+                    st.error(f"❌ 主密钥不可用: {exc}")
+                    return
+                if not master_key:
+                    st.error("❌ 未找到主密钥。请先运行 python scripts/manage_keys.py")
+                    return
+                payload = encrypt_sqlite_payload(plain_bytes, master_key)
+                temporary = db_path.with_name(db_path.name + ".writing")
+                temporary.write_bytes(payload)
+                temporary.replace(db_path)
+            else:
+                temporary = db_path.with_name(db_path.name + ".writing")
+                temporary.write_bytes(plain_bytes)
+                temporary.replace(db_path)
             st.success(f"✅ 创建数据库成功！包含 {record_count} 条记录")
-            # 加载到内存服务器
             if load_database(str(db_path)):
                 # 清理状态
                 st.session_state.show_create_db = False

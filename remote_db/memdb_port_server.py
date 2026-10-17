@@ -1,31 +1,54 @@
 #!/usr/bin/env python3
 """
-Per-port in-memory SQLite HTTP server
-- Loads a SQLite file into an in-memory database
-- Exposes minimal HTTP endpoints for query/exec/save/backup/switch
-- Intended for LAN-only use; one server per user/port
+Per-port in-memory SQLite HTTP server.
+
+Disk reads and writes run outside the SQLite lock. Encrypted files use the
+AES-256-GCM container in scripts/crypto_engine.py. Query and exec still use
+the single active connection.
 """
 
 import argparse
 import json
-import os
+import queue
 import sqlite3
+import sys
 import threading
 import time
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from urllib.parse import urlparse, unquote
+from pathlib import Path
+from urllib.parse import unquote, urlparse
 
+from cryptography.exceptions import InvalidTag
 
-# Global variables to hold the in-memory database connection,
-# the path to the source file, and a thread lock for safe concurrent access.
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from scripts.crypto_engine import (
+    CryptoFormatError,
+    decrypt_sqlite_payload,
+    encrypt_sqlite_payload,
+    encrypted_header_ok,
+    resolve_master_key,
+)
+
 _conn = None
 _src_file_path = None
 _lock = threading.Lock()
-
-# 简化的用户名登录状态（无需IP绑定、无超时）
 _current_username = None
 _login_time = 0.0
+_master_key = None
+
+_write_queue: queue.Queue = queue.Queue()
+_pending_condition = threading.Condition()
+_pending_writes = 0
+_pending_by_path: dict[str, int] = {}
+_last_disk_error = None
+_writer_thread = None
+_writer_guard = threading.Lock()
+
+REQUIRED_TABLES = ("hbpr_full_records", "hbpr_simple_records")
 
 
 def _ensure_pragmas(conn: sqlite3.Connection) -> None:
@@ -37,111 +60,243 @@ def _ensure_pragmas(conn: sqlite3.Connection) -> None:
         pass
 
 
+def _is_encrypted_path(path: Path) -> bool:
+    return path.name.lower().endswith(".db.enc")
+
+
+def _normalized_path(file_path: str) -> str:
+    return str(Path(file_path).resolve())
+
+
+def _require_master_key() -> str:
+    global _master_key
+    if _master_key:
+        return _master_key
+    key = resolve_master_key()
+    if not key:
+        raise PermissionError("KEY_UNAVAILABLE")
+    _master_key = key
+    return key
+
+
+def _connection_has_required_tables(conn: sqlite3.Connection) -> bool:
+    for table in REQUIRED_TABLES:
+        row = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            (table,),
+        ).fetchone()
+        if row is None:
+            return False
+    return True
+
+
 def _validate_database_schema(file_path: str) -> bool:
+    """Accept an encrypted file from its header, or a plain file from its tables.
+
+    Listing calls this for every database on each sidebar refresh. Encrypted
+    files are not decrypted here.
     """
-    Validates that the database has the expected schema (required tables).
-    Returns True if the database has the expected structure, False otherwise.
-    """
+    path = Path(file_path)
     try:
-        with sqlite3.connect(file_path) as conn:
-            cursor = conn.cursor()
-            # Check for required tables
-            required_tables = ['hbpr_full_records', 'hbpr_simple_records']
-            for table in required_tables:
-                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,))
-                if not cursor.fetchone():
-                    return False
-            return True
+        if _is_encrypted_path(path):
+            return encrypted_header_ok(path)
+        with sqlite3.connect(path) as conn:
+            return _connection_has_required_tables(conn)
     except Exception:
         return False
 
 
-def _load_db_into_memory(file_path: str) -> None:
+def _ensure_writer() -> None:
+    global _writer_thread
+    with _writer_guard:
+        if _writer_thread and _writer_thread.is_alive():
+            return
+        _writer_thread = threading.Thread(
+            target=_disk_writer_loop,
+            name="db-disk-writer",
+            daemon=True,
+        )
+        _writer_thread.start()
+
+
+def _enqueue_disk_write(path_key: str, sqlite_bytes: bytes) -> int:
+    global _pending_writes
+    _ensure_writer()
+    with _pending_condition:
+        _pending_writes += 1
+        _pending_by_path[path_key] = _pending_by_path.get(path_key, 0) + 1
+        pending = _pending_writes
+    _write_queue.put((path_key, sqlite_bytes))
+    return pending
+
+
+def _disk_writer_loop() -> None:
+    global _pending_writes, _last_disk_error
+    while True:
+        path_key, sqlite_bytes = _write_queue.get()
+        try:
+            _write_sqlite_bytes(Path(path_key), sqlite_bytes)
+            with _pending_condition:
+                _last_disk_error = None
+        except Exception as exc:
+            with _pending_condition:
+                _last_disk_error = str(exc)
+        finally:
+            with _pending_condition:
+                _pending_writes = max(0, _pending_writes - 1)
+                remaining = _pending_by_path.get(path_key, 0) - 1
+                if remaining <= 0:
+                    _pending_by_path.pop(path_key, None)
+                else:
+                    _pending_by_path[path_key] = remaining
+                _pending_condition.notify_all()
+            _write_queue.task_done()
+
+
+def _wait_for_path(path_key: str) -> None:
+    with _pending_condition:
+        while _pending_by_path.get(path_key, 0) > 0:
+            _pending_condition.wait()
+
+
+def _wait_all_disk_writes() -> None:
+    _write_queue.join()
+
+
+def _write_sqlite_bytes(path: Path, sqlite_bytes: bytes) -> None:
+    if _is_encrypted_path(path):
+        payload = encrypt_sqlite_payload(sqlite_bytes, _require_master_key())
+    else:
+        payload = sqlite_bytes
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = Path(str(path) + ".tmp")
+    temporary.write_bytes(payload)
+    temporary.replace(path)
+
+
+def _read_sqlite_bytes(path: Path) -> bytes:
+    raw = path.read_bytes()
+    if not _is_encrypted_path(path):
+        return raw
+    return decrypt_sqlite_payload(raw, _require_master_key())
+
+
+def _snapshot_active_db() -> int:
+    """Copy the active memory database and queue the disk write.
+
+    Serialization holds the SQLite lock. Encryption and file replacement do not.
     """
-    Loads a SQLite database file from the given path into a new in-memory database.
-    It then atomically swaps the new connection for the global one.
-    If a database is already loaded, it's closed after the new one is ready.
+    with _lock:
+        if _conn is None or not _src_file_path:
+            return _pending_writes
+        sqlite_bytes = _conn.serialize()
+        path_key = _src_file_path
+    return _enqueue_disk_write(path_key, sqlite_bytes)
+
+
+def _load_db_into_memory(file_path: str, preserve_current: bool = True) -> None:
+    """Read one database outside the lock, then swap the active connection.
+
+    Switching to a different file queues the current memory image first.
+    Reloading the same file reads the disk image after queued writes finish.
     """
     global _conn, _src_file_path
 
-    # Validate database schema before loading
-    if not _validate_database_schema(file_path):
-        raise ValueError(f"Database {file_path} does not have the expected schema. Required tables: hbpr_full_records, hbpr_simple_records, commands")
+    path = Path(file_path).resolve()
+    if preserve_current and _src_file_path:
+        _snapshot_active_db()
+    _wait_for_path(str(path))
+    if not path.is_file():
+        raise ValueError("source file not found")
 
-    # Create a new in-memory SQLite database connection.
+    sqlite_bytes = _read_sqlite_bytes(path)
     new_conn = sqlite3.connect(":memory:", check_same_thread=False)
-    _ensure_pragmas(new_conn)
-    # Connect to the source file on disk and back it up to the new in-memory database.
-    with sqlite3.connect(file_path) as fconn:
-        fconn.backup(new_conn)
-    # Use a lock to safely swap the global connection to the new in-memory database.
+    try:
+        _ensure_pragmas(new_conn)
+        new_conn.deserialize(sqlite_bytes)
+        if not _connection_has_required_tables(new_conn):
+            raise ValueError(
+                "Database does not have the expected schema. "
+                "Required tables: hbpr_full_records, hbpr_simple_records"
+            )
+    except Exception:
+        new_conn.close()
+        raise
+
     with _lock:
         old = _conn
         _conn = new_conn
-        _src_file_path = file_path
-        if old:
-            try:
-                # Close the old connection if it exists.
-                old.close()
-            except Exception:
-                pass
+        _src_file_path = str(path)
+    if old is not None:
+        try:
+            old.close()
+        except Exception:
+            pass
+
+
+def _backup_stem(path: Path) -> str:
+    name = path.name
+    lower = name.lower()
+    if lower.endswith(".db.enc"):
+        return name[: -len(".db.enc")]
+    if lower.endswith(".db"):
+        return name[: -len(".db")]
+    return path.stem
 
 
 def _backup_memory_db() -> str:
-    """
-    Creates a timestamped backup of the current in-memory database.
-    The backup is saved in the 'databases/backups' directory.
-    The backup filename includes the original database name and a timestamp.
-    """
-    if not _conn:
-        return ""
-    base = os.path.splitext(os.path.basename(_src_file_path or "database"))[0]
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    bdir = os.path.join("databases", "backups")
-    os.makedirs(bdir, exist_ok=True)
-    bpath = os.path.join(bdir, f"{base}_backup_{ts}.db")
-    # Lock to prevent other operations on the DB while backing up.
+    """Write a timestamped backup. Encrypted sources stay encrypted."""
     with _lock:
-        with sqlite3.connect(bpath, check_same_thread=False) as bconn:
-            _conn.backup(bconn)
-    return bpath
+        if _conn is None or not _src_file_path:
+            return ""
+        sqlite_bytes = _conn.serialize()
+        source = Path(_src_file_path)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    extension = ".db.enc" if _is_encrypted_path(source) else ".db"
+    backup_dir = Path("databases") / "backups"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    backup_path = backup_dir / f"{_backup_stem(source)}_backup_{stamp}{extension}"
+    _write_sqlite_bytes(backup_path, sqlite_bytes)
+    return str(backup_path)
 
 
-def _save_to_source() -> None:
-    """
-    Persists the in-memory database back to its original source file on disk.
-    This overwrites the source file with the current state of the in-memory database.
-    """
-    if not _conn or not _src_file_path:
-        return
-    # Lock to ensure data integrity during the save operation.
-    with _lock:
-        with sqlite3.connect(_src_file_path, check_same_thread=False) as fconn:
-            _conn.backup(fconn)
+def _save_to_source() -> int:
+    """Queue the active database for disk write and return the pending count."""
+    return _snapshot_active_db()
 
 
 def _list_db_files(directory: str = None) -> list:
-    """
-    Lists all '.db' files in the specified directory.
-    If no directory is provided, defaults to 'databases' directory.
-    Returns a list of file paths, sorted by creation time (most recent first).
-    """
-    target_dir = directory if directory else "databases"
+    """List plain and encrypted databases, newest creation or modification first."""
+    target = Path(directory) if directory else Path("databases")
+    if not target.is_dir():
+        return []
     files = []
-    if os.path.exists(target_dir):
-        for name in os.listdir(target_dir):
-            if name.lower().endswith(".db"):
-                files.append(os.path.join(target_dir, name))
-    return sorted(files, key=lambda p: os.path.getctime(p), reverse=True)
+    for entry in target.iterdir():
+        if not entry.is_file():
+            continue
+        lower = entry.name.lower()
+        if lower.endswith(".db.enc") or lower.endswith(".db"):
+            files.append(entry)
+    files.sort(key=lambda entry: max(entry.stat().st_mtime, entry.stat().st_ctime), reverse=True)
+    return [str(entry) for entry in files]
+
+
+def _health_body() -> dict:
+    with _pending_condition:
+        pending = _pending_writes
+        disk_error = _last_disk_error
+    return {
+        "ok": True,
+        "db": Path(_src_file_path).name if _src_file_path else None,
+        "disk_write_pending": pending,
+        "last_disk_error": disk_error,
+    }
 
 
 class Handler(BaseHTTPRequestHandler):
-    """
-    The request handler for the HTTP server.
-    It defines how to handle GET and POST requests to various endpoints.
-    """
+    """HTTP handlers for the in-memory database server."""
+
     def _send(self, code: int, body: dict) -> None:
-        """Helper function to send a JSON response."""
         data = json.dumps(body).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
@@ -150,49 +305,54 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def log_message(self, format, *args):
-        # Overridden to suppress the default server log messages for cleaner output.
         return
 
+    def _send_known_error(self, exc: Exception):
+        if isinstance(exc, CryptoFormatError):
+            return self._send(400, {"ok": False, "error": exc.code})
+        if isinstance(exc, InvalidTag):
+            return self._send(403, {"ok": False, "error": "AUTHENTICATION_FAILED"})
+        if isinstance(exc, PermissionError):
+            return self._send(500, {"ok": False, "error": "KEY_UNAVAILABLE"})
+        if isinstance(exc, ValueError):
+            return self._send(400, {"ok": False, "error": str(exc)})
+        return self._send(500, {"ok": False, "error": str(exc)})
+
     def do_GET(self):
-        """Handles GET requests."""
         parsed = urlparse(self.path)
         path = parsed.path
-        query_params = dict(q.split('=', 1) for q in parsed.query.split('&') if q)
+        query_params = dict(part.split("=", 1) for part in parsed.query.split("&") if part)
 
         if path == "/health":
-            # Health check endpoint: returns server status and current database file.
-            return self._send(200, {"ok": True, "db": os.path.basename(_src_file_path) if _src_file_path else None})
+            return self._send(200, _health_body())
         if path == "/databases/list":
-            # Lists available database files, optionally from a custom directory.
             directory = query_params.get("directory")
             if directory:
                 directory = unquote(directory)
             return self._send(200, {"files": _list_db_files(directory)})
         if path == "/auth/status":
-            # 获取当前认证状态
-            global _current_username, _login_time
             return self._send(200, {
                 "logged_in": _current_username is not None,
                 "username": _current_username,
-                "login_time": _login_time if _current_username else None
+                "login_time": _login_time if _current_username else None,
             })
         if path == "/shutdown":
-            # Shutdown endpoint: saves database and stops the server.
             try:
-                if _conn and _src_file_path:
-                    _save_to_source()
-                self._send(200, {"ok": True, "message": "Server shutting down"})
-                # Shutdown the server in a separate thread to allow response to be sent
-                threading.Thread(target=lambda: self.server.shutdown(), daemon=True).start()
+                _snapshot_active_db()
+                _wait_all_disk_writes()
+                body = {"ok": True, "message": "Server shutting down"}
+                if _last_disk_error:
+                    body["last_disk_error"] = _last_disk_error
+                self._send(200, body)
+                threading.Thread(target=self.server.shutdown, daemon=True).start()
                 return
-            except Exception as e:
-                return self._send(500, {"error": str(e)})
+            except Exception as exc:
+                return self._send_known_error(exc)
         return self._send(404, {"error": "not_found"})
 
     def do_POST(self):
-        """Handles POST requests."""
         global _current_username, _login_time
-        
+
         path = urlparse(self.path).path
         length = int(self.headers.get("Content-Length", "0"))
         raw = self.rfile.read(length) if length > 0 else b"{}"
@@ -203,91 +363,76 @@ class Handler(BaseHTTPRequestHandler):
 
         try:
             if path == "/auth/login":
-                # 简单的用户名登录（幂等操作）
                 username = body.get("username")
                 if not username:
                     return self._send(400, {"error": "missing_username"})
                 _current_username = username
                 _login_time = time.time()
                 return self._send(200, {"ok": True, "username": username, "login_time": _login_time})
-            
+
             if path == "/auth/logout":
-                # 登出当前用户
                 _current_username = None
                 return self._send(200, {"ok": True})
-            
+
             if path == "/database/validate":
-                # Validates that a database file has the expected schema.
                 file_path = body.get("path")
-                if not file_path or not os.path.exists(file_path):
+                if not file_path or not Path(file_path).exists():
                     return self._send(400, {"valid": False, "error": "invalid_path"})
-                valid = _validate_database_schema(file_path)
-                return self._send(200, {"valid": valid})
+                return self._send(200, {"valid": _validate_database_schema(file_path)})
 
             if path == "/database/load":
-                # Loads a new database file into memory.
-                # If a database is already loaded, it's backed up first.
                 file_path = body.get("path")
-                if not file_path or not os.path.exists(file_path):
+                if not file_path or not Path(file_path).exists():
                     return self._send(400, {"error": "invalid_path"})
-                if _conn:
-                    _backup_memory_db()
                 _load_db_into_memory(file_path)
-                return self._send(200, {"ok": True, "db_name": os.path.basename(file_path)})
+                return self._send(200, {"ok": True, "db_name": Path(file_path).name})
 
             if path == "/database/backup":
-                # Triggers a backup of the current in-memory database.
-                b = _backup_memory_db()
-                return self._send(200, {"path": b})
+                backup_path = _backup_memory_db()
+                return self._send(200, {"path": backup_path})
 
             if path == "/database/save":
-                # Saves the in-memory database to its source file.
-                _save_to_source()
-                return self._send(200, {"ok": True})
+                pending = _save_to_source()
+                return self._send(200, {"ok": True, "pending": pending})
 
             if path == "/database/reload":
-                # Reloads the current database from disk.
                 if not _src_file_path:
                     return self._send(400, {"error": "no_database_loaded"})
-                if not os.path.exists(_src_file_path):
+                if not Path(_src_file_path).exists():
                     return self._send(400, {"error": "source_file_not_found"})
-                _load_db_into_memory(_src_file_path)
-                return self._send(200, {"ok": True, "db_name": os.path.basename(_src_file_path)})
+                _load_db_into_memory(_src_file_path, preserve_current=False)
+                return self._send(200, {"ok": True, "db_name": Path(_src_file_path).name})
 
             if path == "/query":
-                # Executes a read-only SQL query.
                 sql = body.get("sql") or ""
                 params = body.get("params") or []
                 with _lock:
                     cur = _conn.cursor()
                     cur.execute(sql, params)
                     rows = cur.fetchall()
-                    cols = [d[0] for d in cur.description] if cur.description else []
+                    cols = [item[0] for item in cur.description] if cur.description else []
                 return self._send(200, {"columns": cols, "rows": rows})
 
             if path == "/exec":
-                # Executes a write (INSERT, UPDATE, DELETE) SQL statement.
                 sql = body.get("sql") or ""
                 params = body.get("params") or []
                 with _lock:
                     cur = _conn.cursor()
                     cur.execute(sql, params)
-                    rc = cur.rowcount
+                    rowcount = cur.rowcount
                     _conn.commit()
-                return self._send(200, {"rowcount": rc})
+                return self._send(200, {"rowcount": rowcount})
 
             return self._send(404, {"error": "not_found"})
-        except Exception as e:
-            return self._send(500, {"error": str(e)})
+        except Exception as exc:
+            return self._send_known_error(exc)
 
 
 def main():
-    """
-    Parses command line arguments and starts the HTTP server.
-    Requires --port to be specified.
-    """
+    """Start the HTTP server. The default bind address is loopback only."""
+    _ensure_writer()
     parser = argparse.ArgumentParser()
-    parser.add_argument("--host", default="0.0.0.0")
+    parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, required=True)
     args = parser.parse_args()
     httpd = HTTPServer((args.host, args.port), Handler)
@@ -297,5 +442,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-

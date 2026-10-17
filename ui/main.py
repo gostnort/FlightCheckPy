@@ -14,58 +14,12 @@ sys.path.insert(0, str(project_root))
 # Project-specific imports (after path setup)
 from ui.common import get_icon_base64, apply_global_settings, logout_current_user
 from ui.login_page import show_login_page
+from ui.style_loader import load_custom_css
 
 
 def setup_navigation_highlighting():
-    """设置导航高亮样式"""
-    st.markdown(
-        """
-    <style>
-    /* Target Streamlit's primary buttons in the sidebar */
-    section[data-testid="stSidebar"] button[kind="primary"] {
-        background-color: #e6ffe6 !important;
-        color: #000000 !important;
-        border: 2px solid #e6ffe6 !important;
-        font-weight: bold !important;
-    }
-    section[data-testid="stSidebar"] button[kind="primary"]:hover {
-        background-color: #98FB98 !important;
-        border-color: #32CD32 !important;
-        color: #000000 !important;
-    }
-    /* Also target buttons with the primary class */
-    section[data-testid="stSidebar"] .stButton > button[data-testid="baseButton-primary"] {
-        background-color: #90EE90 !important;
-        color: #000000 !important;
-        border: 2px solid #32CD32 !important;
-        font-weight: bold !important;
-    }
-    section[data-testid="stSidebar"] .stButton > button[data-testid="baseButton-primary"]:hover {
-        background-color: #98FB98 !important;
-        border-color: #228B22 !important;
-        color: #000000 !important;
-    }
-    /* Ensure main content area can scroll properly and show all content */
-    .main .block-container {
-        padding-bottom: 5rem !important;
-        max-width: none !important;
-    }
-    /* Ensure proper height for main content */
-    section[data-testid="stAppViewContainer"] > .main {
-        min-height: 100vh !important;
-        padding-bottom: 5rem !important;
-    }
-    /* Fix any potential height constraints */
-    .stApp > header {
-        background: transparent;
-    }
-    .stApp {
-        overflow-y: auto !important;
-    }
-    </style>
-    """,
-        unsafe_allow_html=True,
-    )
+    """设置导航高亮样式（已抽离至 resources/styles/main.css）"""
+    load_custom_css()
 
 
 def create_navigation_button(page_name, current_page, button_text):
@@ -79,7 +33,7 @@ def create_navigation_button(page_name, current_page, button_text):
 def main():
     """Main UI function"""
     st.set_page_config(
-        page_title="Flight Check Py-0.63.1",
+        page_title="Flight Check Py-0.6.4",
         page_icon="resources/fcp.ico",
         layout="wide",
         initial_sidebar_state="expanded",
@@ -113,7 +67,7 @@ def main():
     from ui.database_page import show_database_management
     from ui.settings_page import show_settings
     from ui.process_records_page import show_process_records
-    from ui.excel_processor_page import show_excel_processor
+    from ui.emd_summary_page import show_emd_summary
     from ui.components.database_selector import render_sidebar_database_selector
     # Apply global settings
     apply_global_settings()
@@ -134,7 +88,7 @@ def main():
         "🔍 Process Records", st.session_state.current_page, "🔍 Process Records"
     )
     create_navigation_button(
-        "📊 Excel Processor", st.session_state.current_page, "📊 Excel Processor"
+        "📊 EMD Summary", st.session_state.current_page, "📊 EMD Summary"
     )
     # Settings page
     st.sidebar.markdown("---")
@@ -185,7 +139,7 @@ def main():
             """
         <div style="display: flex; align-items: center; gap: 10px;">
             <img src="data:image/x-icon;base64,{}" width="64" height="64">
-            <h3 style="margin: 0;">Flight Check 0.63.1 --- Python</h3>
+            <h3 style="margin: 0;">Flight Check 0.6.4 --- Python</h3>
         </div>
         """.format(get_icon_base64("resources/fcp.ico")),
             unsafe_allow_html=True,
@@ -196,8 +150,8 @@ def main():
         show_database_management()
     elif current_page == "🔍 Process Records":
         show_process_records()
-    elif current_page == "📊 Excel Processor":
-        show_excel_processor()
+    elif current_page == "📊 EMD Summary":
+        show_emd_summary()
     elif current_page == "⚙️ Settings":
         show_settings()
 
