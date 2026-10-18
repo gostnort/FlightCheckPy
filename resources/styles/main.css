@@ -1,62 +1,66 @@
-/* resources/styles/main.css - FlightCheckPy 统一外部样式表 */
+/* Layout rules. Colors and spacing come from variables set in UI Settings. */
 
-/* 1. 侧边栏主按钮高亮风格 */
-section[data-testid="stSidebar"] button[kind="primary"] {
-    background-color: #e6ffe6 !important;
-    color: #000000 !important;
-    border: 2px solid #e6ffe6 !important;
-    font-weight: bold !important;
+:root {
+    --nav-btn-bg: #90EE90;
+    --nav-btn-text: #000000;
+    --nav-btn-border: #32CD32;
+    --nav-btn-hover-bg: #98FB98;
+    --nav-btn-hover-border: #228B22;
+    --nav-btn-border-width: 2px;
+    --nav-btn-weight: bold;
+    --content-pad-top: 0rem;
+    --content-pad-bottom: 5rem;
+    --block-gap: 0.5rem;
+    --header-height: 2.5rem;
+    --main-pad-top: 1rem;
+    --button-gap: 5px;
+    --field-gap: 5px;
+    --tab-gap: 5px;
+    --notice-gap: 1rem;
+    --header-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    --badge-enc: #0b3d91;
+    --badge-plain: #555555;
 }
-section[data-testid="stSidebar"] button[kind="primary"]:hover {
-    background-color: #98FB98 !important;
-    border-color: #32CD32 !important;
-    color: #000000 !important;
-}
+
+section[data-testid="stSidebar"] button[kind="primary"],
 section[data-testid="stSidebar"] .stButton > button[data-testid="baseButton-primary"] {
-    background-color: #90EE90 !important;
-    color: #000000 !important;
-    border: 2px solid #32CD32 !important;
-    font-weight: bold !important;
+    background-color: var(--nav-btn-bg) !important;
+    color: var(--nav-btn-text) !important;
+    border: var(--nav-btn-border-width) solid var(--nav-btn-border) !important;
+    font-weight: var(--nav-btn-weight) !important;
 }
+section[data-testid="stSidebar"] button[kind="primary"]:hover,
 section[data-testid="stSidebar"] .stButton > button[data-testid="baseButton-primary"]:hover {
-    background-color: #98FB98 !important;
-    border-color: #228B22 !important;
-    color: #000000 !important;
+    background-color: var(--nav-btn-hover-bg) !important;
+    border-color: var(--nav-btn-hover-border) !important;
+    color: var(--nav-btn-text) !important;
 }
 
-/* 2. 主页面内容区域滚动与底部留白 */
-.main .block-container {
-    padding-top: 0 !important;
-    padding-bottom: 5rem !important;
-    margin-top: 0 !important;
-}
+.main .block-container,
 [data-testid="stMainBlockContainer"] {
-    padding-top: 0 !important;
-    padding-bottom: 5rem !important;
+    padding-top: var(--content-pad-top) !important;
+    padding-bottom: var(--content-pad-bottom) !important;
     margin-top: 0 !important;
 }
 .stMainBlockContainer {
-    padding-top: 0 !important;
+    padding-top: var(--content-pad-top) !important;
     margin-top: 0 !important;
 }
 
-/* 3. 元素垂直间距紧凑布局 */
 .stVerticalBlock, [data-testid="stVerticalBlock"] {
-    gap: 0.5rem !important;
+    gap: var(--block-gap) !important;
     padding-top: 0 !important;
-    padding-bottom: 0.5rem !important;
+    padding-bottom: var(--block-gap) !important;
     margin-top: 0 !important;
 }
 
-/* 4. 按钮与提示卡片间距规范 */
 .stSuccess, .stDownloadButton {
-    margin-bottom: 1rem !important;
+    margin-bottom: var(--notice-gap) !important;
 }
 
-/* 5. 页面高度与全局滚动 */
 section[data-testid="stAppViewContainer"] > .main {
     min-height: 100vh !important;
-    padding-bottom: 5rem !important;
+    padding-bottom: var(--content-pad-bottom) !important;
 }
 .stApp > header {
     background: transparent;
@@ -65,17 +69,16 @@ section[data-testid="stAppViewContainer"] > .main {
     overflow-y: auto !important;
 }
 
-/* 6. 顶栏、表单组件与布局微调 */
 header[data-testid="stHeader"] {
-    height: 2.5rem !important;
-    min-height: 2.5rem !important;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.1) !important;
+    height: var(--header-height) !important;
+    min-height: var(--header-height) !important;
+    box-shadow: var(--header-shadow) !important;
     z-index: 999 !important;
     position: relative !important;
 }
 header[data-testid="stHeader"] [data-testid="stToolbar"] {
-    height: 2.5rem !important;
-    min-height: 2.5rem !important;
+    height: var(--header-height) !important;
+    min-height: var(--header-height) !important;
 }
 .stApp {
     padding-top: 0 !important;
@@ -85,9 +88,9 @@ header[data-testid="stHeader"] [data-testid="stToolbar"] {
     overflow-y: visible !important;
 }
 .stApp > .main {
-    padding-top: 1rem !important;
+    padding-top: var(--main-pad-top) !important;
     margin-top: 0 !important;
-    padding-bottom: 5rem !important;
+    padding-bottom: var(--content-pad-bottom) !important;
     min-height: calc(100vh - 3rem) !important;
     height: auto !important;
     overflow-y: visible !important;
@@ -103,20 +106,20 @@ section[data-testid="stAppViewContainer"] > .main {
     overflow-y: visible !important;
 }
 .stButton {
-    margin-bottom: 5px !important;
+    margin-bottom: var(--button-gap) !important;
 }
 .stSelectbox, .stSlider, .stTextInput, .stNumberInput {
-    margin-bottom: 5px !important;
+    margin-bottom: var(--field-gap) !important;
 }
 .stTabs {
-    margin-top: 5px !important;
-    margin-bottom: 5px !important;
+    margin-top: var(--tab-gap) !important;
+    margin-bottom: var(--tab-gap) !important;
 }
 .fc-badge-enc {
-    color: #0b3d91;
+    color: var(--badge-enc);
     font-weight: 600;
 }
 .fc-badge-plain {
-    color: #555555;
+    color: var(--badge-plain);
     font-weight: 600;
 }

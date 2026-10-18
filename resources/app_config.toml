@@ -14,3 +14,24 @@ show_debug = false
 
 [emd_summary]
 producer_name = ""
+
+[ui_style]
+nav_bg = "#90ee90"
+nav_text = "#000000"
+nav_border = "#32cd32"
+nav_hover_bg = "#98fb98"
+nav_hover_border = "#228b22"
+nav_border_width = 2.0
+nav_bold = false
+content_pad_top = 0.0
+content_pad_bottom = 5.0
+block_gap = 0.5
+header_height = 2.5
+main_pad_top = 1.0
+button_gap = 5.0
+field_gap = 5.0
+tab_gap = 5.0
+notice_gap = 1.0
+header_shadow = true
+badge_enc = "#0b3d91"
+badge_plain = "#555555"

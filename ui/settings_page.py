@@ -5,6 +5,103 @@ Settings page for HBPR UI - System configuration
 
 import streamlit as st
 from scripts.config_manager import load_app_config, save_app_config
+from ui.style_loader import DEFAULT_UI_STYLE, normalized_ui_style, saved_ui_style
+
+
+def _style_key(field: str) -> str:
+    return f"ui_style_{field}"
+
+
+def _seed_style_widgets() -> None:
+    saved = saved_ui_style()
+    for field, value in saved.items():
+        key = _style_key(field)
+        if key not in st.session_state:
+            st.session_state[key] = value
+
+
+def _style_from_widgets() -> dict:
+    style = {}
+    for field, default in DEFAULT_UI_STYLE.items():
+        style[field] = st.session_state.get(_style_key(field), default)
+    return style
+
+
+def _save_ui_config(font_family: str, font_size_percent: int, style: dict) -> None:
+    cfg = load_app_config()
+    if "ui_settings" not in cfg:
+        cfg["ui_settings"] = {}
+    cfg["ui_settings"].update({
+        "font_family": font_family,
+        "font_size_percent": font_size_percent,
+    })
+    cfg["ui_style"] = normalized_ui_style(style)
+    save_app_config(cfg)
+
+
+def _reset_ui_settings() -> None:
+    st.session_state.settings = {
+        "font_family": "Courier New",
+        "font_size_percent": 100,
+    }
+    st.session_state["font_family_select"] = "Courier New"
+    st.session_state["font_size_slider"] = 100
+    for field, value in DEFAULT_UI_STYLE.items():
+        st.session_state[_style_key(field)] = value
+    _save_ui_config("Courier New", 100, dict(DEFAULT_UI_STYLE))
+    st.session_state.settings_notice = "Settings reset to defaults. Refresh the page to apply the layout."
+
+
+def _render_layout_controls() -> None:
+    st.subheader("Layout")
+    st.caption("These controls edit the app stylesheet. Save, then refresh the page.")
+    st.markdown("Navigation button")
+    background, text, border = st.columns(3)
+    with background:
+        st.color_picker("Background", key=_style_key("nav_bg"))
+    with text:
+        st.color_picker("Text", key=_style_key("nav_text"))
+    with border:
+        st.color_picker("Border", key=_style_key("nav_border"))
+    hover_bg, hover_border, border_width = st.columns(3)
+    with hover_bg:
+        st.color_picker("Hover background", key=_style_key("nav_hover_bg"))
+    with hover_border:
+        st.color_picker("Hover border", key=_style_key("nav_hover_border"))
+    with border_width:
+        st.number_input("Border width (px)", min_value=0.0, max_value=8.0, step=1.0, key=_style_key("nav_border_width"))
+    bold, shadow = st.columns(2)
+    with bold:
+        st.checkbox("Bold label", key=_style_key("nav_bold"))
+    with shadow:
+        st.checkbox("Header shadow", key=_style_key("header_shadow"))
+    st.markdown("Spacing")
+    top, bottom, gap = st.columns(3)
+    with top:
+        st.number_input("Content top (rem)", min_value=0.0, max_value=12.0, step=0.1, key=_style_key("content_pad_top"))
+    with bottom:
+        st.number_input("Content bottom (rem)", min_value=0.0, max_value=12.0, step=0.1, key=_style_key("content_pad_bottom"))
+    with gap:
+        st.number_input("Section gap (rem)", min_value=0.0, max_value=4.0, step=0.1, key=_style_key("block_gap"))
+    header, page_top, notice = st.columns(3)
+    with header:
+        st.number_input("Header height (rem)", min_value=1.0, max_value=6.0, step=0.1, key=_style_key("header_height"))
+    with page_top:
+        st.number_input("Page top (rem)", min_value=0.0, max_value=6.0, step=0.1, key=_style_key("main_pad_top"))
+    with notice:
+        st.number_input("Notice spacing (rem)", min_value=0.0, max_value=4.0, step=0.1, key=_style_key("notice_gap"))
+    button_gap, field_gap, tab_gap = st.columns(3)
+    with button_gap:
+        st.number_input("Button spacing (px)", min_value=0.0, max_value=48.0, step=1.0, key=_style_key("button_gap"))
+    with field_gap:
+        st.number_input("Field spacing (px)", min_value=0.0, max_value=48.0, step=1.0, key=_style_key("field_gap"))
+    with tab_gap:
+        st.number_input("Tab spacing (px)", min_value=0.0, max_value=48.0, step=1.0, key=_style_key("tab_gap"))
+    enc, plain = st.columns(2)
+    with enc:
+        st.color_picker("Encrypted marker", key=_style_key("badge_enc"))
+    with plain:
+        st.color_picker("Plain marker", key=_style_key("badge_plain"))
 
 
 def show_settings():
@@ -23,6 +120,10 @@ def show_settings():
         }
     tab1, tab2 = st.tabs(["🎨 UI Settings", "📋 About"])
     with tab1:
+        _seed_style_widgets()
+        notice = st.session_state.pop("settings_notice", None)
+        if notice:
+            st.success(notice)
         st.subheader("📝 Raw Content Font Settings")
         st.caption("💡 Dark Mode: Menu(...) → Settings → Choose app theme 🌔 for the Dark Mode 🌚")
         # Font family selection
@@ -50,41 +151,16 @@ def show_settings():
         # Update font size immediately when changed
         if font_size_percent != st.session_state.settings.get('font_size_percent'):
             st.session_state.settings['font_size_percent'] = font_size_percent
-        # Save settings
+        _render_layout_controls()
         if st.button("💾 Save Settings", type="primary"):
             st.session_state.settings.update({
-                'font_family': font_family,
-                'font_size_percent': font_size_percent,
+                "font_family": font_family,
+                "font_size_percent": font_size_percent,
             })
-            # 持久化保存到 resources/app_config.toml
-            cfg = load_app_config()
-            if "ui_settings" not in cfg:
-                cfg["ui_settings"] = {}
-            cfg["ui_settings"].update({
-                'font_family': font_family,
-                'font_size_percent': font_size_percent,
-            })
-            save_app_config(cfg)
-            st.success("✅ Settings saved successfully to config!")
-            # Force a rerun to apply settings immediately
+            _save_ui_config(font_family, int(font_size_percent), _style_from_widgets())
+            st.session_state.settings_notice = "Settings saved. Refresh the page to apply the layout."
             st.rerun()
-        # Reset settings
-        if st.button("🔄 Reset to Defaults"):
-            st.session_state.settings = {
-                'font_family': 'Courier New',
-                'font_size_percent': 100,
-            }
-            cfg = load_app_config()
-            if "ui_settings" not in cfg:
-                cfg["ui_settings"] = {}
-            cfg["ui_settings"].update({
-                'font_family': 'Courier New',
-                'font_size_percent': 100,
-            })
-            save_app_config(cfg)
-            st.success("✅ Settings reset to defaults!")
-            # Force a rerun to apply settings immediately
-            st.rerun()
+        st.button("🔄 Reset to Defaults", on_click=_reset_ui_settings)
     with tab2:
         st.subheader("📋 About FlightCheck")
         st.markdown("""
