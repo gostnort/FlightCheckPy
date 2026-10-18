@@ -48,6 +48,18 @@ _last_disk_error = None
 _writer_thread = None
 _writer_guard = threading.Lock()
 
+_cache_lock = threading.Lock()
+_db_cache: dict[str, sqlite3.Connection] = {}
+_dirty_paths: set[str] = set()
+_schema_cache_lock = threading.Lock()
+_schema_cache: dict[str, tuple] = {}
+_state_lock = threading.Lock()
+_loading_paths: set[str] = set()
+_load_errors: dict[str, str] = {}
+_desired_active = None
+_prewarm_thread = None
+_prewarm_guard = threading.Lock()
+
 REQUIRED_TABLES = ("hbpr_full_records", "hbpr_simple_records")
 
 
@@ -90,20 +102,53 @@ def _connection_has_required_tables(conn: sqlite3.Connection) -> bool:
     return True
 
 
-def _validate_database_schema(file_path: str) -> bool:
-    """Accept an encrypted file from its header, or a plain file from its tables.
+def _resident_paths() -> set:
+    """Live in-memory connections. These files are not opened again."""
+    with _cache_lock:
+        return set(_db_cache)
 
-    Listing calls this for every database on each sidebar refresh. Encrypted
-    files are not decrypted here.
+
+def _probe_schema(path: Path) -> bool:
+    """Check a file once, then close it. A resident database is not probed."""
+    if _is_encrypted_path(path):
+        return encrypted_header_ok(path)
+    uri = path.resolve().as_uri() + "?mode=ro&immutable=1"
+    conn = sqlite3.connect(uri, uri=True)
+    try:
+        return _connection_has_required_tables(conn)
+    finally:
+        conn.close()
+
+
+def _validate_database_schema(file_path: str) -> bool:
+    """Return whether a database file has the expected tables.
+
+    Results are cached by path, size, and modification time. Files already
+    in memory are accepted without opening them.
     """
     path = Path(file_path)
     try:
-        if _is_encrypted_path(path):
-            return encrypted_header_ok(path)
-        with sqlite3.connect(path) as conn:
-            return _connection_has_required_tables(conn)
-    except Exception:
+        key = _normalized_path(file_path)
+    except OSError:
         return False
+    if key in _resident_paths():
+        return True
+    try:
+        stat = path.stat()
+        signature = (stat.st_mtime_ns, stat.st_size)
+    except OSError:
+        return False
+    with _schema_cache_lock:
+        cached = _schema_cache.get(key)
+        if cached and cached[0] == signature:
+            return cached[1]
+    try:
+        valid = _probe_schema(path)
+    except Exception:
+        valid = False
+    with _schema_cache_lock:
+        _schema_cache[key] = (signature, valid)
+    return valid
 
 
 def _ensure_writer() -> None:
@@ -171,7 +216,23 @@ def _write_sqlite_bytes(path: Path, sqlite_bytes: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = Path(str(path) + ".tmp")
     temporary.write_bytes(payload)
-    temporary.replace(path)
+    _replace_temp_file(temporary, path)
+
+
+def _replace_temp_file(temporary: Path, path: Path) -> None:
+    """Replace the database file. Retry if Windows still has the old handle."""
+    delay = 0.05
+    last_error = None
+    for _attempt in range(6):
+        try:
+            temporary.replace(path)
+            return
+        except PermissionError as exc:
+            last_error = exc
+            time.sleep(delay)
+            delay = min(delay * 2, 0.4)
+    if last_error is not None:
+        raise last_error
 
 
 def _read_sqlite_bytes(path: Path) -> bytes:
@@ -195,21 +256,184 @@ def _snapshot_active_db() -> int:
 
 
 def _load_db_into_memory(file_path: str, preserve_current: bool = True) -> None:
-    """Read one database outside the lock, then swap the active connection.
+    """Point the active database at a resident connection.
 
-    Switching to a different file queues the current memory image first.
-    Reloading the same file reads the disk image after queued writes finish.
+    The first read builds a live memory connection and keeps it. Later switches
+    only replace the active pointer. A disk reload replaces that one entry.
     """
-    global _conn, _src_file_path
+    global _desired_active
 
-    path = Path(file_path).resolve()
-    if preserve_current and _src_file_path:
+    path_key = _normalized_path(file_path)
+    if preserve_current and _src_file_path and _src_file_path != path_key:
         _snapshot_active_db()
-    _wait_for_path(str(path))
-    if not path.is_file():
-        raise ValueError("source file not found")
+    if (not preserve_current) or path_key not in _resident_paths():
+        _read_connection_into_cache(path_key, replace=not preserve_current)
+    _point_at(path_key)
+    with _state_lock:
+        _desired_active = path_key
 
-    sqlite_bytes = _read_sqlite_bytes(path)
+
+def _point_at(path_key: str, only_if_unset: bool = False) -> None:
+    """Switch the active database by pointer. Other connections stay resident."""
+    global _conn, _src_file_path
+    with _cache_lock:
+        cached = _db_cache.get(path_key)
+    if cached is None:
+        raise ValueError("source file not found")
+    with _lock:
+        if only_if_unset and _src_file_path is not None:
+            return
+        _conn = cached
+        _src_file_path = path_key
+
+
+def _read_connection_into_cache(path_key: str, replace: bool = False) -> None:
+    """Read a file outside the query lock, then keep the live connection."""
+    with _state_lock:
+        already = path_key in _loading_paths
+        if not already:
+            _loading_paths.add(path_key)
+    if already:
+        deadline = time.time() + 30
+        while time.time() < deadline:
+            if path_key in _resident_paths():
+                return
+            with _state_lock:
+                if path_key not in _loading_paths:
+                    break
+            time.sleep(0.05)
+        if path_key not in _resident_paths():
+            raise ValueError(_load_errors.get(path_key, "load failed"))
+        return
+    try:
+        path = Path(path_key)
+        if not path.is_file():
+            raise ValueError("source file not found")
+        if not replace and path_key in _resident_paths():
+            return
+        _wait_for_path(path_key)
+        sqlite_bytes = _read_sqlite_bytes(path)
+        new_conn = _open_memory_connection(sqlite_bytes)
+        with _cache_lock:
+            old = _db_cache.get(path_key)
+            if old is not None and not replace:
+                new_conn.close()
+                return
+            _db_cache[path_key] = new_conn
+        if old is not None and replace:
+            with _lock:
+                if _conn is old:
+                    _conn = new_conn
+            try:
+                old.close()
+            except Exception:
+                pass
+            with _state_lock:
+                _dirty_paths.discard(path_key)
+    finally:
+        with _state_lock:
+            _loading_paths.discard(path_key)
+
+
+def _prewarm_targets() -> list:
+    """Databases to keep in memory, starting at the last opened file."""
+    from scripts.config_manager import get_config_value
+
+    try:
+        count = int(get_config_value("db_preferences", "preload_count", 5) or 5)
+    except (TypeError, ValueError):
+        count = 5
+    count = max(1, count)
+    last_name = Path(get_config_value("db_preferences", "last_selected_db", "") or "").name
+    files = [
+        _normalized_path(file_path)
+        for file_path in _list_db_files()
+        if _validate_database_schema(file_path)
+    ]
+    start = 0
+    if last_name:
+        for index, path_key in enumerate(files):
+            if Path(path_key).name == last_name:
+                start = index
+                break
+    return files[start : start + count]
+
+
+def _prewarm_loop() -> None:
+    global _desired_active
+    try:
+        targets = _prewarm_targets()
+    except Exception as exc:
+        with _state_lock:
+            _load_errors["prewarm"] = str(exc)
+        return
+    for index, path_key in enumerate(targets):
+        try:
+            if path_key not in _resident_paths():
+                _read_connection_into_cache(path_key)
+            if index == 0 and path_key in _resident_paths():
+                _point_at(path_key, only_if_unset=True)
+                with _state_lock:
+                    _desired_active = path_key
+        except Exception as exc:
+            with _state_lock:
+                _load_errors[path_key] = str(exc)
+
+
+def _start_prewarm() -> None:
+    global _prewarm_thread
+    with _prewarm_guard:
+        if _prewarm_thread and _prewarm_thread.is_alive():
+            return
+        _prewarm_thread = threading.Thread(
+            target=_prewarm_loop,
+            name="db-prewarm",
+            daemon=True,
+        )
+        _prewarm_thread.start()
+
+
+def _request_preload(paths: list, activate: str) -> list:
+    """Append the requested databases to the resident set. Nothing is evicted."""
+    normalized = []
+    for raw_path in paths:
+        if not raw_path:
+            continue
+        path_key = _normalized_path(raw_path)
+        if path_key not in normalized:
+            normalized.append(path_key)
+    activate_key = _normalized_path(activate) if activate else None
+
+    def _work() -> None:
+        global _desired_active
+        for path_key in normalized:
+            try:
+                if path_key not in _resident_paths():
+                    _read_connection_into_cache(path_key)
+            except Exception as exc:
+                with _state_lock:
+                    _load_errors[path_key] = str(exc)
+        if activate_key and activate_key in _resident_paths():
+            _point_at(activate_key, only_if_unset=True)
+            with _state_lock:
+                _desired_active = activate_key
+
+    threading.Thread(target=_work, name="db-preload", daemon=True).start()
+    return normalized
+
+
+def _flush_resident_databases() -> None:
+    """Serialize every resident connection before the process exits."""
+    _wait_all_disk_writes()
+    with _cache_lock:
+        connections = list(_db_cache.items())
+    with _lock:
+        snapshots = [(path_key, conn.serialize()) for path_key, conn in connections]
+    for path_key, sqlite_bytes in snapshots:
+        _write_sqlite_bytes(Path(path_key), sqlite_bytes)
+
+
+def _open_memory_connection(sqlite_bytes: bytes) -> sqlite3.Connection:
     new_conn = sqlite3.connect(":memory:", check_same_thread=False)
     try:
         _ensure_pragmas(new_conn)
@@ -222,16 +446,7 @@ def _load_db_into_memory(file_path: str, preserve_current: bool = True) -> None:
     except Exception:
         new_conn.close()
         raise
-
-    with _lock:
-        old = _conn
-        _conn = new_conn
-        _src_file_path = str(path)
-    if old is not None:
-        try:
-            old.close()
-        except Exception:
-            pass
+    return new_conn
 
 
 def _backup_stem(path: Path) -> str:
@@ -281,15 +496,45 @@ def _list_db_files(directory: str = None) -> list:
     return [str(entry) for entry in files]
 
 
+def _describe_databases(directory: str = None) -> list:
+    """List databases with validity and whether a memory copy already exists."""
+    resident = _resident_paths()
+    active = _src_file_path
+    described = []
+    for file_path in _list_db_files(directory):
+        key = _normalized_path(file_path)
+        described.append({
+            "path": file_path,
+            "valid": _validate_database_schema(file_path),
+            "resident": key in resident,
+            "active": bool(active) and key == active,
+        })
+    return described
+
+
 def _health_body() -> dict:
     with _pending_condition:
         pending = _pending_writes
         disk_error = _last_disk_error
+    with _state_lock:
+        loading = sorted(_loading_paths)
+        failed = sorted(_load_errors)
+        load_error = _load_errors.get(_desired_active) if _desired_active else None
+        if load_error is None and _load_errors:
+            load_error = next(iter(_load_errors.values()))
+    with _cache_lock:
+        resident = sorted(_db_cache)
     return {
         "ok": True,
         "db": Path(_src_file_path).name if _src_file_path else None,
+        "db_path": _src_file_path,
         "disk_write_pending": pending,
         "last_disk_error": disk_error,
+        "loading": loading,
+        "ready": resident,
+        "resident": resident,
+        "failed": failed,
+        "load_error": load_error,
     }
 
 
@@ -329,7 +574,11 @@ class Handler(BaseHTTPRequestHandler):
             directory = query_params.get("directory")
             if directory:
                 directory = unquote(directory)
-            return self._send(200, {"files": _list_db_files(directory)})
+            described = _describe_databases(directory)
+            return self._send(200, {
+                "files": [item["path"] for item in described],
+                "databases": described,
+            })
         if path == "/auth/status":
             return self._send(200, {
                 "logged_in": _current_username is not None,
@@ -338,8 +587,7 @@ class Handler(BaseHTTPRequestHandler):
             })
         if path == "/shutdown":
             try:
-                _snapshot_active_db()
-                _wait_all_disk_writes()
+                _flush_resident_databases()
                 body = {"ok": True, "message": "Server shutting down"}
                 if _last_disk_error:
                     body["last_disk_error"] = _last_disk_error
@@ -379,6 +627,14 @@ class Handler(BaseHTTPRequestHandler):
                 if not file_path or not Path(file_path).exists():
                     return self._send(400, {"valid": False, "error": "invalid_path"})
                 return self._send(200, {"valid": _validate_database_schema(file_path)})
+
+            if path == "/database/preload":
+                paths = body.get("paths") or []
+                activate = body.get("activate") or (paths[0] if paths else None)
+                if not activate:
+                    return self._send(400, {"error": "invalid_path"})
+                queued = _request_preload(paths, activate)
+                return self._send(200, {"ok": True, "queued": queued})
 
             if path == "/database/load":
                 file_path = body.get("path")
@@ -421,6 +677,8 @@ class Handler(BaseHTTPRequestHandler):
                     cur.execute(sql, params)
                     rowcount = cur.rowcount
                     _conn.commit()
+                    if _src_file_path:
+                        _dirty_paths.add(_src_file_path)
                 return self._send(200, {"rowcount": rowcount})
 
             return self._send(404, {"error": "not_found"})
@@ -431,6 +689,7 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     """Start the HTTP server. The default bind address is loopback only."""
     _ensure_writer()
+    _start_prewarm()
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, required=True)

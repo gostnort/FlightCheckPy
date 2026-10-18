@@ -18,6 +18,43 @@ from ui.common import (
 )
 
 
+def _lookup_record(label, options, records, value_index, widget_key):
+    """下拉可以点选，也可以输入后回车。输入按精确值、忽略大小写、唯一前缀匹配。"""
+    if not options:
+        return None
+    chosen = st.selectbox(
+        label,
+        options,
+        key=widget_key,
+        accept_new_options=True,
+        placeholder="输入后回车，或从列表选择",
+    )
+    text = str(chosen).strip() if chosen is not None else ""
+    if not text:
+        return None
+    exact = [record for record in records if str(record[value_index]) == text]
+    if len(exact) == 1:
+        return exact[0][0]
+    folded = [
+        record
+        for record in records
+        if str(record[value_index]).upper() == text.upper()
+    ]
+    if len(folded) == 1:
+        return folded[0][0]
+    prefix = [
+        record
+        for record in records
+        if str(record[value_index]).upper().startswith(text.upper())
+    ]
+    if len(prefix) == 1:
+        return prefix[0][0]
+    if exact:
+        return exact[0][0]
+    st.warning(f"⚠️ 没有唯一匹配：{text}")
+    return None
+
+
 def select_hbpr_record(db, selection_label="👀 View Record 🧺🧺🧺🧺 Sorting by:"):
     """
     共享函数用于按各种条件选择HBPR记录
@@ -43,11 +80,12 @@ def select_hbpr_record(db, selection_label="👀 View Record 🧺🧺🧺🧺 So
         st.warning("⚠️ No HBPR records found in database.")
         return None
 
-    # 选择记录的方式
+    # 选择记录的方式。登机号是默认项，HBNB 放在最后。
     selection_method = st.radio(
         selection_label,
-        ["HBNB Number", "Boarding Number (BN)", "Seat", "Name", "TKNE"],
-        horizontal=True
+        ["Boarding Number (BN)", "Seat", "Name", "TKNE", "HBNB Number"],
+        horizontal=True,
+        key="edit_hbpr_lookup_method",
     )
 
     selected_record = None
@@ -55,23 +93,18 @@ def select_hbpr_record(db, selection_label="👀 View Record 🧺🧺🧺🧺 So
     if selection_method == "HBNB Number":
         # HBNB选择（按数字从小到大排序）
         # 检查是否有预选的HBNB号码
-        default_index = 0
         sorted_records = sorted(all_records)
-        if hasattr(st.session_state, 'selected_hbnb_for_edit') and st.session_state.selected_hbnb_for_edit:
-            try:
-                default_index = sorted_records.index(st.session_state.selected_hbnb_for_edit)
-                # 清除session state中的预选值
-                del st.session_state.selected_hbnb_for_edit
-            except ValueError:
-                # 如果预选的HBNB不在列表中，使用默认值
-                default_index = 0
-        hbnb_number = st.selectbox(
+        preselected = st.session_state.pop("selected_hbnb_for_edit", None)
+        if preselected in sorted_records:
+            st.session_state["edit_hbpr_hbnb_choice"] = str(preselected)
+        hbnb_records = [(number, number) for number in sorted_records]
+        selected_record = _lookup_record(
             "Select HBNB Number:",
-            sorted_records,
-            index=default_index,
-            help="Choose an HBNB number to view"
+            [str(number) for number in sorted_records],
+            hbnb_records,
+            1,
+            "edit_hbpr_hbnb_choice",
         )
-        selected_record = hbnb_number
 
     elif selection_method == "Boarding Number (BN)":
         # BN选择（按数字从小到大排序）
@@ -81,18 +114,13 @@ def select_hbpr_record(db, selection_label="👀 View Record 🧺🧺🧺🧺 So
             bn_records.sort(key=lambda x: x[1])
             # 按BN号码排序
             if bn_records:
-                bn_options = [f"{record[1]}" for record in bn_records]
-                selected_bn = st.selectbox(
+                selected_record = _lookup_record(
                     "Select Boarding Number:",
-                    bn_options,
-                    help="Choose a boarding number to view"
+                    [str(record[1]) for record in bn_records],
+                    bn_records,
+                    1,
+                    "edit_hbpr_bn_choice",
                 )
-                # 提取HBNB号码 - find the record with matching boarding number
-                selected_record = None
-                for record in bn_records:
-                    if str(record[1]) == selected_bn:
-                        selected_record = record[0]
-                        break
             else:
                 st.warning("⚠️ No boarding numbers found in processed records.")
                 return None
@@ -117,18 +145,13 @@ def select_hbpr_record(db, selection_label="👀 View Record 🧺🧺🧺🧺 So
                         return (row_num, seat_letter)
                     return (999, 'Z')  # 无效座位排在最后
                 seat_records.sort(key=seat_sort_key)
-                seat_options = [f"{record[1]}" for record in seat_records]
-                selected_seat = st.selectbox(
+                selected_record = _lookup_record(
                     "Select Seat:",
-                    seat_options,
-                    help="Choose a seat to view"
+                    [str(record[1]) for record in seat_records],
+                    seat_records,
+                    1,
+                    "edit_hbpr_seat_choice",
                 )
-                # 提取HBNB号码 - find the record with matching seat
-                selected_record = None
-                for record in seat_records:
-                    if record[1] == selected_seat:
-                        selected_record = record[0]
-                        break
             else:
                 st.warning("⚠️ No seats found in processed records.")
                 return None
@@ -144,18 +167,13 @@ def select_hbpr_record(db, selection_label="👀 View Record 🧺🧺🧺🧺 So
             if name_records:
                 # 按姓名排序
                 name_records.sort(key=lambda x: x[1].upper())
-                name_options = [f"{record[1]}" for record in name_records]
-                selected_name = st.selectbox(
+                selected_record = _lookup_record(
                     "Select Name:",
-                    name_options,
-                    help="Choose a passenger name to view"
+                    [str(record[1]) for record in name_records],
+                    name_records,
+                    1,
+                    "edit_hbpr_name_choice",
                 )
-                # 提取HBNB号码 - find the record with matching name
-                selected_record = None
-                for record in name_records:
-                    if record[1] == selected_name:
-                        selected_record = record[0]
-                        break
             else:
                 st.warning("⚠️ No names found in processed records.")
                 return None
@@ -179,18 +197,13 @@ def select_hbpr_record(db, selection_label="👀 View Record 🧺🧺🧺🧺 So
             if tkne_records:
                 # 按TKNE排序
                 tkne_records.sort(key=lambda x: x[1])
-                tkne_options = [f"{record[1]}" for record in tkne_records]
-                selected_tkne = st.selectbox(
+                selected_record = _lookup_record(
                     "Select TKNE:",
-                    tkne_options,
-                    help="Choose a TKNE to view"
+                    [str(record[1]) for record in tkne_records],
+                    tkne_records,
+                    1,
+                    "edit_hbpr_tkne_choice",
                 )
-                # 提取HBNB号码 - find the record with matching TKNE
-                selected_record = None
-                for record in tkne_records:
-                    if record[1] == selected_tkne:
-                        selected_record = record[0]
-                        break
             else:
                 st.warning("⚠️ No TKNE found in processed records.")
                 return None

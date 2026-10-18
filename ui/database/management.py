@@ -10,13 +10,12 @@ from tkinter import filedialog
 from pathlib import Path
 from scripts.config_manager import get_config_value, set_config_value
 from ui.common import (
-    format_database_choice,
     get_db_port_client,
     is_db_available,
     get_database_name,
-    load_database,
     trigger_auto_save
 )
+from ui.components.database_selector import render_database_selectbox
 
 
 def show_database_management():
@@ -130,35 +129,24 @@ def render_database_operations():
     # 刷新数据库列表
     if st.button("🔄 刷新数据库列表", use_container_width=True):
         st.rerun()   
-    # 加载数据库
-    st.markdown("#### 📥 加载其他数据库")   
+    st.markdown("#### 选择数据库")
     client = get_db_port_client()
     if client:
         custom_folder = st.session_state.get('custom_db_folder')
         try:
-            db_files = client.list_databases(custom_folder)
-            # 验证数据库
-            valid_db_files = []
-            for db_file in db_files:
-                validation_result = client.validate_database_schema(db_file)
-                if validation_result.get("valid", False):
-                    valid_db_files.append(db_file)
+            valid_db_files = [
+                item["path"]
+                for item in client.list_database_status(custom_folder)
+                if item.get("valid") and item.get("path")
+            ]
             if valid_db_files:
-                selected_db = st.selectbox(
-                    "选择数据库:",
-                    options=valid_db_files,
-                    format_func=lambda x: format_database_choice(x, get_database_name()),
-                    key="management_db_selector"
+                render_database_selectbox(
+                    valid_db_files,
+                    widget_key="management_db_selector",
+                    label="选择数据库:",
                 )
-                if st.button("📥 加载选中的数据库", use_container_width=True):
-                    with st.spinner("正在加载..."):
-                        if load_database(selected_db):
-                            st.success(f"✅ 已加载: {Path(selected_db).name}")
-                            st.rerun()
-                        else:
-                            st.error("❌ 加载失败")
             else:
-                st.info("📭 未找到有效的数据库文件")               
+                st.info("📭 未找到有效的数据库文件")
         except Exception as e:
             st.error(f"❌ 获取数据库列表失败: {e}")
 

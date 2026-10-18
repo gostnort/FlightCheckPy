@@ -1,11 +1,10 @@
-# FlightCheckPy 应用程序配置文件
 version = "0.6.4"
 
 [db_preferences]
-default_mode = "encrypted"  # "encrypted" (默认加密) 或 "plain" (非加密)
-preload_count = 5           # 登录后静默预热数据库数量
+default_mode = "encrypted"
+preload_count = 5
 remember_last_db = true
-last_selected_db = ""
+last_selected_db = "CA770_07OCT25.db"
 
 [ui_settings]
 theme = "Auto"

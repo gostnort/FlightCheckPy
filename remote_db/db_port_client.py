@@ -41,16 +41,34 @@ class DbPortClient:
         """Checks the health of the database server."""
         return self._get("/health")
 
-    def list_databases(self, directory=None):
-        """Retrieves a list of available database files from the server."""
+    def _database_list_payload(self, directory=None):
         path = "/databases/list"
         if directory:
             path += f"?directory={quote(directory)}"
-        return self._get(path).get("files", [])
+        return self._get(path)
+
+    def list_databases(self, directory=None):
+        """Retrieves a list of available database files from the server."""
+        return self._database_list_payload(directory).get("files", [])
+
+    def list_database_status(self, directory=None):
+        """List databases, including which ones are already in memory."""
+        payload = self._database_list_payload(directory)
+        details = payload.get("databases")
+        if details:
+            return details
+        return [
+            {"path": path, "valid": True, "resident": False, "active": False}
+            for path in payload.get("files", [])
+        ]
 
     def load_database(self, path: str):
         """Requests the server to load a database file into memory."""
         return self._post("/database/load", {"path": path})
+
+    def preload_databases(self, paths, activate: str):
+        """Queue background loads. activate is the database that should open."""
+        return self._post("/database/preload", {"paths": list(paths), "activate": activate})
 
     def validate_database_schema(self, path: str):
         """Validates that a database file has the expected schema."""

@@ -208,17 +208,11 @@ def get_database_name():
         return "Error"
 
 
-def format_database_choice(db_path: str, current_name: str = None, unsaved: bool = False) -> str:
+def format_database_choice(db_path: str) -> str:
     """Label a database file with its storage format."""
     name = Path(db_path).name
     badge = "[Encrypted]" if name.lower().endswith(".db.enc") else "[Plain]"
-    if current_name and name == current_name and unsaved:
-        prefix = "🔴 "
-    elif current_name and name == current_name:
-        prefix = "✅ "
-    else:
-        prefix = ""
-    return f"{prefix}{name} {badge}"
+    return f"{name} {badge}"
 
 
 def trigger_auto_save():
@@ -378,19 +372,12 @@ def create_database_selectbox(
     if client:
         try:
             # List databases from custom folder if specified, otherwise from default 'databases' folder
-            db_files = client.list_databases(active_custom_folder)
-            # Validate each database schema
-            for db_file in db_files:
-                try:
-                    validation_result = client.validate_database_schema(db_file)
-                    if validation_result.get("valid", False):
-                        valid_db_files.append(db_file)
-                    else:
-                        print(f"Database {db_file} has invalid schema, skipping")
-                except Exception as e:
-                    print(f"Failed to validate database {db_file}: {e}")
-                    # Skip databases that can't be validated
-                    pass
+            for item in client.list_database_status(active_custom_folder):
+                db_file = item.get("path")
+                if db_file:
+                    db_files.append(db_file)
+                if item.get("valid") and db_file:
+                    valid_db_files.append(db_file)
         except Exception:
             db_files = []
     if not valid_db_files:
