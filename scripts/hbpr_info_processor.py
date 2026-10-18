@@ -11,8 +11,9 @@ from .general_func import CArgs
 
 class CHbpr:
     """This class will process a single passenger information from HBPR page."""
+
     # 输出变量, 解析后的结构化数据字段 - 用于数据库存储
-    error_msg = {"Baggage":[],"Passport":[],"Name":[],"Visa":[],"Other":[]}
+    error_msg = {"Baggage": [], "Passport": [], "Name": [], "Visa": [], "Other": []}
     BoardingNumber = 0
     HbnbNumber = 0
     debug_msg = []
@@ -46,10 +47,8 @@ class CHbpr:
     __ChkBagAverageWeight = 0
     __ERROR_NUMBER = 65535
 
-
     def __init__(self):
         super().__init__()
-
 
     def run(self, HbprContent: str):
         """处理HBPR记录的主要方法"""
@@ -119,12 +118,10 @@ class CHbpr:
                 f"Boarding Number should be {self.BoardingNumber}. Error: {str(e)}"
             )
 
-
     def __del__(self):
         self.debug_msg.append(
             f"Boarding number {self.BoardingNumber}. \nCHbpr deconstruction."
         )
-
 
     def __GetHbnbNumber(self):
         """单独获取HBNB号码"""
@@ -140,23 +137,24 @@ class CHbpr:
                 return False
         return False
 
-
     def __GetPassengerInfo(self):
         """一次性获取姓名、登机号、座位、舱位目的地"""
         # 搜索乘客信息行（包含姓名的行）
         namePat = re.compile(r"(\d\.\s)([A-Z/+\s]{3,17})")
         nameMatch = namePat.search(self.__Hbpr)
         if not nameMatch:
-            self.error_msg["Other"].append(f"HBPR{self.HbnbNumber},\tPassenger name not found.")
+            self.error_msg["Other"].append(
+                f"HBPR{self.HbnbNumber},\tPassenger name not found."
+            )
             return False
         # 获取姓名
         self.NAME = nameMatch.group(2).strip()
         self.debug_msg.append("pax name  = " + self.NAME)
         # 从姓名行找到行的结束位置，获取整行内容进行后续解析
-        name_end_index = self.__Hbpr.find('\n', nameMatch.end())
+        name_end_index = self.__Hbpr.find("\n", nameMatch.end())
         if name_end_index == -1:
             name_end_index = len(self.__Hbpr)
-        name_row = self.__Hbpr[nameMatch.start():name_end_index]
+        name_row = self.__Hbpr[nameMatch.start() : name_end_index]
         # 在姓名行中搜索登机号（可选）
         bnPat = re.compile(r"BN(\d{3})")
         bnMatch = bnPat.search(name_row)
@@ -195,15 +193,16 @@ class CHbpr:
                 self.DESTINATION = destMatch.group(1)
                 self.debug_msg.append("destination = " + self.DESTINATION)
         else:
-            self.error_msg["Other"].append(f"HBPR{self.HbnbNumber},\tNone validity classes are found.")
+            self.error_msg["Other"].append(
+                f"HBPR{self.HbnbNumber},\tNone validity classes are found."
+            )
             return False
         return True
-
 
     def __ExtractStructuredData(self):
         """提取结构化数据字段"""
         # 提取PNR
-        pnr_match = re.search(r'PNR\s+RL\s+([A-Z0-9]+)', self.__Hbpr)
+        pnr_match = re.search(r"PNR\s+RL\s+([A-Z0-9]+)", self.__Hbpr)
         if pnr_match:
             self.PNR = pnr_match.group(1)
         # 提取护照姓名
@@ -225,7 +224,6 @@ class CHbpr:
         self.__CaptureAsvcMessages()
         return
 
-
     def __DetectInfant(self):
         """检测是否有婴儿信息（以"INF-"开头的行）"""
         try:
@@ -234,14 +232,15 @@ class CHbpr:
                 self.HAS_INFANT = True
                 return True
             # 兼容性：若出现 IFBA/ 或文中有 INF1/ 等标识，也认为随行婴儿存在
-            if re.search(r"\bIFBA/\dPC\b", self.__Hbpr) or re.search(r"\bINF\d/", self.__Hbpr):
+            if re.search(r"\bIFBA/\dPC\b", self.__Hbpr) or re.search(
+                r"\bINF\d/", self.__Hbpr
+            ):
                 self.HAS_INFANT = True
                 return True
         except Exception:
             pass
         self.HAS_INFANT = False
         return False
-
 
     def __GetChkBag(self):
         """获取托运行李信息"""
@@ -262,7 +261,6 @@ class CHbpr:
         self.debug_msg.append("bag piece  = " + str(self.BAG_PIECE))
         self.debug_msg.append("bag total w= " + str(self.BAG_WEIGHT))
         self.debug_msg.append("bag averag = " + str(self.__ChkBagAverageWeight))
-
 
     def __ExpcStatement(self):
         """处理EXPC语句"""
@@ -298,7 +296,6 @@ class CHbpr:
         self.debug_msg.append("expc ttl w = " + str(result["weight"]))
         return result
 
-
     def __AsvcBagStatement(self):
         """处理ASVC行李语句（只计算行李件数，ASVC_MSG已在__CaptureAsvcMessages中填充）"""
         # 使用已填充的ASVC_MSG列表
@@ -315,21 +312,24 @@ class CHbpr:
                 try:
                     pieces = int(pc_count)
                     result_piece += pieces
-                    self.debug_msg.append(f"asvc bag found {pieces} PC in line: {asvc_line[:50]}...")
+                    self.debug_msg.append(
+                        f"asvc bag found {pieces} PC in line: {asvc_line[:50]}..."
+                    )
                 except ValueError:
-                    self.debug_msg.append(f"asvc bag PC type error in: {asvc_line[:50]}...")
+                    self.debug_msg.append(
+                        f"asvc bag PC type error in: {asvc_line[:50]}..."
+                    )
         if result_piece > 0:
             self.debug_msg.append(f"asvc total pieces = {result_piece}")
         self.ASVC_PIECE = result_piece
         return result_piece
-
 
     def __RegularBags(self):
         """获取常规行李额度"""
         # 一般订座都有FBA项目
         pat = re.compile(r"\sFBA/\dPC")
         re_match = pat.search(self.__Hbpr)
-        result = {"FBA": 1, "IFBA": 0} # 默认有1件FBA
+        result = {"FBA": 1, "IFBA": 0}  # 默认有1件FBA
         if re_match:
             try:
                 result["FBA"] = int(self.__Hbpr[re_match.start() + 5])
@@ -353,7 +353,6 @@ class CHbpr:
         self.debug_msg.append("Infant bag = " + str(result["IFBA"]))
         return result
 
-
     def __FlyerBenifit(self):
         """获取常旅客权益"""
         # 查找FF模式并提取FF号码 - 修复正则表达式以正确提取FF信息
@@ -365,12 +364,12 @@ class CHbpr:
             # 提取FF号码：如 "CA 002151005024/G/*G" 或 "CA 002151005024/B"
             self.FF = ff_match.group(1)
             self.debug_msg.append("FF number = " + self.FF)
-            match_content = self.__Hbpr[ff_match.start():ff_match.end()]
+            match_content = self.__Hbpr[ff_match.start() : ff_match.end()]
             self.debug_msg.append("FF match content = " + match_content)
             # 检查是否为国航会员
             if self.FF.startswith("CA"):
                 result["bol_ca"] = True
-            # 查找金卡标识 /*G
+            # 查找金卡标识 /*G。外航金卡也有 1 件，重量另按 23KG 计
             if "/*G" in match_content:
                 result["piece"] = 1
                 self.debug_msg.append("Found Gold Card /*G")
@@ -387,15 +386,16 @@ class CHbpr:
         self.IS_CA_FLYER = result["bol_ca"]
         return result
 
-
     def __CalculateBagPieceAndWeight(self):
         """计算行李件数和重量"""
-        self.__ExpcStatement() # 函数结果已经共享给EXPC_PIECE和EXPC_WEIGHT
+        self.__ExpcStatement()  # 函数结果已经共享给EXPC_PIECE和EXPC_WEIGHT
         asvc_piece = self.__AsvcBagStatement()
         result = {"piece": 0, "weight": 0}
         arg = CArgs()
         # 总件数=常旅客+网购+成人票+婴儿票
-        result["piece"] = self.FLYER_BENEFIT + asvc_piece + self.FBA_PIECE + self.IFBA_PIECE
+        result["piece"] = (
+            self.FLYER_BENEFIT + asvc_piece + self.FBA_PIECE + self.IFBA_PIECE
+        )
         if self.IS_CA_FLYER:
             # 总重量 =（CA常旅客+网购+成人票） x 舱位重量
             result["weight"] = (
@@ -417,7 +417,6 @@ class CHbpr:
         self.debug_msg.append("total weigh = " + str(result["weight"]))
         return result
 
-
     def __CaptureCkin(self):
         """
         捕获CKIN信息，并设置CKIN_MSG字段
@@ -435,7 +434,7 @@ class CHbpr:
             for match in re_matches:
                 self.CKIN_MSG.append(match.strip())
         else:
-            #self.CKIN_MSG.append("CKIN not found.")
+            # self.CKIN_MSG.append("CKIN not found.")
             return "CKIN not found."
         # 查找EXBG信息
         for msg in self.CKIN_MSG:
@@ -443,7 +442,6 @@ class CHbpr:
                 self.CKIN_EXBG = msg
                 return msg
         return "CKIN EXBG not found."
-
 
     def __CaptureAsvcMessages(self):
         """
@@ -462,12 +460,11 @@ class CHbpr:
             for match in re_matches:
                 self.ASVC_MSG.append(match.strip())
         else:
-            #self.ASVC_MSG.append("ASVC not found.")
+            # self.ASVC_MSG.append("ASVC not found.")
             return "ASVC not found."
         # 提取ASVC座位信息（必须在ASVC_MSG被填充后调用）
         self.__GetAsvcSeat()
         return
-
 
     def __GetAsvcSeat(self):
         """获取ASVC座位信息
@@ -487,40 +484,53 @@ class CHbpr:
                     self.debug_msg.append(f"ASVC seat found: {self.ASVC_SEAT}")
                     return
 
-
     def __MatchingBag(self):
         """匹配行李"""
-        max_bag = self.__CalculateBagPieceAndWeight()
-        args = CArgs()
-        bol_ckin_exbg = False
-        if max_bag:
-            self.BAG_ALLOWANCE = max_bag.get("piece")
-        if self.BAG_PIECE > max_bag["piece"]:
-            self.error_msg["Baggage"].append(
-                f"HBPR{self.HbnbNumber},\thas "
-                f"{self.BAG_PIECE - max_bag['piece']} extra bag(s)."
-            )
-            bol_ckin_exbg = True
-        elif self.BAG_WEIGHT > max_bag["weight"]:
-            if self.BAG_WEIGHT > args.ClassBagWeight(self.CLASS) * self.BAG_PIECE:
-                self.error_msg["Baggage"].append(
-                    f"HBPR{self.HbnbNumber},the baggage is overweight "
-                    f"{self.BAG_WEIGHT - max_bag['weight']} KGs."
-                )
-                bol_ckin_exbg = True
-        elif max_bag["piece"] > 0 and self.__ChkBagAverageWeight > (max_bag["weight"] / max_bag["piece"]):
-            if self.__ChkBagAverageWeight > args.ClassBagWeight(self.CLASS):
-                if self.BAG_WEIGHT > self.EXPC_WEIGHT:
-                    avg_allowance = max_bag["weight"] / max_bag["piece"] if max_bag["piece"] > 0 else 0
-                    self.error_msg["Baggage"].append(
-                        f"HBPR{self.HbnbNumber},the baggage average weight is overweight "
-                        f"{self.__ChkBagAverageWeight - avg_allowance} KGs."
-                    )
-                    bol_ckin_exbg = True
-        if bol_ckin_exbg:
+        allowance = self.__CalculateBagPieceAndWeight()
+        if allowance:
+            self.BAG_ALLOWANCE = allowance.get("piece")
+        class_weight = CArgs().ClassBagWeight(self.CLASS)
+        # 外航金卡多出的 1 件按 23KG，不随舱位。额度件数保持原值。
+        foreign_gold_piece = 0 if self.IS_CA_FLYER else self.FLYER_BENEFIT
+        notes = self.__baggage_notes(
+            allowance["piece"],
+            allowance["weight"],
+            class_weight,
+            foreign_gold_piece,
+        )
+        self.error_msg["Baggage"].extend(notes)
+        if notes:
             self.error_msg["Baggage"].append(self.CKIN_EXBG)
         return
 
+    def __baggage_notes(
+        self, allowance_piece, allowance_weight, class_weight, foreign_gold_piece
+    ):
+        """根据额度与实际行李返回错误说明，不修改额度。"""
+        cabin_checked_piece = self.BAG_PIECE - foreign_gold_piece
+        extra_piece = self.BAG_PIECE - allowance_piece
+        overweight = self.BAG_WEIGHT - allowance_weight
+        average_allowance = (
+            allowance_weight / allowance_piece if allowance_piece > 0 else 0
+        )
+        notes = []
+        if extra_piece > 0:
+            notes.append(f"HBPR{self.HbnbNumber},\thas {extra_piece} extra bag(s).")
+        elif overweight > 0 and self.BAG_WEIGHT > class_weight * cabin_checked_piece:
+            notes.append(
+                f"HBPR{self.HbnbNumber},the baggage is overweight {overweight} KGs."
+            )
+        elif (
+            allowance_piece > 0
+            and self.__ChkBagAverageWeight > average_allowance
+            and self.__ChkBagAverageWeight > class_weight
+            and self.BAG_WEIGHT > self.EXPC_WEIGHT
+        ):
+            notes.append(
+                f"HBPR{self.HbnbNumber},the baggage average weight is overweight "
+                f"{self.__ChkBagAverageWeight - average_allowance} KGs."
+            )
+        return notes
 
     def __PsptName(self):
         """获取护照姓名"""
@@ -528,7 +538,7 @@ class CHbpr:
             namePat = re.compile(r"PAXLST\s*:([A-Z/]+)")
             match = namePat.search(self.__Hbpr)
             if match:
-                paxName = match.group(1).strip().rstrip('/')
+                paxName = match.group(1).strip().rstrip("/")
                 self.debug_msg.append("pspt name = " + paxName)
             else:
                 paxName = self.__ERROR_NUMBER
@@ -536,19 +546,18 @@ class CHbpr:
             paxName = self.__ERROR_NUMBER
         return paxName
 
-
     def __NameMatchMode1(self, ShortName, LongName):
         """姓名匹配模式1"""
         lstSuffix = ["MR", "MS", "MRS", "MSTR", "PHD", "CHD", "INF", "VIP"]
         # 移除ShortName的后缀
         for suffix in lstSuffix:
             if ShortName.endswith(suffix):
-                ShortName = ShortName[:-len(suffix)].rstrip()
+                ShortName = ShortName[: -len(suffix)].rstrip()
                 break
         # 移除LongName的后缀
         for suffix in lstSuffix:
             if LongName.endswith(suffix):
-                LongName = LongName[:-len(suffix)].rstrip()
+                LongName = LongName[: -len(suffix)].rstrip()
                 break
         lstShort = ShortName.split("/")
         lstLong = LongName.split("/")
@@ -558,7 +567,6 @@ class CHbpr:
                 if lo.find(sh) != -1:
                     countMatch += 1
         return countMatch > 1
-
 
     def __levenshtein_distance(self, s1, s2):
         """计算编辑距离"""
@@ -572,11 +580,17 @@ class CHbpr:
                     new_distances.append(distances[index1])
                 else:
                     new_distances.append(
-                        1 + min((distances[index1], distances[index1 + 1], new_distances[-1]))
+                        1
+                        + min(
+                            (
+                                distances[index1],
+                                distances[index1 + 1],
+                                new_distances[-1],
+                            )
+                        )
                     )
             distances = new_distances
         return distances[-1]
-
 
     def __NameMatchMode2(self, s1, s2):
         """姓名匹配模式2"""
@@ -590,12 +604,13 @@ class CHbpr:
         if difference_percentage > 0.95:
             return True
         else:
-            str_difference_percentage = f"The Booking and Passport names match {difference_percentage:.1%}"
+            str_difference_percentage = (
+                f"The Booking and Passport names match {difference_percentage:.1%}"
+            )
             self.error_msg["Name"].append(
                 f"HBPR{self.HbnbNumber},\t{str_difference_percentage}"
             )
         return False
-
 
     def __NameMatch(self):
         """执行姓名匹配"""
@@ -621,7 +636,6 @@ class CHbpr:
             bolMatch = self.__NameMatchMode2(shortName, longName)
         return False
 
-
     def __GetPassportExp(self):
         """获取护照到期日期"""
         try:
@@ -631,7 +645,7 @@ class CHbpr:
             lstPspt = self.__Hbpr[indexS:indexE].split("/")
             if len(lstPspt) >= 6:
                 expDate = datetime.datetime.strptime(lstPspt[5], "%y%m%d")
-                self.PSPT_EXP_DATE = expDate.strftime('%Y-%m-%d')  # 保存护照到期日期
+                self.PSPT_EXP_DATE = expDate.strftime("%Y-%m-%d")  # 保存护照到期日期
                 nextDate = datetime.datetime.now()
                 deltaT = datetime.timedelta(days=1)
                 nextDate = nextDate + deltaT
@@ -642,7 +656,6 @@ class CHbpr:
                     )
         except Exception as e:
             self.debug_msg.append(f"Passport expiration check failed: {str(e)}")
-
 
     def __GetVisaInfo(self):
         """获取签证信息"""
@@ -679,49 +692,64 @@ class CHbpr:
                     f"HBPR{self.HbnbNumber},\tNo visa information found for {nationality} passport holder\n"
                     f"PAX: {self.NAME}, BN: {self.BoardingNumber}"
                 )
+            if "CKIN QROK" in self.__Hbpr:
+                self.debug_msg.append("CKIN QROK found")
+            else:
+                self.error_msg["Visa"].append(
+                    f"HBPR{self.HbnbNumber},\tQROK not found\n"
+                    f"PAX: {self.NAME}, BN: {self.BoardingNumber}"
+                )
         return
-
 
     def get_structured_data(self):
         """返回结构化数据字典，用于数据库存储"""
         return {
-            'hbnb_number': self.HbnbNumber,
-            'boarding_number': self.BoardingNumber,
-            'PNR': self.PNR,
-            'NAME': self.NAME,
-            'SEAT': self.SEAT,
-            'CLASS': self.CLASS,
-            'DESTINATION': self.DESTINATION,
-            'BAG_PIECE': self.BAG_PIECE,
-            'BAG_WEIGHT': self.BAG_WEIGHT,
-            'BAG_ALLOWANCE': self.BAG_ALLOWANCE,
-            'FF': self.FF,
-            'PSPT_NAME': self.PSPT_NAME,
-            'PSPT_EXP_DATE': self.PSPT_EXP_DATE,
-            'CKIN_MSG': '; '.join(self.CKIN_MSG) if self.CKIN_MSG else '',
-            'ASVC_MSG': '; '.join(self.ASVC_MSG) if self.ASVC_MSG else '',
-            'ASVC_SEAT': self.ASVC_SEAT,
-            'EXPC_PIECE': self.EXPC_PIECE,
-            'EXPC_WEIGHT': self.EXPC_WEIGHT,
-            'ASVC_PIECE': self.ASVC_PIECE,
-            'FBA_PIECE': self.FBA_PIECE,
-            'IFBA_PIECE': self.IFBA_PIECE,
-            'FLYER_BENEFIT': self.FLYER_BENEFIT,
-            'IS_CA_FLYER': self.IS_CA_FLYER,
-            'INBOUND_FLIGHT': self.INBOUND_FLIGHT,
-            'OUTBOUND_FLIGHT': self.OUTBOUND_FLIGHT,
-            'PROPERTIES': ','.join(self.PROPERTIES) if self.PROPERTIES else '',
-            'TKNE': self.TKNE,  # Add TKNE to structured data
-            'HAS_INFANT': self.HAS_INFANT,
-            'has_error': any(self.error_msg.values()),
-            'error_baggage': '\n'.join(self.error_msg["Baggage"]) if self.error_msg["Baggage"] else '',
-            'error_passport': '\n'.join(self.error_msg["Passport"]) if self.error_msg["Passport"] else '',
-            'error_name': '\n'.join(self.error_msg["Name"]) if self.error_msg["Name"] else '',
-            'error_visa': '\n'.join(self.error_msg["Visa"]) if self.error_msg["Visa"] else '',
-            'error_other': '\n'.join(self.error_msg["Other"]) if self.error_msg["Other"] else '',
-            'error_count': sum(1 for value in self.error_msg.values() if value)
+            "hbnb_number": self.HbnbNumber,
+            "boarding_number": self.BoardingNumber,
+            "PNR": self.PNR,
+            "NAME": self.NAME,
+            "SEAT": self.SEAT,
+            "CLASS": self.CLASS,
+            "DESTINATION": self.DESTINATION,
+            "BAG_PIECE": self.BAG_PIECE,
+            "BAG_WEIGHT": self.BAG_WEIGHT,
+            "BAG_ALLOWANCE": self.BAG_ALLOWANCE,
+            "FF": self.FF,
+            "PSPT_NAME": self.PSPT_NAME,
+            "PSPT_EXP_DATE": self.PSPT_EXP_DATE,
+            "CKIN_MSG": "; ".join(self.CKIN_MSG) if self.CKIN_MSG else "",
+            "ASVC_MSG": "; ".join(self.ASVC_MSG) if self.ASVC_MSG else "",
+            "ASVC_SEAT": self.ASVC_SEAT,
+            "EXPC_PIECE": self.EXPC_PIECE,
+            "EXPC_WEIGHT": self.EXPC_WEIGHT,
+            "ASVC_PIECE": self.ASVC_PIECE,
+            "FBA_PIECE": self.FBA_PIECE,
+            "IFBA_PIECE": self.IFBA_PIECE,
+            "FLYER_BENEFIT": self.FLYER_BENEFIT,
+            "IS_CA_FLYER": self.IS_CA_FLYER,
+            "INBOUND_FLIGHT": self.INBOUND_FLIGHT,
+            "OUTBOUND_FLIGHT": self.OUTBOUND_FLIGHT,
+            "PROPERTIES": ",".join(self.PROPERTIES) if self.PROPERTIES else "",
+            "TKNE": self.TKNE,  # Add TKNE to structured data
+            "HAS_INFANT": self.HAS_INFANT,
+            "has_error": any(self.error_msg.values()),
+            "error_baggage": "\n".join(self.error_msg["Baggage"])
+            if self.error_msg["Baggage"]
+            else "",
+            "error_passport": "\n".join(self.error_msg["Passport"])
+            if self.error_msg["Passport"]
+            else "",
+            "error_name": "\n".join(self.error_msg["Name"])
+            if self.error_msg["Name"]
+            else "",
+            "error_visa": "\n".join(self.error_msg["Visa"])
+            if self.error_msg["Visa"]
+            else "",
+            "error_other": "\n".join(self.error_msg["Other"])
+            if self.error_msg["Other"]
+            else "",
+            "error_count": sum(1 for value in self.error_msg.values() if value),
         }
-
 
     def __GetConnectingFlights(self):
         """获取连接航班"""
@@ -731,7 +759,9 @@ class CHbpr:
         inbound_match = re.search(inbound_pattern, self.__Hbpr)
         if inbound_match:
             self.INBOUND_FLIGHT = inbound_match.group(1).replace("I/", "")
-            result["inbound_station"] = self.__Hbpr[inbound_match.start()+37:inbound_match.start()+40]
+            result["inbound_station"] = self.__Hbpr[
+                inbound_match.start() + 37 : inbound_match.start() + 40
+            ]
         else:
             self.INBOUND_FLIGHT = ""
             result["inbound_station"] = ""
@@ -740,15 +770,20 @@ class CHbpr:
         outbound_match = re.search(outbound_pattern, self.__Hbpr)
         if outbound_match:
             self.OUTBOUND_FLIGHT = outbound_match.group(1).replace("O/", "")
-            result["outbound_station"] = self.__Hbpr[outbound_match.start()+37:outbound_match.start()+40]
-            self.DESTINATION = result['outbound_station']
+            result["outbound_station"] = self.__Hbpr[
+                outbound_match.start() + 37 : outbound_match.start() + 40
+            ]
+            self.DESTINATION = result["outbound_station"]
         else:
             self.OUTBOUND_FLIGHT = ""
             result["outbound_station"] = ""
-        self.debug_msg.append(f"INBOUND_FLIGHT = {self.INBOUND_FLIGHT}, OUTBOUND_FLIGHT = {self.OUTBOUND_FLIGHT}")
-        self.debug_msg.append(f"INBOUND_STATION = {result['inbound_station']}, OUTBOUND_STATION = {result['outbound_station']}")
+        self.debug_msg.append(
+            f"INBOUND_FLIGHT = {self.INBOUND_FLIGHT}, OUTBOUND_FLIGHT = {self.OUTBOUND_FLIGHT}"
+        )
+        self.debug_msg.append(
+            f"INBOUND_STATION = {result['inbound_station']}, OUTBOUND_STATION = {result['outbound_station']}"
+        )
         return result
-
 
     def __GetProperties(self):
         """获取属性"""
@@ -772,13 +807,15 @@ class CHbpr:
         # 删除特定的属性（其他筛选交给UI层处理）
         properties_to_remove = []
         for property in properties:
-            if any([
-                len(property) == 1,  # 删除舱位
-                property.startswith("R"),  # 删除座位
-                property.startswith("SNR"),  # 删除SNR的座位
-                property.startswith("FF/"),  # 删除FF属性（保留会员号）
-                property.startswith("FR/"),  # 删除FR属性（保留会员号）
-            ]):
+            if any(
+                [
+                    len(property) == 1,  # 删除舱位
+                    property.startswith("R"),  # 删除座位
+                    property.startswith("SNR"),  # 删除SNR的座位
+                    property.startswith("FF/"),  # 删除FF属性（保留会员号）
+                    property.startswith("FR/"),  # 删除FR属性（保留会员号）
+                ]
+            ):
                 properties_to_remove.append(property)
         # 删除不需要的属性
         for property in properties_to_remove:
@@ -786,18 +823,21 @@ class CHbpr:
                 if property.startswith("FF/"):  # FF号码后面一个属性是FF的会员号
                     index = properties.index(property)
                     properties.remove(property)
-                    properties.remove(properties[index])  # 紧跟其后的FF会员号会马上替代原来的index
+                    properties.remove(
+                        properties[index]
+                    )  # 紧跟其后的FF会员号会马上替代原来的index
                     continue
                 elif property.startswith("FR/"):  # FR号码后面一个属性是FR的会员号
                     index = properties.index(property)
                     properties.remove(property)
-                    properties.remove(properties[index])  # 紧跟其后的FR会员号会马上替代原来的index
+                    properties.remove(
+                        properties[index]
+                    )  # 紧跟其后的FR会员号会马上替代原来的index
                     continue
                 else:
                     properties.remove(property)
         self.PROPERTIES = properties
         return
-
 
     def ExtractTKNE(self, properties):
         """提取TKNE数据"""
@@ -806,7 +846,7 @@ class CHbpr:
                 # Extract the numbers following TKNE/
                 tkne_part = property[5:]  # Remove "TKNE/" prefix
                 # Split by '/' and take the first part (13+ digits) and second part (1 digit)
-                parts = tkne_part.split('/')
+                parts = tkne_part.split("/")
                 if len(parts) >= 2:
                     # Combine the parts: first part + '/' + second part
                     self.TKNE = f"{parts[0]}/{parts[1]}"
@@ -814,9 +854,10 @@ class CHbpr:
                 else:
                     # If format is different, store as is
                     self.TKNE = tkne_part
-                    self.debug_msg.append(f"TKNE extracted (alternative format): {self.TKNE}")
+                    self.debug_msg.append(
+                        f"TKNE extracted (alternative format): {self.TKNE}"
+                    )
                 break
-
 
     def is_valid(self):
         """检查记录是否通过验证（无错误）"""
@@ -849,4 +890,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

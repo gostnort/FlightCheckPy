@@ -7,6 +7,7 @@ import pandas as pd
 import streamlit as st
 
 from ui.common import get_hbpr_database_client, is_db_available
+from ui.database.hbpr import process_all_records
 from .edit_hbpr import apply_font_settings, _handle_record_input
 
 
@@ -42,35 +43,46 @@ def show_error_summary(db):
     """显示错误分组统计"""
     try:
         # 查询有错误的记录
-        df = execute_query_to_dataframe(db, """
+        df = execute_query_to_dataframe(
+            db,
+            """
             SELECT error_baggage, error_passport, error_name, error_visa, error_other
             FROM hbpr_full_records
             WHERE is_validated = 1 AND is_valid = 0 AND error_count > 0
-        """)
+        """,
+        )
         if df.empty:
             st.info("ℹ️ No error messages found. All processed records are valid!")
             return
         # 统计每种错误类型的数量
-        error_types = ['error_baggage', 'error_passport', 'error_name', 'error_visa', 'error_other']
-        error_labels = ['Baggage', 'Passport', 'Name', 'Visa', 'Other']
+        error_types = [
+            "error_baggage",
+            "error_passport",
+            "error_name",
+            "error_visa",
+            "error_other",
+        ]
+        error_labels = ["Baggage", "Passport", "Name", "Visa", "Other"]
         error_counts = {}
         for error_type, label in zip(error_types, error_labels):
             # 计算非空错误的数量
-            count = df[df[error_type].notna() & (df[error_type] != '')].shape[0]
+            count = df[df[error_type].notna() & (df[error_type] != "")].shape[0]
             error_counts[label] = count
         # 显示错误统计
         total_records_with_errors = len(df)
         st.write(f"📊 **Total records with errors: {total_records_with_errors}**")
-        labels = {'Baggage': '🧳',
-                   'Passport': '🪪', 'Name': '👤', 'Visa': '🛂', 'Other': '🔧'}
+        labels = {
+            "Baggage": "🧳",
+            "Passport": "🪪",
+            "Name": "👤",
+            "Visa": "🛂",
+            "Other": "🔧",
+        }
         # 使用列显示每种错误类型的统计
         cols = st.columns(5)
         for i, (label, count) in enumerate(error_counts.items()):
             with cols[i]:
-                st.metric(
-                    label=f"{labels[label]} {label}",
-                    value=count
-                )
+                st.metric(label=f"{labels[label]} {label}", value=count)
     except Exception as e:
         st.error(f"❌ Error loading error summary: {str(e)}")
 
@@ -79,33 +91,33 @@ def show_error_messages(db):
     """显示错误信息"""
     try:
         # 查询有错误的记录
-        df = execute_query_to_dataframe(db, """
+        df = execute_query_to_dataframe(
+            db,
+            """
             SELECT hbnb_number, name, error_count, error_baggage, error_passport, error_name, error_visa, error_other, validated_at
             FROM hbpr_full_records
             WHERE is_validated = 1 AND is_valid = 0 AND error_count > 0
             ORDER BY validated_at DESC, hbnb_number
-        """)
+        """,
+        )
         if df.empty:
             # This is a bit redundant since show_error_summary already shows a message,
             # but it is helpful if the user has a filter applied.
             # st.info("ℹ️ No error messages found. All processed records are valid!")
             return
         # 添加错误类型过滤下拉框（移除"All"选项）
-        error_types = ['Baggage', 'Passport', 'Name', 'Visa', 'Other']
-        selected_error_type = st.selectbox(
-            "🔍 Filter by Error Type:",
-            error_types
-        )
+        error_types = ["Baggage", "Passport", "Name", "Visa", "Other"]
+        selected_error_type = st.selectbox("🔍 Filter by Error Type:", error_types)
         # 根据选择的错误类型过滤记录
         error_field_map = {
-            'Baggage': 'error_baggage',
-            'Passport': 'error_passport', 
-            'Name': 'error_name',
-            'Visa': 'error_visa',
-            'Other': 'error_other'
+            "Baggage": "error_baggage",
+            "Passport": "error_passport",
+            "Name": "error_name",
+            "Visa": "error_visa",
+            "Other": "error_other",
         }
         error_field = error_field_map[selected_error_type]
-        df = df[df[error_field].notna() & (df[error_field] != '')]
+        df = df[df[error_field].notna() & (df[error_field] != "")]
         if df.empty:
             st.info(f"ℹ️ No {selected_error_type} error messages found!")
             return
@@ -123,7 +135,7 @@ def show_error_messages(db):
         else:
             page_df = df
         # 初始化session state用于跟踪哪个记录显示弹窗
-        if 'show_popup_for' not in st.session_state:
+        if "show_popup_for" not in st.session_state:
             st.session_state.show_popup_for = None
         # 显示错误记录
         for _, row in page_df.iterrows():
@@ -146,25 +158,34 @@ def show_error_messages(db):
                     st.write("**Quick Actions:**")
                 with col2:
                     # 根据当前状态显示不同的按钮样式
-                    is_viewing = st.session_state.show_popup_for == row['hbnb_number']
+                    is_viewing = st.session_state.show_popup_for == row["hbnb_number"]
                     button_text = "❌ Close" if is_viewing else "✏️ Edit Record"
-                    if st.button(button_text, key=f"view_{row['hbnb_number']}", use_container_width=True):
+                    if st.button(
+                        button_text,
+                        key=f"view_{row['hbnb_number']}",
+                        use_container_width=True,
+                    ):
                         if is_viewing:
                             st.session_state.show_popup_for = None
                         else:
-                            st.session_state.show_popup_for = row['hbnb_number']
+                            st.session_state.show_popup_for = row["hbnb_number"]
                         st.rerun()
                 # 如果当前记录需要显示弹窗，则显示弹窗内容
-                if st.session_state.show_popup_for == row['hbnb_number']:
-                    show_record_popup(db, row['hbnb_number'])
+                if st.session_state.show_popup_for == row["hbnb_number"]:
+                    show_record_popup(db, row["hbnb_number"])
                 # 显示选中的错误类型信息
                 error_field = error_field_map[selected_error_type]
                 if row[error_field] and row[error_field].strip():
                     # 使用markdown来支持换行显示
-                    error_text = row[error_field].replace('\n', '<br>')
-                    st.markdown(f"🔴 **{selected_error_type}:** {error_text}", unsafe_allow_html=True)
+                    error_text = row[error_field].replace("\n", "<br>")
+                    st.markdown(
+                        f"🔴 **{selected_error_type}:** {error_text}",
+                        unsafe_allow_html=True,
+                    )
         if total_pages > 1:
-            st.info(f"Showing page {page} of {total_pages} ({len(page_df)} of {total_errors} records)")
+            st.info(
+                f"Showing page {page} of {total_pages} ({len(page_df)} of {total_errors} records)"
+            )
     except Exception as e:
         st.error(f"❌ Error loading error messages: {str(e)}")
 
@@ -187,28 +208,43 @@ def show_record_popup(db, hbnb_number):
         # 添加保存按钮
         col1, col2 = st.columns([3, 2])
         with col1:
-            if st.button("💾 Save Changes", use_container_width=True, key=f"save_{hbnb_number}"):
+            if st.button(
+                "💾 Save Changes", use_container_width=True, key=f"save_{hbnb_number}"
+            ):
                 result = _handle_record_input(db, edited_content, is_duplicate=False)
-                if result['success']:
-                    st.success(result['message'])
+                if result["success"]:
+                    st.success(result["message"])
                     st.rerun()
                 else:
-                    st.error(result['message'])
+                    st.error(result["message"])
         with col2:
-            if st.button("📋 Create Duplicate", use_container_width=True, key=f"dup_{hbnb_number}"):
+            if st.button(
+                "📋 Create Duplicate",
+                use_container_width=True,
+                key=f"dup_{hbnb_number}",
+            ):
                 result = _handle_record_input(db, edited_content, is_duplicate=True)
-                if result['success']:
-                    st.success(result['message'])
+                if result["success"]:
+                    st.success(result["message"])
                     st.rerun()
                 else:
-                    st.error(result['message'])
+                    st.error(result["message"])
     except Exception as e:
         st.error(f"❌ Error retrieving record: {str(e)}")
 
 
 def show_info_tab():
-    """Show the Info tab with error display only (no buttons)"""
-    st.subheader("ℹ️ Processing Information")
+    """Show the Info tab with error display and recalculation."""
+    title_col = st.columns([5, 1])
+    with title_col[0]:
+        st.subheader("ℹ️ Processing Information")
+    with title_col[1]:
+        if st.button(
+            "🔄 重新计算",
+            help="用当前规则重新处理全部记录，并刷新错误列表",
+        ):
+            process_all_records()
+
     if not is_db_available():
         st.warning("⚠️ Please select a database from the sidebar to begin.")
         return
@@ -222,4 +258,3 @@ def show_info_tab():
         show_error_messages(db)
     except Exception as e:
         st.error(f"❌ Error accessing database: {str(e)}")
-
