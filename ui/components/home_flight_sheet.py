@@ -199,7 +199,7 @@ def get_special_passenger_counts(db) -> Dict[str, int]:
             property_counts["SXPS"] = sxps_count
 
     except Exception as e:
-        st.error(f"查询特殊乘客统计时出错: {e}")
+        st.error(f"Failed to query special passenger counts: {e}")
 
     return property_counts
 
@@ -231,7 +231,7 @@ def get_sxps_seats(db) -> str:
             return f"SXPS passengers: {'; '.join(names)}"
         return ""
     except Exception as e:
-        st.error(f"查询SXPS乘客时出错: {e}")
+        st.error(f"Failed to query SXPS passengers: {e}")
         return ""
 
 
@@ -264,7 +264,7 @@ def get_asvc_seat_mismatches(db) -> str:
             return f"ASVC Mismatches: {'; '.join(names)}"
         return ""
     except Exception as e:
-        st.error(f"查询座位不匹配乘客时出错: {e}")
+        st.error(f"Failed to query seat mismatches: {e}")
         return ""
 
 
@@ -332,7 +332,7 @@ def get_sy_commands(db) -> tuple:
                     arrival_sy = {"command_full": command_full, "content": content}
         return arrival_sy, departure_sy
     except Exception as e:
-        st.error(f"获取SY命令时出错: {e}")
+        st.error(f"Failed to load SY commands: {e}")
         return None, None
 
 
@@ -363,7 +363,7 @@ def get_airc_command(db) -> Optional[Dict[str, str]]:
         return None
 
     except Exception as e:
-        st.error(f"获取AIRC命令时出错: {e}")
+        st.error(f"Failed to load the AIRC command: {e}")
         return None
 
 
@@ -695,14 +695,14 @@ def render_flight_sheet_table(data: List[List[str]]) -> None:
             'text/plain': textBlob
         }});
         navigator.clipboard.write([clipboardItem]).then(function() {{
-            document.getElementById('copyStatus').innerText = '✓ 已复制到剪贴板（可直接粘贴到Excel）';
+            document.getElementById('copyStatus').innerText = 'Copied. Paste into Excel.';
             document.getElementById('copyStatus').style.color = 'green';
             setTimeout(function() {{
                 document.getElementById('copyStatus').innerText = '';
             }}, 3000);
         }}, function(err) {{
-            console.error('复制失败:', err);
-            document.getElementById('copyStatus').innerText = '✗ 复制失败: ' + err.message;
+            console.error('Copy failed:', err);
+            document.getElementById('copyStatus').innerText = 'Copy failed: ' + err.message;
             document.getElementById('copyStatus').style.color = 'red';
         }});
     }}
@@ -710,5 +710,3 @@ def render_flight_sheet_table(data: List[List[str]]) -> None:
     """
     # 显示复制按钮（放在底部）
     st.components.v1.html(copy_button_html, height=70)
-    # 添加说明
-    st.caption("💡 点击按钮复制完整表格到剪贴板（可直接粘贴到Excel）")

@@ -85,7 +85,7 @@ def _bind_open_database(widget_key: str, valid_files: list, active_name: str) ->
     st.session_state[widget_key] = _shown_database(valid_files, active_name)
 
 
-def render_database_selectbox(valid_files: list, *, widget_key: str, label: str = "💾 数据库:"):
+def render_database_selectbox(valid_files: list, *, widget_key: str, label: str = "💾 Database:"):
     """选择数据库。已在内存中的库只切换当前指针。"""
     client = get_db_port_client()
     try:
@@ -104,7 +104,7 @@ def render_database_selectbox(valid_files: list, *, widget_key: str, label: str 
     )
     failed = set(health.get("failed") or [])
     if _resolved(selected) in failed and health.get("load_error"):
-        st.warning(f"加载失败: {health.get('load_error')}")
+        st.warning(f"Load failed: {health.get('load_error')}")
     return selected
 
 
@@ -120,14 +120,14 @@ def render_sidebar_database_selector():
     """渲染侧边栏的数据库选择器。"""
     client = get_db_port_client()
     if not client:
-        st.error("❌ 数据库服务不可用")
+        st.error("❌ Database service is unavailable")
         return
     st.session_state["_db_switch_done"] = False
     custom_folder = st.session_state.get("custom_db_folder")
     try:
         valid_db_files = _valid_databases(client, custom_folder)
     except Exception:
-        st.error("❌ 无法获取数据库列表")
+        st.error("❌ Could not load the database list")
         return
     try:
         health = client.health()
@@ -138,14 +138,14 @@ def render_sidebar_database_selector():
         pending = 0
         disk_error = None
     if pending:
-        st.caption(f"正在写盘（{pending}）")
+        st.caption(f"Writing to disk ({pending})")
     if disk_error:
-        st.warning(f"写盘失败: {disk_error}")
+        st.warning(f"Disk write failed: {disk_error}")
     if not valid_db_files:
         folder_desc = f"'{custom_folder}'" if custom_folder else "'databases'"
         st.selectbox(
-            "💾 数据库:",
-            options=[f"未在 {folder_desc} 中找到"],
+            "💾 Database:",
+            options=[f"None found in {folder_desc}"],
             disabled=True,
         )
     else:
@@ -158,7 +158,7 @@ def render_sidebar_database_selector():
         if health.get("db") and st.session_state.get("db_has_unsaved_changes", False):
             st.markdown(
                 """<div style='background-color: #ffcccc; padding: 5px; border-radius: 5px; margin-top: 5px;'>
-                <small>⚠️ 有未保存的更改</small>
+                <small>⚠️ Unsaved changes</small>
                 </div>""",
                 unsafe_allow_html=True,
             )

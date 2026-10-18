@@ -4,6 +4,7 @@ sample*
 *.db
 *.db.enc
 *.tmp
+*.writing
 resources/.master_key
 uploaded*.txt
 sample_xlsx_vba/

@@ -62,8 +62,8 @@ def validate_input_columns(df_input: pd.DataFrame) -> None:
     """
     columns = list(df_input.columns)
     # 添加调试信息
-    print(f"DEBUG: 读取到的列名: {columns}")
-    print(f"DEBUG: 总列数: {len(columns)}")
+    print(f"DEBUG: column names read: {columns}")
+    print(f"DEBUG: column count: {len(columns)}")
     # 处理Unnamed列的情况 - 可能是Excel文件格式问题
     cleaned_columns = []
     for i, col in enumerate(columns):
@@ -90,15 +90,15 @@ def validate_input_columns(df_input: pd.DataFrame) -> None:
     # 更新DataFrame的列名
     df_input.columns = cleaned_columns
     columns = cleaned_columns
-    print(f"DEBUG: 清理后的列名: {columns}")
+    print(f"DEBUG: cleaned column names: {columns}")
     for col_idx_1_based, expected_name in EXPECTED_COLUMNS.items():
         pos = col_idx_1_based - 1
         if pos >= len(columns):
-            raise ValueError(f"列总数不足，缺少第{col_idx_1_based}列：应为'{expected_name}'")
+            raise ValueError(f"Not enough columns. Missing column {col_idx_1_based}: expected '{expected_name}'")
         actual_name = str(columns[pos]).strip()
         if actual_name != expected_name:
             raise ValueError(
-                f"第{col_idx_1_based}列列名不匹配：检测到'{actual_name}'，应为'{expected_name}'"
+                f"Column {col_idx_1_based} name mismatch: found '{actual_name}', expected '{expected_name}'"
             )
 
 
@@ -188,7 +188,7 @@ def parse_ckin_ccrd(ckin_msg: str) -> Dict:
                     try:
                         # 检查是否包含字母（除了数字和常见分隔符）
                         if re.search(r'[a-zA-Z]', item2):
-                            raise ValueError(f"金额格式无效，包含字母: {item2}")
+                            raise ValueError(f"Invalid amount, it contains letters: {item2}")
                         # 将非数字字符转换为小数点
                         converted_item2 = re.sub(r'[^\d]', '.', item2)
                         # 验证转换后的格式是否为有效数字
@@ -201,7 +201,7 @@ def parse_ckin_ccrd(ckin_msg: str) -> Dict:
                         float(converted_item2)
                     except (ValueError, TypeError) as e:
                         # 转换失败，抛出异常让记录进入unprocessed_records
-                        raise ValueError(f"金额格式转换失败 '{item2}' -> '{converted_item2}': {str(e)}")
+                        raise ValueError(f"Amount conversion failed '{item2}' -> '{converted_item2}': {str(e)}")
                 else:
                     converted_item2 = ''
                 if letters.upper() == 'AX':
@@ -339,7 +339,7 @@ def get_all_ckin_ccrd_hbnb(db_client: HbprDatabase) -> List[Dict]:
     return [
         {
             'hbnb_number': record[0],
-            'name': record[1] or '未知',
+            'name': record[1] or 'Unknown',
             'tkne': record[2] or '',
             'ckin_msg': record[3] or ''
         }
@@ -364,7 +364,7 @@ def find_records_by_tkne(db_client: HbprDatabase, tkne: str) -> List[Dict]:
     return [
         {
             'hbnb_number': record[0],
-            'name': record[1] or '未知',
+            'name': record[1] or 'Unknown',
             'tkne': record[2] or '',
             'ckin_msg': record[3] or ''
         }
@@ -473,7 +473,7 @@ def process_excel_file(db_client: HbprDatabase, df_input: pd.DataFrame, debug: b
         except Exception:
             pass
     # 添加调试信息
-    print(f"DEBUG: 预扫描完成 - FLIGHT_NUMBER: {FLIGHT_NUMBER}, FLIGHT_DATE: {FLIGHT_DATE}")
+    print(f"DEBUG: prescan done - FLIGHT_NUMBER: {FLIGHT_NUMBER}, FLIGHT_DATE: {FLIGHT_DATE}")
     output_data: List[Dict] = []
     unprocessed_records: List[Dict] = []
     debug_logs: List[Dict] = []
@@ -530,7 +530,7 @@ def process_excel_file(db_client: HbprDatabase, df_input: pd.DataFrame, debug: b
             'ckin_ccrd': remaining_hbnb['ckin_msg']
         })
     # 添加调试信息
-    print(f"DEBUG: 函数结束前 - FLIGHT_NUMBER: {FLIGHT_NUMBER}, FLIGHT_DATE: {FLIGHT_DATE}")
+    print(f"DEBUG: before return - FLIGHT_NUMBER: {FLIGHT_NUMBER}, FLIGHT_DATE: {FLIGHT_DATE}")
     if output_data:
         result_df = pd.DataFrame(output_data)
         return result_df, unprocessed_records, debug_logs
@@ -544,10 +544,10 @@ def generate_output_excel(result_df: pd.DataFrame, unprocessed_records: List[Dic
     from openpyxl import load_workbook
     template_file = os.path.join("resources", "Out_format.xlsx")
     if not os.path.exists(template_file):
-        raise FileNotFoundError(f"模板文件不存在: {template_file}")
+        raise FileNotFoundError(f"Template file not found: {template_file}")
     wb = load_workbook(template_file)
     if 'EMD' not in wb.sheetnames:
-        raise ValueError("模板文件中没有EMD工作表")
+        raise ValueError("The template has no EMD sheet")
     ws_emd = wb['EMD']
     start_row = 8
     headers = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P']
@@ -612,7 +612,7 @@ def generate_output_excel(result_df: pd.DataFrame, unprocessed_records: List[Dic
         row_idx = 15
         for record in unprocessed_records:
             ckin_ccrd_content = extract_ckin_ccrd_content(record.get('ckin_ccrd', ''))
-            error_info = f"乘客: {record.get('name', '未知')}, TKNE: {record.get('tkne', '')}, {ckin_ccrd_content}"
+            error_info = f"Passenger: {record.get('name', 'Unknown')}, TKNE: {record.get('tkne', '')}, {ckin_ccrd_content}"
             ws_sum.cell(row=row_idx, column=3, value=error_info)
             row_idx += 1
     if 'RECEIPT' in wb.sheetnames:

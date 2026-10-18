@@ -336,7 +336,13 @@ def _read_connection_into_cache(path_key: str, replace: bool = False) -> None:
 
 
 def _prewarm_targets() -> list:
-    """Databases to keep in memory, starting at the last opened file."""
+    """Keep the globally newest databases in memory.
+
+    Valid files are ordered by max(mtime, ctime), newest first. The first
+    preload_count files form the base set. When last_selected_db is valid and
+    outside that set, it is inserted at the front so the previous choice is
+    activated without dropping a newer database.
+    """
     from scripts.config_manager import get_config_value
 
     try:
@@ -350,13 +356,17 @@ def _prewarm_targets() -> list:
         for file_path in _list_db_files()
         if _validate_database_schema(file_path)
     ]
-    start = 0
-    if last_name:
-        for index, path_key in enumerate(files):
-            if Path(path_key).name == last_name:
-                start = index
-                break
-    return files[start : start + count]
+    files.sort(
+        key=lambda path_key: max(Path(path_key).stat().st_mtime, Path(path_key).stat().st_ctime),
+        reverse=True,
+    )
+    selected = files[:count]
+    if not last_name:
+        return selected
+    last_path = next((path_key for path_key in files if Path(path_key).name == last_name), None)
+    if last_path and last_path not in selected:
+        selected.insert(0, last_path)
+    return selected
 
 
 def _prewarm_loop() -> None:
@@ -687,11 +697,16 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    """Start the HTTP server. The default bind address is loopback only."""
+    """Start the HTTP server.
+
+    The default bind address is 0.0.0.0, so several users on the LAN can
+    connect. The master secret is only the passphrase a user saved. This
+    process does not create one.
+    """
     _ensure_writer()
     _start_prewarm()
     parser = argparse.ArgumentParser()
-    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--host", default="0.0.0.0", help="Bind address. Defaults to all interfaces for LAN access.")
     parser.add_argument("--port", type=int, required=True)
     args = parser.parse_args()
     httpd = HTTPServer((args.host, args.port), Handler)

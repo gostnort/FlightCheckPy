@@ -795,7 +795,7 @@ class CommandProcessor:
             migrator = DatabaseMigrator(self.conn)
             return migrator.migrate_to_timeline()
         except Exception as e:
-            print(f"   ❌ 迁移命令表时间线失败: {e}")
+            print(f"   Command timeline migration failed: {e}")
             return False
 
 

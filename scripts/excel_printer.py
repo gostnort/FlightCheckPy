@@ -28,9 +28,9 @@ def excel_to_pdf(filepath: str) -> bytes:
     """
     file_path = Path(filepath)
     if not file_path.exists():
-        raise FileNotFoundError(f"文件不存在: {filepath}")
+        raise FileNotFoundError(f"File not found: {filepath}")
     if win32com is None or pythoncom is None:
-        raise ImportError("win32com库未安装，请运行: pip install pywin32")
+        raise ImportError("win32com is not installed. Run: pip install pywin32")
     # 初始化COM（在Streamlit等多线程环境中必需）
     pythoncom.CoInitialize()
     excel = None

@@ -9,6 +9,7 @@ import tkinter as tk
 from tkinter import filedialog
 from pathlib import Path
 from scripts.config_manager import get_config_value, set_config_value
+from scripts.crypto_engine import save_master_passphrase
 from ui.common import (
     get_db_port_client,
     is_db_available,
@@ -184,8 +185,32 @@ def render_database_info():
         st.error(f"❌ 获取信息失败: {e}")
 
 
+def render_master_password_setting():
+    """Let a short passphrase become the stored 256-bit master secret."""
+    st.markdown("#### Set master password")
+    st.caption(
+        "This password encrypts the database. An encrypted database can only be opened with its original password. After the server restarts, the new password is used for later encryption and decryption."
+    )
+    passphrase = st.text_input(
+        "Master password",
+        type="password",
+        key="master_passphrase_input",
+    )
+    if st.button("Save master password", use_container_width=True):
+        if not passphrase.strip():
+            st.error("❌ Enter a master password.")
+        else:
+            try:
+                save_master_passphrase(passphrase)
+            except PermissionError as exc:
+                st.error(f"❌ Master password was not saved: {exc}")
+            else:
+                st.success("✅ Master password saved to resources/.master_key")
+
+
 def render_database_migration():
     """渲染数据库迁移部分"""
+    render_master_password_setting()
     if not is_db_available():
         st.info("ℹ️ 请先加载数据库")
         return

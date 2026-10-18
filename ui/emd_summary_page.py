@@ -38,12 +38,12 @@ def get_output_file_path(filename: str) -> str:
         temp_dir = Path("C:/temp")
         temp_dir.mkdir(parents=True, exist_ok=True)
         output_path = temp_dir / filename
-        st.info(f"📁 文件将保存至: {output_path}")
+        st.info(f"📁 File will be saved to: {output_path}")
         return str(output_path)
     except Exception as e:
         # 最后的备用方案：当前工作目录
         st.warning(
-            f"⚠️ 无法访问 Downloads 文件夹或创建 C:\\temp，将使用当前目录: {str(e)}"
+            f"⚠️ Downloads and C:\\temp are not writable. Using the current directory: {str(e)}"
         )
         return filename
 
@@ -108,10 +108,10 @@ def show_emd_summary():
         # 将debug状态保存到session_state，以便在rerun后恢复
         st.session_state["debug_on"] = debug_on
     producer_name = st.text_input(
-        "👤 制作人姓名",
+        "👤 Producer name",
         value=st.session_state.get("producer_name", ""),
-        placeholder="请输入将写入C13的名字",
-        help="该名字将会写入输出模板SUM工作表的C13位置，用于标记制作人。",
+        placeholder="Name written to SUM!C13",
+        help="This name is written to cell C13 on the SUM sheet to mark the producer.",
     )
     st.session_state["producer_name"] = producer_name
     uploaded_file = st.file_uploader(
@@ -148,7 +148,7 @@ def show_emd_summary():
                 "🚀 Start Processing", type="primary", use_container_width=True
             ):
                 if not producer_name or not producer_name.strip():
-                    st.error("❌ 请输入制作人姓名后再开始处理。")
+                    st.error("❌ Enter a producer name before processing.")
                     return
                 with st.spinner("Processing Excel file..."):
                     try:
@@ -270,7 +270,7 @@ def show_emd_summary():
                             else:
                                 st.error(message)
                 else:
-                    st.error(f"❌ 生成的文件不存在: {output_file}")
+                    st.error(f"❌ Generated file was not found: {output_file}")
         except Exception as e:
             st.error(f"❌ An error occurred while processing the file: {str(e)}")
             st.info("💡 Please check if the Excel file format is correct")

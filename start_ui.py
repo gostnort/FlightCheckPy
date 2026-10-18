@@ -65,13 +65,13 @@ def ensure_uv_environment() -> Path:
     if not uv_path:
         raise FileNotFoundError("uv is not installed or not in PATH")
     if not (venv_dir / "Scripts" / "python.exe").exists():
-        print("用 uv 创建虚拟环境...")
+        print("Creating the virtual environment with uv...")
         subprocess.run(
             [uv_path, "venv", "--python", "3.12", str(venv_dir)],
             cwd=root,
             check=True,
         )
-    print("用 uv 安装 requirements.txt ...")
+    print("Installing requirements.txt with uv...")
     subprocess.run(
         [uv_path, "pip", "install", "-r", "requirements.txt", "--python", str(venv_dir)],
         cwd=root,
@@ -90,14 +90,14 @@ def get_python_executable():
     scripts_dir = project_root() / ".venv" / "Scripts"
     pythonw_path = scripts_dir / "pythonw.exe"
     python_path = scripts_dir / "python.exe"
-    print(f"检查Python路径: {pythonw_path}")
+    print(f"Checking Python path: {pythonw_path}")
     if pythonw_path.exists():
-        print(f"✓ 使用虚拟环境Python: {pythonw_path}")
+        print(f"Using virtual environment Python: {pythonw_path}")
         return str(pythonw_path), True
     if python_path.exists():
-        print(f"✓ 使用虚拟环境Python: {python_path}")
+        print(f"Using virtual environment Python: {python_path}")
         return str(python_path), True
-    print("! 未找到 uv 虚拟环境")
+    print("uv virtual environment was not found")
     return "", False
 
 
@@ -157,7 +157,7 @@ def start_streamlit():
     try:
         ensure_uv_environment()
     except (OSError, subprocess.CalledProcessError, FileNotFoundError) as exc:
-        print(f"uv 环境准备失败: {exc}")
+        print(f"Failed to prepare the uv environment: {exc}")
         notify_winotify(
             "Streamlit Launcher",
             "uv environment setup failed.",
@@ -165,8 +165,8 @@ def start_streamlit():
         )
         return
     python_exec, is_venv = get_python_executable()
-    print(f"启动Streamlit使用的Python: {python_exec}")
-    print(f"是否使用虚拟环境: {'是' if is_venv else '否'}")
+    print(f"Python used to start Streamlit: {python_exec}")
+    print(f"Using virtual environment: {'yes' if is_venv else 'no'}")
     if not python_exec:
         notify_winotify(
             "Streamlit Launcher",
@@ -191,7 +191,7 @@ def start_streamlit():
         "--server.headless",
         "false",
     ]
-    print(f"执行命令: {' '.join(cmd)}")
+    print(f"Command: {' '.join(cmd)}")
     # 确保环境变量传递给子进程，并使用UTF-8处理
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
@@ -282,21 +282,21 @@ def build_tray():
 if __name__ == "__main__":
     # 设置正确的工作目录
     project_dir = setup_working_directory()
-    print(f"工作目录: {project_dir}")
+    print(f"Working directory: {project_dir}")
     # 显示环境变量设置情况
-    print(f"PYTHONIOENCODING环境变量: {os.environ.get('PYTHONIOENCODING', '未设置')}")
-    print(f"PYTHONUTF8环境变量: {os.environ.get('PYTHONUTF8', '未设置')}")
+    print(f"PYTHONIOENCODING: {os.environ.get('PYTHONIOENCODING', 'unset')}")
+    print(f"PYTHONUTF8: {os.environ.get('PYTHONUTF8', 'unset')}")
     try:
         ensure_uv_environment()
     except (OSError, subprocess.CalledProcessError, FileNotFoundError) as exc:
-        print(f"uv 环境准备失败: {exc}")
+        print(f"Failed to prepare the uv environment: {exc}")
         raise SystemExit(1) from exc
     python_path, is_venv = get_python_executable()
-    print(f"检测到的Python执行文件: {python_path}")
+    print(f"Detected Python executable: {python_path}")
     if is_venv:
-        print("✓ 使用 uv 虚拟环境中的 Python")
+        print("Using Python from the uv virtual environment")
     else:
-        print("! 未检测到 uv 虚拟环境")
+        print("uv virtual environment was not detected")
     # Launch Streamlit on startup
     threading.Thread(target=start_streamlit).start()
     # Start the tray icon event loop

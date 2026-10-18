@@ -5,7 +5,7 @@ import tempfile
 import streamlit as st
 from pathlib import Path
 from scripts.config_manager import get_config_value
-from scripts.crypto_engine import encrypt_sqlite_payload, resolve_master_key
+from scripts.crypto_engine import encrypt_sqlite_payload, resolve_master_key, save_master_passphrase
 from ui.common import (
     get_hbpr_database_client,
     get_database_name,
@@ -17,25 +17,28 @@ from scripts.hbpr_info_processor import CHbpr
 
 def show_hbpr_operations():
     """显示HBPR操作界面"""
+    pending_content = st.session_state.pop("pending_create_db_content", None)
     st.subheader("📥 HBPR Operations")
     # 显示当前数据库
     current_db = get_database_name()
     if current_db and current_db != "N/A" and current_db != "Error":
-        st.info(f"📂 当前数据库: **{current_db}**")
+        st.info(f"📂 Current Database: **{current_db}**")
     else:
-        st.warning("⚠️ 未加载数据库 - 可以从下方选择或浏览文件夹")
-    # 操作按钮
+        st.warning("⚠️ No database loaded - select below or browse folders")
+    # Action buttons
     col1, col2, col3 = st.columns(3)
     with col1:
-        if st.button("📤 创建新数据库", use_container_width=True, help="从HBPR列表文件创建新数据库"):
+        if st.button("📤 Create New Database", use_container_width=True, help="Create a new database from an HBPR file"):
             st.session_state.show_create_db = True
     with col2:
-        if st.button("🔄 处理所有记录", use_container_width=True, help="运行CHbpr处理所有记录"):
+        if st.button("🔄 Process All Records", use_container_width=True, help="Run CHbpr to process all records"):
             process_all_records() 
     with col3:
-        if st.button("🧹 清除处理结果", use_container_width=True, help="清除所有处理结果"):
+        if st.button("🧹 Clear Processed Results", use_container_width=True, help="Clear all processed results"):
             erase_processing_results()   
     # 处理创建新数据库
+    if pending_content:
+        create_db_from_content(pending_content)
     if st.session_state.get('show_create_db', False):
         create_database_from_file()
 
@@ -44,7 +47,7 @@ def process_all_records():
     """处理所有HBPR记录"""
     db = get_hbpr_database_client()
     if not db:
-        st.error("❌ 数据库连接不可用")
+        st.error("❌ Database connection is not available.")
         return
     try:
         # 获取所有记录
@@ -53,7 +56,7 @@ def process_all_records():
         cursor.execute("SELECT hbnb_number FROM hbpr_full_records ORDER BY hbnb_number")
         records = [row[0] for row in cursor.fetchall()]
         if not records:
-            st.info("ℹ️ 没有找到记录")
+            st.info("ℹ️ No records found.")
             return
         # 创建进度条
         progress_bar = st.progress(0)
@@ -62,8 +65,8 @@ def process_all_records():
         processed_count = 0
         valid_count = 0
         error_count = 0
-        # 处理记录
-        with st.spinner(f"🔄 正在处理 {len(records)} 条记录..."):
+        # Process records
+        with st.spinner(f"🔄 Processing {len(records)} records..."):
             for i, hbnb_number in enumerate(records):
                 try:
                     # 获取记录内容
@@ -86,76 +89,106 @@ def process_all_records():
                     # 更新进度
                     progress = (i + 1) / len(records)
                     progress_bar.progress(progress)
-                    status_text.text(f"处理进度: {i + 1}/{len(records)} ({progress*100:.1f}%)")
+                    status_text.text(f"Progress: {i + 1}/{len(records)} ({progress*100:.1f}%)")
                 except Exception as e:
-                    st.warning(f"⚠️ 处理 HBNB {hbnb_number} 时出错: {str(e)}")
-        # 显示结果
+                    st.warning(f"⚠️ Error processing HBNB {hbnb_number}: {str(e)}")
+        # Display results
         with results_container:
-            st.success(f"🎉 处理完成！共处理 {processed_count} 条记录")
+            st.success(f"🎉 Processing complete! Processed {processed_count} records.")
             col1, col2, col3 = st.columns(3)
             with col1:
-                st.metric("处理总数", processed_count)
+                st.metric("Total Processed", processed_count)
             with col2:
-                st.metric("有效记录 (有BN)", valid_count)
+                st.metric("Valid Records (with BN)", valid_count)
             with col3:
-                st.metric("错误记录 (有BN)", error_count)
-        # 自动保存
+                st.metric("Error Records (with BN)", error_count)
+        # Auto-save
         if trigger_auto_save():
-            st.toast("✅ 数据库已自动保存")
+            st.toast("✅ Database automatically saved")
     except Exception as e:
-        st.error(f"❌ 处理错误: {str(e)}")
+        st.error(f"❌ Processing error: {str(e)}")
 
 
 def erase_processing_results():
     """清除所有处理结果"""
     db = get_hbpr_database_client()
     if not db:
-        st.error("❌ 数据库连接不可用")
+        st.error("❌ Database connection is not available.")
         return
     # 确认对话框
     if not st.session_state.get('confirm_erase', False):
-        st.warning("⚠️ 此操作将清除所有处理结果，再次点击确认")
+        st.warning("⚠️ This operation will clear all processing results. Click again to confirm.")
         st.session_state.confirm_erase = True
         return
     try:
-        with st.spinner("🧹 正在清除处理结果..."):
+        with st.spinner("🧹 Clearing processing results..."):
             success = db.erase_splited_records()
             if success:
-                st.success("✅ 处理结果已清除")
-                st.info("ℹ️ 所有处理字段已重置，仅保留HBNB号码和原始内容")
-                # 标记有未保存的更改
+                st.success("✅ Processing results cleared")
+                st.info("ℹ️ All processed fields have been reset. Only HBNB numbers and raw contents are retained.")
+                # Mark unsaved changes
                 st.session_state.db_has_unsaved_changes = True
                 # 保存更改
                 if trigger_auto_save():
-                    st.toast("✅ 更改已保存")
-                # 重置确认状态
+                    st.toast("✅ Changes saved")
+                # Reset confirmation state
                 st.session_state.confirm_erase = False
                 st.rerun()
             else:
-                st.error("❌ 清除失败")
+                st.error("❌ Failed to clear")
     except Exception as e:
-        st.error(f"❌ 错误: {str(e)}")
+        st.error(f"❌ Error: {str(e)}")
 
 
 def create_database_from_file():
     """从HBPR列表文件创建数据库"""
-    with st.expander("📤 从HBPR文件创建新数据库", expanded=True):
+    with st.expander("📤 Create New Database from HBPR File", expanded=True):
         uploaded_file = st.file_uploader(
-            "选择HBPR列表文件",
+            "Select HBPR file",
             type=["txt"],
-            help="上传HBPR列表文件（如sample_hbpr.txt）",
+            help="Upload an HBPR file (e.g., sample_hbpr.txt)",
             key="hbpr_uploader"
         )
         col1, col2 = st.columns(2)
         with col2:
-            if st.button("❌ 取消", use_container_width=True):
+            if st.button("❌ Cancel", use_container_width=True):
                 st.session_state.show_create_db = False
                 st.rerun()
         if uploaded_file is not None:
             file_content = uploaded_file.getvalue().decode("utf-8")
             with col1:
-                if st.button("✅ 创建数据库", use_container_width=True, type="primary"):
-                    create_db_from_content(file_content)
+                if st.button("✅ Create Database", use_container_width=True, type="primary"):
+                    if _encrypted_create_needs_password():
+                        _ask_master_password(file_content)
+                    else:
+                        create_db_from_content(file_content)
+
+
+def _encrypted_create_needs_password() -> bool:
+    mode = get_config_value("db_preferences", "default_mode", "encrypted")
+    if mode == "plain":
+        return False
+    try:
+        return not resolve_master_key()
+    except PermissionError:
+        return True
+
+
+@st.dialog("Master password")
+def _ask_master_password(file_content: str):
+    st.caption("This password encrypts the database. An encrypted database can only be opened with its original password. After the server restarts, the new password is used for later encryption and decryption.")
+    passphrase = st.text_input("Master password", type="password", key="create_db_master_password")
+    if st.button("Save and create", type="primary"):
+        if not passphrase.strip():
+            st.error("❌ Enter a master password.")
+            return
+        try:
+            save_master_passphrase(passphrase)
+        except (PermissionError, ValueError) as exc:
+            st.error(f"❌ Master password was not saved: {exc}")
+            return
+        st.session_state.pending_create_db_content = file_content
+        st.rerun()
 
 
 def create_db_from_content(file_content: str):
@@ -165,7 +198,7 @@ def create_db_from_content(file_content: str):
         from scripts.hbpr_file_processor import parse_flight_id_from_content, HbprProcessor
         flight_id = parse_flight_id_from_content(file_content)
         if not flight_id:
-            st.error("❌ 无法从文件中解析航班号")
+            st.error("❌ Failed to parse flight ID from file content")
             return
         db_folder = Path(st.session_state.get("custom_db_folder", "databases"))
         db_folder.mkdir(parents=True, exist_ok=True)
@@ -175,9 +208,9 @@ def create_db_from_content(file_content: str):
         db_path = db_folder / f"{flight_id}{suffix}"
         other_path = db_folder / f"{flight_id}{'.db' if encrypted else '.db.enc'}"
         if db_path.exists() or other_path.exists():
-            st.error(f"❌ 数据库 {flight_id} 已存在")
+            st.error(f"❌ Database {flight_id} already exists")
             return
-        with st.spinner(f"正在创建数据库 {db_path.name}..."):
+        with st.spinner(f"Creating database {db_path.name}..."):
             with tempfile.TemporaryDirectory() as temp_dir:
                 plain_path = Path(temp_dir) / f"{flight_id}.db"
                 conn = sqlite3.connect(plain_path)
@@ -192,10 +225,10 @@ def create_db_from_content(file_content: str):
                 try:
                     master_key = resolve_master_key()
                 except PermissionError as exc:
-                    st.error(f"❌ 主密钥不可用: {exc}")
+                    st.error(f"❌ Master key unavailable: {exc}")
                     return
                 if not master_key:
-                    st.error("❌ 未找到主密钥。请先运行 python scripts/manage_keys.py")
+                    st.error("❌ Master password is not set.")
                     return
                 payload = encrypt_sqlite_payload(plain_bytes, master_key)
                 temporary = db_path.with_name(db_path.name + ".writing")
@@ -205,15 +238,14 @@ def create_db_from_content(file_content: str):
                 temporary = db_path.with_name(db_path.name + ".writing")
                 temporary.write_bytes(plain_bytes)
                 temporary.replace(db_path)
-            st.success(f"✅ 创建数据库成功！包含 {record_count} 条记录")
+            st.success(f"✅ Database created successfully with {record_count} records!")
             if load_database(str(db_path)):
                 # 清理状态
                 st.session_state.show_create_db = False
-                # 自动处理所有记录
-                st.info("🔄 开始自动处理所有记录...")
+                # Automatically process all records
+                st.info("🔄 Automatically processing all records...")
                 process_all_records()
             else:
-                st.error("❌ 无法加载数据库到服务器")               
+                st.error("❌ Failed to load database to server")               
     except Exception as e:
-        st.error(f"❌ 创建数据库失败: {str(e)}")
-
+        st.error(f"❌ Failed to create database: {str(e)}")

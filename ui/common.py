@@ -39,7 +39,7 @@ def _notify_db_status(message: str):
     """
     if not notify_winotify or not HTTP_ICON_PATH:
         return
-    notify_winotify("数据库服务", message, icon_path=HTTP_ICON_PATH)
+    notify_winotify("Database service", message, icon_path=HTTP_ICON_PATH)
 
 
 def get_icon_base64(path):
@@ -121,7 +121,7 @@ def ensure_memdb_server(username: str) -> tuple:
         # 验证服务器脚本是否存在
         if not Path(server_path).exists():
             return False, 0, f"Server script not found: {server_path}"
-        _notify_db_status("正在启动远程数据库...")
+        _notify_db_status("Starting the database service...")
         # 启动服务器进程，捕获输出用于调试
         proc = subprocess.Popen(
             [sys.executable, server_path, "--port", str(port)],
@@ -137,10 +137,10 @@ def ensure_memdb_server(username: str) -> tuple:
             # 进程已经退出，读取错误信息
             stdout, stderr = proc.communicate(timeout=1)
             error_msg = stderr if stderr else stdout
-            _notify_db_status("远程数据库启动失败")
+            _notify_db_status("Database service failed to start")
             return False, 0, f"Server failed to start: {error_msg[:200]}"
     except Exception as e:
-        _notify_db_status("远程数据库启动失败")
+        _notify_db_status("Database service failed to start")
         return False, 0, f"Failed to start server: {e}"
     # 等待服务器健康检查通过（增加到10秒超时）
     for i in range(100):
@@ -151,10 +151,10 @@ def ensure_memdb_server(username: str) -> tuple:
                 client.login_username(username)
             except Exception:
                 pass
-            _notify_db_status("远程数据库已启动")
+            _notify_db_status("Database service is running")
             return True, port, "OK"
         time.sleep(0.1)
-    _notify_db_status("远程数据库启动超时")
+    _notify_db_status("Database service startup timed out")
     return False, 0, "Timed out starting server (waited 10 seconds)"
 
 

@@ -27,7 +27,7 @@ def _lookup_record(label, options, records, value_index, widget_key):
         options,
         key=widget_key,
         accept_new_options=True,
-        placeholder="输入后回车，或从列表选择",
+        placeholder="Type and press Enter, or pick from the list",
     )
     text = str(chosen).strip() if chosen is not None else ""
     if not text:
@@ -51,7 +51,7 @@ def _lookup_record(label, options, records, value_index, widget_key):
         return prefix[0][0]
     if exact:
         return exact[0][0]
-    st.warning(f"⚠️ 没有唯一匹配：{text}")
+    st.warning(f"⚠️ No unique match: {text}")
     return None
 
 

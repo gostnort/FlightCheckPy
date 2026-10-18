@@ -19,6 +19,8 @@ MIN_ENVELOPE_LEN = len(MAGIC) + SALT_LEN + NONCE_LEN + TAG_LEN
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 MASTER_KEY_PATH = PROJECT_ROOT / "resources" / ".master_key"
+MASTER_PASSPHRASE_SALT = b"FlightCheckPy.master.salt.v1"
+MASTER_PASSPHRASE_PEPPER = b"FlightCheckPy.master.pepper.v1"
 
 
 class CryptoFormatError(ValueError):
@@ -34,10 +36,10 @@ def master_key_is_strong(master_password: str) -> bool:
 
 
 def resolve_master_key() -> str:
-    """Return the master secret from the environment or the gitignored key file.
+    """Return the user-supplied master secret.
 
-    An empty string means the secret is not configured. A configured secret
-    shorter than 32 bytes is rejected.
+    The secret comes from FCP_MASTER_KEY or from resources/.master_key after
+    the user saves a passphrase. Nothing is generated when both are absent.
     """
     env_key = os.environ.get("FCP_MASTER_KEY", "").strip()
     if env_key:
@@ -49,6 +51,40 @@ def resolve_master_key() -> str:
             _require_strong_key(file_key)
             return file_key
     return ""
+
+
+def write_master_key(secret: str) -> Path:
+    """Write a master secret the user chose. The file is not created automatically."""
+    text = secret.strip()
+    _require_strong_key(text)
+    MASTER_KEY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    MASTER_KEY_PATH.write_text(text + "\n", encoding="utf-8")
+    return MASTER_KEY_PATH
+
+
+def stretch_master_passphrase(passphrase: str) -> str:
+    """Stretch a short passphrase into a 256-bit key with the project salt and pepper.
+
+    The stored value is the hex form of that key, so the same passphrase always
+    produces the same master secret.
+    """
+    material = MASTER_PASSPHRASE_PEPPER + passphrase.encode("utf-8")
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=MASTER_PASSPHRASE_SALT,
+        iterations=PBKDF2_ROUNDS,
+    )
+    return kdf.derive(material).hex()
+
+
+def save_master_passphrase(passphrase: str) -> Path:
+    """Store a user passphrase. Passphrases under 32 bytes are stretched first."""
+    text = passphrase.strip()
+    if not text:
+        raise ValueError("Master passphrase is empty")
+    secret = text if master_key_is_strong(text) else stretch_master_passphrase(text)
+    return write_master_key(secret)
 
 
 def encrypted_header_ok(path: Path) -> bool:
@@ -117,4 +153,7 @@ __all__ = [
     "encrypt_sqlite_payload",
     "encrypted_header_ok",
     "resolve_master_key",
+    "save_master_passphrase",
+    "stretch_master_passphrase",
+    "write_master_key",
 ]

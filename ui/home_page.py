@@ -106,36 +106,35 @@ def show_home_page():
         st.warning("⚠️ Database not loaded")
     st.markdown("---")
     # 最近活动
-    st.subheader("📝 导航指南")
+    st.subheader("📝 Navigation guide")
     col_left, col_right = st.columns(2)
     with col_left:
         st.markdown("""
-        ## 🗄️ **数据库管理**
-        - 从HBPR列表文件创建、导入和管理数据库。
-        - 查看航班信息和数据库状态。
-        - 自动保存和加载数据库到内存服务。
-        ## 🔍 **记录处理** 
-        - 手动添加/编辑HBPR和PR（旅客记录）。
-        - 验证HBPR和PR记录的格式和内容。
-        - 替换或复制现有记录。
-        - 追踪和更新HBNB（航班登机号）缺失情况。
-        - 批量处理HBPR记录。
+        ## 🗄️ **Database**
+        - Create, import, and manage databases from HBPR list files.
+        - View flight information and database status.
+        - Save and load databases through the in-memory service.
+        ## 🔍 **Process Records**
+        - Add or edit HBPR and PR passenger records by hand.
+        - Check HBPR and PR format and content.
+        - Replace or copy an existing record.
+        - Track missing HBNB numbers.
+        - Process HBPR records in bulk.
         """)
     with col_right:
-        st.markdown("<br><br>", unsafe_allow_html=True)
         st.markdown("""
         ## 📊 **EMD Summary**
-        - 导入EMD（电子杂费单）销售日报Excel文件。
-        - 自动匹配TKNE（票号）与HBPR记录，并提取CKIN CCRD（值机信用卡）信息。
-        - 处理废票（Void EMDs）。
-        - 生成格式化的输出Excel报告。
-        ## 📋 **指令分析**
-        - 解析、验证和管理AIRC、SY等系统指令。
-        - 提取指令中的航班号和日期信息。
-        - 支持指令的版本控制和历史查看。
-        - 删除或编辑指令记录。
-        ## ⚙️ **设置**
-        - 配置字体族和大小偏好。
-        **💡 开始使用：** 从边栏下拉菜单中选择或创建数据库，然后使用导航按钮访问所需功能。
+        - Import the EMD sales daily Excel file.
+        - Match TKNE ticket numbers to HBPR records and read CKIN CCRD.
+        - Handle void EMDs.
+        - Write a formatted Excel report.
+        ## 📋 **Commands**
+        - Parse, check, and manage AIRC, SY, and other system commands.
+        - Read flight number and date from a command.
+        - Keep command versions and history.
+        - Delete or edit a command record.
+        ## ⚙️ **Settings**
+        - Set the font family and size.
+        **Start here:** pick or create a database in the sidebar, then open a page from the navigation buttons.
         """)
 

@@ -235,15 +235,17 @@ def show_record_popup(db, hbnb_number):
 
 def show_info_tab():
     """Show the Info tab with error display and recalculation."""
+    recalculate = False
     title_col = st.columns([5, 1])
     with title_col[0]:
         st.subheader("ℹ️ Processing Information")
     with title_col[1]:
-        if st.button(
-            "🔄 重新计算",
-            help="用当前规则重新处理全部记录，并刷新错误列表",
-        ):
-            process_all_records()
+        recalculate = st.button(
+            "🔄 Recalculate",
+            help="Reprocess every record with the current rules and refresh the error list",
+        )
+    if recalculate:
+        process_all_records()
 
     if not is_db_available():
         st.warning("⚠️ Please select a database from the sidebar to begin.")
