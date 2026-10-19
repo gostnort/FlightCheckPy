@@ -29,7 +29,7 @@ class HbprProcessor:
             'full_records': {}, # 完整记录：HBNB -> 记录内容
             'simple_records': {} # 简单记录：HBNB -> 记录内容
         })  # flight_id -> flight data
-        self.flight_info = {}  # flight_id -> (flight_number, date)
+        self.flight_info = {}  # flight_id -> (flight_number, date, destination)
         self.flight_id = "" # 当前处理的航班ID。整个文件只会有一个航班ID。
         self.all_simple_records = {}  # 全局简单记录：HBNB -> 记录内容
 
@@ -79,7 +79,7 @@ class HbprProcessor:
         # 如果没有航班ID，说明文件中没有完整记录，创建UNKNOWN_FLIGHT
         elif self.all_simple_records:
             self.flight_id = "UNKNOWN_FLIGHT"
-            self.flight_info[self.flight_id] = ("UNKNOWN", "UNKNOWN")
+            self.flight_info[self.flight_id] = ("UNKNOWN", "UNKNOWN", "")
             flight_data = self.flight_data[self.flight_id]
             for hbnb_num, record_line in self.all_simple_records.items():
                 flight_data['hbnb_numbers'].add(hbnb_num)
@@ -101,19 +101,21 @@ class HbprProcessor:
         """
         line = lines[start_index].strip()
         # 提取航班信息和HBNB号码
-        # 格式: >HBPR: CA984/25JUL25*LAX,{NUMBER}
-        match = re.search(r'>HBPR:\s*([^*,]+)', line)
+        # 格式: HBPR: CA123/01JAN26*LAX,1 。星号后三个字母是航班到达站。
+        match = re.search(r'>?HBPR:\s*([^*,]+)', line)
         if not match:
             return None, "", start_index + 1
         flight_info = match.group(1).strip()
+        destination_match = re.search(r'\*([A-Za-z]{3})', line)
+        flight_destination = destination_match.group(1).upper() if destination_match else ""
         # 提取HBNB号码 - 允许逗号后有空格和其他文本
-        hbnb_match = re.search(r'>HBPR:\s*[^,]+,(\d+)', line)
+        hbnb_match = re.search(r'>?HBPR:\s*[^,]+,(\d+)', line)
         if not hbnb_match:
             return None, "", start_index + 1
         hbnb_num = int(hbnb_match.group(1))
         # 解析航班号和日期
         if not self.flight_id:
-            self.flight_id = self._parse_flight_info(flight_info)
+            self.flight_id = self._parse_flight_info(flight_info, flight_destination)
         # 收集记录内容直到下一个>标记
         record_lines = []
         i = start_index
@@ -132,8 +134,8 @@ class HbprProcessor:
         return hbnb_num, cleaned_content, i
 
 
-    def _parse_flight_info(self, flight_info: str) -> str:
-        """解析航班信息并生成航班ID"""
+    def _parse_flight_info(self, flight_info: str, flight_destination: str = "") -> str:
+        """解析航班信息并生成航班ID。flight_destination 是标题星号后的三个字母。"""
         # 格式: CA984/25JUL25 -> CA984_25JUL25
         flight_parts = flight_info.replace('/', '_').replace('*', '_')
         # 提取航班号和日期
@@ -142,11 +144,11 @@ class HbprProcessor:
             if len(parts) >= 2:
                 flight_number = parts[0]
                 date = parts[1].split('*')[0] if '*' in parts[1] else parts[1]
-                self.flight_info[flight_parts] = (flight_number, date)
+                self.flight_info[flight_parts] = (flight_number, date, flight_destination)
             else:
-                self.flight_info[flight_parts] = (flight_info, "UNKNOWN")
+                self.flight_info[flight_parts] = (flight_info, "UNKNOWN", flight_destination)
         else:
-            self.flight_info[flight_parts] = (flight_info, "UNKNOWN")
+            self.flight_info[flight_parts] = (flight_info, "UNKNOWN", flight_destination)
         return flight_parts
 
 
@@ -195,10 +197,10 @@ class HbprProcessor:
         cursor = self.conn.cursor()
         flight_data = self.flight_data[flight_id]
         # 存储航班信息
-        flight_number, flight_date = self.flight_info[flight_id]
+        flight_number, flight_date, flight_destination = self.flight_info[flight_id]
         cursor.execute(
-            'INSERT INTO flight_info (flight_id, flight_number, flight_date) VALUES (?, ?, ?)',
-            (flight_id, flight_number, flight_date)
+            'INSERT INTO flight_info (flight_id, flight_number, flight_date, destination) VALUES (?, ?, ?, ?)',
+            (flight_id, flight_number, flight_date, flight_destination)
         )
         # 存储完整记录（清理重复标题）
         for hbnb_num, content in flight_data['full_records'].items():
@@ -247,7 +249,7 @@ class HbprProcessor:
         """生成指定航班的处理报告"""
         missing_numbers = self.find_missing_numbers(flight_id)
         flight_data = self.flight_data[flight_id]
-        flight_number, flight_date = self.flight_info[flight_id]
+        flight_number, flight_date, _flight_destination = self.flight_info[flight_id]
         # 打印详细报告
         print("\n" + "="*60)
         print(f"FLIGHT {flight_id} PROCESSING REPORT")
@@ -293,7 +295,7 @@ def parse_flight_id_from_content(file_content: str) -> str | None:
     for line in lines:
         line = line.strip()
         if line.startswith('>HBPR:') or line.startswith('HBPR:'):
-            match = re.search(r'>HBPR:\s*([^*,]+)', line)
+            match = re.search(r'>?HBPR:\s*([^*,]+)', line)
             if match:
                 flight_info = match.group(1).strip()
                 flight_parts = flight_info.replace('/', '_').replace('*', '_')

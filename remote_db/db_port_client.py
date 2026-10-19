@@ -89,6 +89,10 @@ class DbPortClient:
         """Requests the server to reload the current database from disk."""
         return self._post("/database/reload", {})
 
+    def delete_database(self, path: str):
+        """Remove one database from memory and from disk."""
+        return self._post("/database/delete", {"path": path})
+
     def query(self, sql: str, params=None):
         """
         Sends a read-only SQL query to the server.

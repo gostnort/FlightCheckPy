@@ -658,7 +658,15 @@ class CHbpr:
             self.debug_msg.append(f"Passport expiration check failed: {str(e)}")
 
     def __GetVisaInfo(self):
-        """获取签证信息"""
+        """检查非中国籍旅客的签证。
+
+        国籍为 CHN 或 CN 的不检查。
+        “VISA INFO:”、“TRVL DOC :” 或 “CKIN VISA” 算已经有签证信息。
+        “CKIN TWOV” 是过境免签，签证和 QROK 都不再检查。
+        CHN、CN、HKG、TWN 护照不检查 QROK。其余国籍没有 “CKIN QROK” 就报 QROK not found。
+        同一个人只记一条签证错误，姓名和登机号只写一次。
+        旅客目的站在 hbpr_full_records.destination，和航班到达站的比较放在错误列表显示时。
+        """
         # 首先从护照信息中提取国籍
         nationality = ""
         try:
@@ -672,34 +680,36 @@ class CHbpr:
         except Exception as e:
             self.debug_msg.append(f"Failed to extract nationality: {str(e)}")
             return
-        # 如果国籍不是中国，检查签证信息
-        if nationality and nationality != "CHN" and nationality != "CN":
-            # 检查VISA INFO模式
-            visa_info_pat = re.compile(r"VISA INFO:")
-            visa_info_match = visa_info_pat.search(self.__Hbpr)
-            # 检查CKIN VISA模式
-            ckin_visa_pat = re.compile(r"CKIN VISA")
-            ckin_visa_match = ckin_visa_pat.search(self.__Hbpr)
-            if visa_info_match or ckin_visa_match:
-                # 找到签证信息，记录调试信息
-                if visa_info_match:
-                    self.debug_msg.append("VISA INFO found")
-                if ckin_visa_match:
-                    self.debug_msg.append("CKIN VISA found")
-            else:
-                # 未找到签证信息，添加错误
-                self.error_msg["Visa"].append(
-                    f"HBPR{self.HbnbNumber},\tNo visa information found for {nationality} passport holder\n"
-                    f"PAX: {self.NAME}, BN: {self.BoardingNumber}"
-                )
-            if "CKIN QROK" in self.__Hbpr:
-                self.debug_msg.append("CKIN QROK found")
-            else:
-                self.error_msg["Visa"].append(
-                    f"HBPR{self.HbnbNumber},\tQROK not found\n"
-                    f"PAX: {self.NAME}, BN: {self.BoardingNumber}"
-                )
-        return
+        # CHN/CN 不查。TWOV 过境免签，签证和 QROK 都不查。
+        if not nationality or nationality in ("CHN", "CN"):
+            return
+        if "CKIN TWOV" in self.__Hbpr:
+            self.debug_msg.append("CKIN TWOV found")
+            return
+        reasons = []
+        visa_marks = (
+            ("VISA INFO:", "VISA INFO found"),
+            ("TRVL DOC :", "TRVL DOC found"),
+            ("CKIN VISA", "CKIN VISA found"),
+        )
+        found_visa = next((note for text, note in visa_marks if text in self.__Hbpr), "")
+        if found_visa:
+            self.debug_msg.append(found_visa)
+        else:
+            reasons.append(f"No visa found for {nationality} passport; ")
+        # HKG、TWN 不查 QROK。
+        if nationality in ("HKG", "TWN"):
+            self.debug_msg.append(f"{nationality} passport, QROK not required")
+        elif "CKIN QROK" in self.__Hbpr:
+            self.debug_msg.append("CKIN QROK found")
+        else:
+            reasons.append("QROK not found; ")
+        if reasons:
+            self.error_msg["Visa"].append(
+                f"HBPR{self.HbnbNumber},\t"
+                + "\n".join(reasons)
+                + f"\nPAX: {self.NAME}, BN: {self.BoardingNumber}"
+            )
 
     def get_structured_data(self):
         """返回结构化数据字典，用于数据库存储"""

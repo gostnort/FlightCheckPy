@@ -214,12 +214,15 @@ def create_db_from_content(file_content: str):
             with tempfile.TemporaryDirectory() as temp_dir:
                 plain_path = Path(temp_dir) / f"{flight_id}.db"
                 conn = sqlite3.connect(plain_path)
-                processor = HbprProcessor(conn)
-                processor.process(file_content)
-                flight_data = processor.flight_data[flight_id]
-                record_count = len(flight_data["hbnb_numbers"])
-                conn.commit()
-                conn.close()
+                try:
+                    processor = HbprProcessor(conn)
+                    processor.process(file_content)
+                    flight_data = processor.flight_data[flight_id]
+                    record_count = len(flight_data["hbnb_numbers"])
+                    conn.commit()
+                finally:
+                    # 出错也要先关掉连接。Windows 上连接还开着时，临时目录删不掉。
+                    conn.close()
                 plain_bytes = plain_path.read_bytes()
             if encrypted:
                 try:

@@ -4,7 +4,7 @@ version = "0.6.4"
 default_mode = "encrypted"
 preload_count = 5
 remember_last_db = true
-last_selected_db = "CA770_07OCT25.db"
+last_selected_db = "CA984_31JUL25.db"
 
 [ui_settings]
 theme = "Auto"

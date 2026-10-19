@@ -56,6 +56,7 @@ _schema_cache: dict[str, tuple] = {}
 _state_lock = threading.Lock()
 _loading_paths: set[str] = set()
 _load_errors: dict[str, str] = {}
+_retired_paths: set[str] = set()
 _desired_active = None
 _prewarm_thread = None
 _prewarm_guard = threading.Lock()
@@ -180,7 +181,10 @@ def _disk_writer_loop() -> None:
     while True:
         path_key, sqlite_bytes = _write_queue.get()
         try:
-            _write_sqlite_bytes(Path(path_key), sqlite_bytes)
+            with _state_lock:
+                retired = path_key in _retired_paths
+            if not retired:
+                _write_sqlite_bytes(Path(path_key), sqlite_bytes)
             with _pending_condition:
                 _last_disk_error = None
         except Exception as exc:
@@ -312,11 +316,17 @@ def _read_connection_into_cache(path_key: str, replace: bool = False) -> None:
         if not replace and path_key in _resident_paths():
             return
         _wait_for_path(path_key)
+        with _state_lock:
+            retired = path_key in _retired_paths
+        if retired:
+            return
         sqlite_bytes = _read_sqlite_bytes(path)
         new_conn = _open_memory_connection(sqlite_bytes)
         with _cache_lock:
+            with _state_lock:
+                retired = path_key in _retired_paths
             old = _db_cache.get(path_key)
-            if old is not None and not replace:
+            if retired or (old is not None and not replace):
                 new_conn.close()
                 return
             _db_cache[path_key] = new_conn
@@ -490,6 +500,67 @@ def _save_to_source() -> int:
     return _snapshot_active_db()
 
 
+def _remove_disk_files(path: Path) -> None:
+    """Delete the database file. A leftover temporary file is removed with it."""
+    for candidate in (Path(str(path) + ".tmp"), Path(str(path) + ".writing")):
+        if candidate.is_file():
+            candidate.unlink()
+    if path.is_file():
+        path.unlink()
+    if path.exists():
+        raise ValueError(f"could not delete {path.name}")
+
+
+def _remove_memory_database(path_key: str) -> None:
+    """Close the resident connection and clear the active pointer when it is this file."""
+    global _conn, _src_file_path, _desired_active
+    with _cache_lock:
+        old = _db_cache.pop(path_key, None)
+    with _lock:
+        if _src_file_path == path_key or (old is not None and _conn is old):
+            _conn = None
+            _src_file_path = None
+    if old is not None:
+        try:
+            old.close()
+        except Exception:
+            pass
+    with _schema_cache_lock:
+        _schema_cache.pop(path_key, None)
+    with _state_lock:
+        _dirty_paths.discard(path_key)
+        _load_errors.pop(path_key, None)
+        if _desired_active == path_key:
+            _desired_active = None
+
+
+def _drop_database(file_path: str) -> dict:
+    """Drop one database from memory and disk.
+
+    Pending writes for this file are discarded so the writer cannot recreate it.
+    """
+    path_key = _normalized_path(file_path)
+    path = Path(path_key)
+    lower_name = path.name.lower()
+    if not (lower_name.endswith(".db.enc") or lower_name.endswith(".db")):
+        raise ValueError("invalid database path")
+    if path_key not in _resident_paths() and not path.is_file():
+        raise ValueError("source file not found")
+    with _state_lock:
+        _retired_paths.add(path_key)
+    try:
+        _wait_for_path(path_key)
+        _remove_disk_files(path)
+        _remove_memory_database(path_key)
+    except Exception:
+        with _state_lock:
+            _retired_paths.discard(path_key)
+        raise
+    with _state_lock:
+        _retired_paths.discard(path_key)
+    return {"ok": True, "db_name": path.name}
+
+
 def _list_db_files(directory: str = None) -> list:
     """List plain and encrypted databases, newest creation or modification first."""
     target = Path(directory) if directory else Path("databases")
@@ -660,6 +731,13 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/database/save":
                 pending = _save_to_source()
                 return self._send(200, {"ok": True, "pending": pending})
+
+            if path == "/database/delete":
+                file_path = body.get("path")
+                if not file_path:
+                    return self._send(400, {"error": "invalid_path"})
+                result = _drop_database(file_path)
+                return self._send(200, result)
 
             if path == "/database/reload":
                 if not _src_file_path:

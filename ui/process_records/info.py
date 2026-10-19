@@ -87,14 +87,49 @@ def show_error_summary(db):
         st.error(f"❌ Error loading error summary: {str(e)}")
 
 
+def _flight_destination(db) -> str:
+    """flight_info.destination，创建库时从 HBPR 标题星号后三个字母写入。旧库没有该列时返回空。"""
+    try:
+        conn = db.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(flight_info)")
+        columns = [column[1] for column in cursor.fetchall()]
+        if "destination" not in columns:
+            return ""
+        cursor.execute("SELECT destination FROM flight_info LIMIT 1")
+        row = cursor.fetchone()
+        if not row or not row[0]:
+            return ""
+        return str(row[0]).strip().upper()
+    except Exception:
+        return ""
+
+
+def _visa_text_with_destination(error_text: str, passenger_destination, flight_destination: str) -> str:
+    """旅客目的站与航班到达站不同时，把表里的 destination 附在签证错误后面。"""
+    if passenger_destination is None or pd.isna(passenger_destination):
+        passenger_destination = ""
+    passenger_destination = str(passenger_destination).strip().upper()
+    flight_destination = (flight_destination or "").strip().upper()
+    if (
+        not passenger_destination
+        or not flight_destination
+        or passenger_destination == flight_destination
+        or f"DEST: {passenger_destination}" in error_text
+    ):
+        return error_text
+    return error_text + f"\nDEST: {passenger_destination}"
+
+
 def show_error_messages(db):
     """显示错误信息"""
     try:
-        # 查询有错误的记录
+        flight_destination = _flight_destination(db)
+        # 查询有错误的记录。destination 是已经入库的旅客目的站。
         df = execute_query_to_dataframe(
             db,
             """
-            SELECT hbnb_number, name, error_count, error_baggage, error_passport, error_name, error_visa, error_other, validated_at
+            SELECT hbnb_number, name, destination, error_count, error_baggage, error_passport, error_name, error_visa, error_other, validated_at
             FROM hbpr_full_records
             WHERE is_validated = 1 AND is_valid = 0 AND error_count > 0
             ORDER BY validated_at DESC, hbnb_number
@@ -141,11 +176,16 @@ def show_error_messages(db):
         for _, row in page_df.iterrows():
             # 构建选中错误类型的文本用于显示在expander标题中
             error_field = error_field_map[selected_error_type]
-            if row[error_field] and row[error_field].strip():
+            error_text = row[error_field].strip() if row[error_field] else ""
+            if selected_error_type == "Visa" and error_text:
+                error_text = _visa_text_with_destination(
+                    error_text, row["destination"], flight_destination
+                )
+            if error_text:
                 # 取错误文本的前70个字符用于标题显示
                 CONST_ERROR_PREVIEW_LENGTH = 90
-                error_preview = row[error_field].strip()[:CONST_ERROR_PREVIEW_LENGTH]
-                if len(row[error_field].strip()) > CONST_ERROR_PREVIEW_LENGTH:
+                error_preview = error_text[:CONST_ERROR_PREVIEW_LENGTH]
+                if len(error_text) > CONST_ERROR_PREVIEW_LENGTH:
                     error_preview += "..."
                 display_error = error_preview
             else:
@@ -174,12 +214,11 @@ def show_error_messages(db):
                 if st.session_state.show_popup_for == row["hbnb_number"]:
                     show_record_popup(db, row["hbnb_number"])
                 # 显示选中的错误类型信息
-                error_field = error_field_map[selected_error_type]
-                if row[error_field] and row[error_field].strip():
+                if error_text:
                     # 使用markdown来支持换行显示
-                    error_text = row[error_field].replace("\n", "<br>")
+                    error_html = error_text.replace("\n", "<br>")
                     st.markdown(
-                        f"🔴 **{selected_error_type}:** {error_text}",
+                        f"🔴 **{selected_error_type}:** {error_html}",
                         unsafe_allow_html=True,
                     )
         if total_pages > 1:

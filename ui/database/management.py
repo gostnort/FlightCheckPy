@@ -4,6 +4,7 @@
 """
 
 import os
+import time
 import streamlit as st
 import tkinter as tk
 from tkinter import filedialog
@@ -109,8 +110,52 @@ def _render_default_format_selector():
         set_config_value("db_preferences", "default_mode", selected)
 
 
+def _render_delete_database_button(selected_path: str):
+    """两次确认后删除。第二次必须距第一次超过一秒。"""
+    if st.button(
+        "🗑️ 删除数据库",
+        use_container_width=True,
+        help="从列表、内存和磁盘删除当前选择的数据库。需要间隔一秒以上再按一次。",
+    ):
+        _delete_selected_database(selected_path)
+
+
+def _delete_selected_database(selected_path: str):
+    """从列表、内存和磁盘删除选中的数据库。"""
+    selected_name = Path(selected_path).name
+    pending = st.session_state.get("confirm_delete_db")
+    now = time.monotonic()
+    if not pending or pending.get("path") != selected_path:
+        st.session_state.confirm_delete_db = {"path": selected_path, "at": now}
+        st.warning(
+            f"⚠️ 将从列表、内存和磁盘删除 {selected_name}。请间隔一秒以上再按一次确认。"
+        )
+        return
+    if now - pending["at"] < 1:
+        st.warning("⚠️ 间隔不足一秒，数据库未删除。请再按一次确认。")
+        return
+    client = get_db_port_client()
+    if not client:
+        st.error("❌ 数据库服务不可用")
+        return
+    try:
+        client.delete_database(selected_path)
+    except Exception as exc:
+        st.error(f"❌ 删除失败: {exc}")
+        return
+    if Path(get_config_value("db_preferences", "last_selected_db", "") or "").name == selected_name:
+        set_config_value("db_preferences", "last_selected_db", "")
+    st.session_state.db_has_unsaved_changes = False
+    st.session_state.confirm_delete_db = None
+    st.session_state.delete_db_notice = f"✅ 已删除 {selected_name}"
+    st.rerun()
+
+
 def render_database_operations():
     """渲染数据库操作部分"""
+    notice = st.session_state.pop("delete_db_notice", None)
+    if notice:
+        st.success(notice)
     _render_default_format_selector()
     # 保存数据库
     if st.button("💾 保存当前数据库", use_container_width=True, type="primary"):
@@ -141,11 +186,12 @@ def render_database_operations():
                 if item.get("valid") and item.get("path")
             ]
             if valid_db_files:
-                render_database_selectbox(
+                selected = render_database_selectbox(
                     valid_db_files,
                     widget_key="management_db_selector",
                     label="选择数据库:",
                 )
+                _render_delete_database_button(selected)
             else:
                 st.info("📭 未找到有效的数据库文件")
         except Exception as e:

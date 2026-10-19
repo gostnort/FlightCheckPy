@@ -10,6 +10,7 @@
         {"name": "flight_id", "type": "TEXT", "constraint": "PRIMARY KEY"},
         {"name": "flight_number", "type": "TEXT", "constraint": "NOT NULL"},
         {"name": "flight_date", "type": "TEXT", "constraint": "NOT NULL"},
+        {"name": "destination", "type": "TEXT", "constraint": ""},
         {"name": "created_at", "type": "TIMESTAMP", "constraint": "DEFAULT CURRENT_TIMESTAMP"}
       ]
     },
